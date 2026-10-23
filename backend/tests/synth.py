@@ -29,3 +29,25 @@ def make_tray_image(rows, cols, angle_deg=0.0, center=(320, 240), size=(640, 480
     corners = np.array([[0, 0], [tray_w, 0], [tray_w, tray_h], [0, tray_h]], np.float32)
     true = (m[:, :2] @ corners.T).T + m[:, 2]
     return img, true
+
+
+def make_box_on_mat_image(rows, cols, cell_px=120, size=(800, 640), seed=0):
+    """Light cardboard box with compartments on a dark mat over white paper.
+
+    Return (BGR image, true box corners TL,TR,BR,BL in pixels).
+    """
+    w, h = size
+    gray = np.full((h, w), 235, np.float32)  # white paper, touches the frame border
+    cv2.rectangle(gray, (60, 50), (w - 60, h - 50), 70, -1)  # dark mat, larger than the box
+    box_w, box_h = cols * cell_px + 2 * BORDER_PX, rows * cell_px + 2 * BORDER_PX
+    x0, y0 = (w - box_w) // 2, (h - box_h) // 2
+    cv2.rectangle(gray, (x0, y0), (x0 + box_w, y0 + box_h), 215, -1)  # walls
+    for r in range(rows):
+        for c in range(cols):
+            cx, cy = x0 + BORDER_PX + c * cell_px, y0 + BORDER_PX + r * cell_px
+            cv2.rectangle(gray, (cx + 4, cy + 4), (cx + cell_px - 5, cy + cell_px - 5), 165, -1)  # floor
+    rng = np.random.default_rng(seed)
+    gray = cv2.GaussianBlur(gray, (0, 0), 1.0) + rng.normal(0, 3, gray.shape)
+    img = cv2.cvtColor(np.clip(gray, 0, 255).astype(np.uint8), cv2.COLOR_GRAY2BGR)
+    true = np.array([[x0, y0], [x0 + box_w, y0], [x0 + box_w, y0 + box_h], [x0, y0 + box_h]], np.float32)
+    return img, true

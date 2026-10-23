@@ -4,8 +4,12 @@ from dataclasses import dataclass
 import cv2
 import numpy as np
 
-MIN_TRAY_AREA_FRAC = 0.02  # ignore specks smaller than this share of the search area
-MIN_CELL_PX = 8
+MIN_TRAY_AREA_FRAC = 0.01  # ignore specks smaller than this share of the search area
+MIN_CELL_PX = 12  # smaller periods are edges inside one cell
+MIN_PERIOD_STRENGTH = 0.25  # weaker autocorrelation peaks are noise, not cells
+MAX_PERIOD_FRAC = 0.6  # 2 cells give ~0.5; a single cell's own walls give 0.65+
+MIN_NESTED_CONFIDENCE = 0.35  # a blob inside the best one wins with at least this grid confidence
+MAX_CANDIDATES_PER_POLARITY = 2
 
 
 @dataclass
@@ -23,25 +27,44 @@ def order_corners(pts):
     return np.array([pts[s.argmin()], pts[d.argmax()], pts[s.argmax()], pts[d.argmin()]], np.float32)
 
 
-def find_tray_quad(img, bbox=None):
-    """Largest dark blob inside bbox (x0, y0, x1, y1) as 4 ordered corners, or None."""
+def _is_background(contour, w, h, margin=2):
+    """Table or paper: touches 3+ sides of the frame. A tray overhanging one edge is kept."""
+    x, y, cw, ch = cv2.boundingRect(contour)
+    return sum((x <= margin, y <= margin, x + cw >= w - margin, y + ch >= h - margin)) >= 3
+
+
+def tray_candidates(img, bbox=None):
+    """Ordered corner quads of dark and light blobs inside bbox (x0, y0, x1, y1).
+
+    The tray can be darker (plastic tray on a table) or lighter (cardboard box on a mat)
+    than its surroundings, so both polarities are tried. Without a bbox, blobs touching
+    most of the frame border are background (table, paper) and are skipped.
+    """
     h, w = img.shape[:2]
     x0, y0, x1, y1 = (0, 0, w, h) if bbox is None else (max(0, int(bbox[0])), max(0, int(bbox[1])),
                                                          min(w, int(bbox[2])), min(h, int(bbox[3])))
     if x1 - x0 < 4 or y1 - y0 < 4:
-        return None
+        return []
     gray = cv2.cvtColor(img[y0:y1, x0:x1], cv2.COLOR_BGR2GRAY)
     gray = cv2.GaussianBlur(gray, (0, 0), 2)
-    _, dark = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
-    dark = cv2.morphologyEx(dark, cv2.MORPH_CLOSE, np.ones((9, 9), np.uint8))
-    contours, _ = cv2.findContours(dark, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    if not contours:
-        return None
-    best = max(contours, key=cv2.contourArea)
-    if cv2.contourArea(best) < MIN_TRAY_AREA_FRAC * gray.size:
-        return None
-    box = cv2.boxPoints(cv2.minAreaRect(best)) + (x0, y0)
-    return order_corners(box)
+    quads = []
+    for mode in (cv2.THRESH_BINARY_INV, cv2.THRESH_BINARY):
+        _, mask = cv2.threshold(gray, 0, 255, mode + cv2.THRESH_OTSU)
+        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((9, 9), np.uint8))
+        # CCOMP keeps blobs that sit inside a hole of another blob (box on a mat on paper)
+        contours, hierarchy = cv2.findContours(mask, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_SIMPLE)
+        outer = [c for c, hier in zip(contours, hierarchy[0]) if hier[3] == -1] if contours else []
+        contours = [c for c in outer if cv2.contourArea(c) >= MIN_TRAY_AREA_FRAC * gray.size
+                    and (bbox is not None or not _is_background(c, *gray.shape[::-1]))]
+        for c in sorted(contours, key=cv2.contourArea, reverse=True)[:MAX_CANDIDATES_PER_POLARITY]:
+            quads.append(order_corners(cv2.boxPoints(cv2.minAreaRect(c)) + (x0, y0)))
+    return quads
+
+
+def find_tray_quad(img, bbox=None):
+    """Largest tray-like blob inside bbox as 4 ordered corners, or None."""
+    quads = tray_candidates(img, bbox)
+    return max(quads, key=lambda q: cv2.contourArea(q)) if quads else None
 
 
 def warp_tray(img, quad):
@@ -54,17 +77,22 @@ def warp_tray(img, quad):
 
 
 def _count_cells(profile):
-    """(count, confidence) from the periodicity of a 1-D gradient profile."""
+    """(count, confidence) from the periodicity of a 1-D gradient profile.
+
+    Confidence is None when no period is found, i.e. a single cell along this axis.
+    """
     n = len(profile)
     p = profile - profile.mean()
     if n < 2 * MIN_CELL_PX or p.std() < 1e-6:
-        return 1, 0.0
-    ac = np.correlate(p, p, "full")[n - 1:]
+        return 1, None
+    # unbiased autocorrelation (divided by the overlap), so long periods are not damped
+    ac = np.correlate(p, p, "full")[n - 1:] / (n - np.arange(n))
     ac = ac / ac[0]
-    lags = np.arange(MIN_CELL_PX, n // 2)
-    peaks = [lag for lag in lags if ac[lag] >= ac[lag - 1] and ac[lag] >= ac[lag + 1] and ac[lag] > 0]
+    lags = np.arange(MIN_CELL_PX, int(n * MAX_PERIOD_FRAC))
+    peaks = [lag for lag in lags if ac[lag] >= ac[lag - 1] and ac[lag] >= ac[lag + 1]
+             and ac[lag] > MIN_PERIOD_STRENGTH]
     if not peaks:
-        return 1, 0.0
+        return 1, None
     top = max(ac[lag] for lag in peaks)
     # the first strong peak is the fundamental; later ones are its harmonics
     lag = next(lag for lag in peaks if ac[lag] >= 0.8 * top)
@@ -84,13 +112,29 @@ def estimate_grid(warped):
     gy = np.abs(cv2.Sobel(gray, cv2.CV_32F, 0, 1))[my:h - my, mx:w - mx]
     cols, conf_c = _count_cells(gx.mean(axis=0))
     rows, conf_r = _count_cells(gy.mean(axis=1))
-    return rows, cols, (conf_r + conf_c) / 2
+    # an axis with a single cell has no period to measure, so only periodic axes count
+    confs = [c for c in (conf_r, conf_c) if c is not None]
+    return rows, cols, (sum(confs) / len(confs) if confs else 0.0)
+
+
+def _contains(outer, inner):
+    """True when inner's center lies inside outer and inner is smaller."""
+    center = tuple(float(v) for v in inner.mean(axis=0))
+    return cv2.contourArea(inner) < cv2.contourArea(outer) and cv2.pointPolygonTest(outer, center, False) > 0
 
 
 def analyze_tray(img, bbox=None):
-    """Full pipeline on a BGR frame; None when no dark tray-like blob is found."""
-    quad = find_tray_quad(img, bbox)
-    if quad is None:
+    """Full pipeline on a BGR frame; None when no tray-like blob is found.
+
+    Keeps the candidate with the clearest cell pattern, but a candidate sitting inside it
+    with a clear pattern of its own wins: the tray is the object on the mat, not the mat.
+    """
+    scored = []
+    for quad in tray_candidates(img, bbox):
+        rows, cols, confidence = estimate_grid(warp_tray(img, quad))
+        scored.append((quad, TrayGeometry(quad.tolist(), rows, cols, confidence)))
+    if not scored:
         return None
-    rows, cols, confidence = estimate_grid(warp_tray(img, quad))
-    return TrayGeometry(quad.tolist(), rows, cols, confidence)
+    best_quad, best = max(scored, key=lambda s: s[1].confidence)
+    nested = [g for q, g in scored if g.confidence >= MIN_NESTED_CONFIDENCE and _contains(best_quad, q)]
+    return max(nested, key=lambda g: g.confidence) if nested else best
