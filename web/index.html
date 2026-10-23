@@ -151,6 +151,28 @@ html,body,.app{overflow-x:clip}
   #seedMobile .seed-grid { grid-template-columns:repeat(4,minmax(0,1fr)); }
 }
 @media (min-width:900px) { .mobile-seed-dock { display:none !important; } #cola { display:none !important; } }
+/* Ajustes solicitados: mapa compacto en PC y barra móvil visible tras crear el casillero */
+.mobile-seed-dock[hidden] { display:none !important; }
+@media (min-width:900px) {
+  .sidebar { width:260px !important; flex-basis:260px !important; padding:18px 13px !important; }
+  .fill-all-wrap { display:block !important; margin:10px 0 14px !important; padding:10px !important; border:2px dashed #b9f36b !important; background:#ffffff12 !important; }
+  .fill-all-label { font-size:11px !important; color:#c3f56a !important; }
+  .fill-all-btn { min-height:58px; border:2px dashed #c3f56a !important; cursor:copy; }
+  #mapa-semillero { max-width:760px; }
+  #mapa-semillero .tray-grid { max-width:560px; margin-inline:auto; gap:5px; padding:8px; }
+  #mapa-semillero .tray-cell { border-radius:8px; }
+  #mapa-semillero .tray-cell .cell-emoji { font-size:18px; }
+  #mapa-semillero .tray-actions { margin-top:10px; }
+  #mapa-semillero .tray-actions button { padding:10px 12px; font-size:12px; }
+  #cola, [data-scroll="cola"] { display:none !important; }
+}
+@media (max-width:899px) {
+  #mainApp:not([hidden]) + .mobile-seed-dock { display:block !important; }
+  .mobile-seed-dock { z-index:50 !important; }
+  .main { padding-bottom:125px !important; }
+  #seedMobile .seed-grid { grid-template-columns:repeat(4,minmax(0,1fr)) !important; display:grid !important; }
+  #seedMobile .seed { min-width:0 !important; width:100% !important; }
+}
 </style>
 </head>
 <body><section id="scannerGate" class="scanner-gate" aria-labelledby="scannerTitle">
@@ -249,25 +271,3 @@ renderTray();updateTrayLegend();renderQueue();updateRobot();
 <script src="https://cdn.jsdelivr.net/npm/js-aruco2@2.0.0/src/cv.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/js-aruco2@2.0.0/src/aruco.js"></script>
 <script src="./scanner.js"></script></body></html>
-/* Ajustes solicitados: mapa compacto en PC y barra móvil visible tras crear el casillero */
-.mobile-seed-dock[hidden] { display:none !important; }
-@media (min-width:900px) {
-  .sidebar { width:260px !important; flex-basis:260px !important; padding:18px 13px !important; }
-  .fill-all-wrap { display:block !important; margin:10px 0 14px !important; padding:10px !important; border:2px dashed #b9f36b !important; background:#ffffff12 !important; }
-  .fill-all-label { font-size:11px !important; color:#c3f56a !important; }
-  .fill-all-btn { min-height:58px; border:2px dashed #c3f56a !important; cursor:copy; }
-  #mapa-semillero { max-width:760px; }
-  #mapa-semillero .tray-grid { max-width:560px; margin-inline:auto; gap:5px; padding:8px; }
-  #mapa-semillero .tray-cell { border-radius:8px; }
-  #mapa-semillero .tray-cell .cell-emoji { font-size:18px; }
-  #mapa-semillero .tray-actions { margin-top:10px; }
-  #mapa-semillero .tray-actions button { padding:10px 12px; font-size:12px; }
-  #cola, [data-scroll="cola"] { display:none !important; }
-}
-@media (max-width:899px) {
-  #mainApp:not([hidden]) + .mobile-seed-dock { display:block !important; }
-  .mobile-seed-dock { z-index:50 !important; }
-  .main { padding-bottom:125px !important; }
-  #seedMobile .seed-grid { grid-template-columns:repeat(4,minmax(0,1fr)) !important; display:grid !important; }
-  #seedMobile .seed { min-width:0 !important; width:100% !important; }
-}
