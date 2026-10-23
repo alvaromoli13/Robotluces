@@ -97,12 +97,18 @@ Cada alveolo del plan se siembra en dos fases:
 
 | Fase | Cómo se hace | Qué se mueve en la escena |
 |---|---|---|
-| 1. **Coger** la "semilla" de la caja del color X | **Policy aprendida** de LeRobot, entrenada con demostraciones teleoperadas | Las **cajas pueden moverse** unos centímetros: la policy las encuentra con la cámara |
+| 1. **Coger** la "semilla" de la caja del color X | Movimiento programado hasta encima de la caja X y después **policy aprendida** (ACT) que hace el agarre final con la cámara de la muñeca | Las **cajas pueden moverse** unos centímetros dentro de su zona: la policy corrige la diferencia |
 | 2. **Soltarla** en el alveolo (fila, columna) | **Visión + cinemática inversa**: la cámara localiza el alveolo y el brazo calcula cómo llegar encima | El **semillero va donde lo deje el agricultor**, dentro de la zona de trabajo |
 
-- **Policy**: 4 ACT, una por color, con unos 50 episodios cada una. Es lo más seguro.
-  Alternativa: una sola SmolVLA que reciba el color como texto (*"pick the ball from the
-  red box"*); da más que contar al jurado pero va más justa de tiempo en el Mac.
+- **Policy: una sola ACT de agarre, igual para todos los colores.** El brazo llega por
+  movimiento programado a una posición enseñada encima de la caja que toca, y desde ahí la
+  ACT hace solo "coge la semilla que tienes debajo", guiándose sobre todo por la cámara de
+  la muñeca. Es la misma habilidad para las 4 cajas, así que basta **un modelo y unos
+  60-80 episodios** mezclando los 4 colores, y se entrena en una noche.
+- **Por qué no 4 ACT, una por color**: en el Mac cada entrenamiento de 20 000 pasos tarda
+  unas 4 horas (medido antes del evento), unas 17 horas para las 4. No cabe en el tiempo
+  del hackathon.
+- Alternativa descartada por tiempo: una SmolVLA que reciba el color como texto.
 - **Por qué no se aprende todo**: ACT no recibe "a qué alveolo voy". Aprender
   "caja X → alveolo (fila, columna)" exigiría demostraciones para 4 colores × 40 alveolos,
   cientos de combinaciones, y no cabe en 48 horas. La parte geométrica (dónde está cada
@@ -114,6 +120,38 @@ Cada alveolo del plan se siembra en dos fases:
 - **Plan B de la recogida**: si la policy no es fiable a tiempo, las cajas también se fijan
   y la recogida se hace con posiciones enseñadas. La demo sale igual y la policy queda
   como mejora.
+
+## Secuencia de siembra
+
+El ejecutor del backend recorre el plan celda a celda. Cada siembra es una secuencia fija:
+
+```
+inicio → encima de la caja X (posición enseñada) → ACT coge la semilla
+→ subir → encima de la celda (cinemática inversa) → abrir pinza → inicio
+```
+
+1. **Encima de la caja X**: una posición articular enseñada con el leader para cada zona
+   de caja, guardada una vez.
+2. **Agarre**: se ejecuta la ACT durante unos segundos, como máximo, hasta que cierra la
+   pinza.
+3. **¿Ha cogido algo?** Se mira la posición de la pinza (`gripper.pos`, de 0 a 100): si se
+   ha cerrado del todo, no hay nada dentro. Si falla, se reintenta una vez y, si vuelve a
+   fallar, se marca la celda como fallida y se pasa a la siguiente.
+4. **Subir** unos centímetros en vertical para no arrastrar la caja.
+5. **Encima de la celda**: el centro de la celda en píxeles pasa a (x, y) del robot con la
+   homografía, se le suma una altura fija de unos 5 cm sobre la bandeja y la cinemática
+   inversa da los ángulos (ver la sección siguiente).
+6. **Abrir pinza**, volver a inicio y avisar a la web del progreso.
+
+**Cómo se mueve el brazo.** El SO-101 recibe ángulos de articulación en grados:
+`robot.send_action({"shoulder_pan.pos": …, "shoulder_lift.pos": …, "elbow_flex.pos": …,
+"wrist_flex.pos": …, "wrist_roll.pos": …, "gripper.pos": 0-100})`. El destino no se manda
+de golpe: se interpola entre la posición actual y la final a unos 30 Hz, y
+`max_relative_target` en la configuración del follower limita cuánto puede moverse en
+cada paso, por seguridad.
+
+**Stop**: corta la secuencia y desactiva el par de los motores. Tiene que funcionar desde
+la web y desde el teclado del portátil.
 
 ## Semillero libre: detección y cinemática inversa
 
@@ -162,7 +200,8 @@ marcan otro patrón). Tests: `cd backend && uv run pytest`.
 - Se lleva la punta de la pinza a 4-6 marcas de la mesa. En cada una se guarda el píxel
   donde la ve la cámara y la posición de la punta que da la cinemática directa.
 - `cv2.findHomography` convierte esas parejas en una transformación **píxel de la mesa →
-  coordenadas (x, y) del robot**.
+  coordenadas (x, y) del robot**. Como esas posiciones salen del mismo modelo del brazo que
+  luego usa la cinemática inversa, buena parte de los errores del modelo se compensan.
 - Unos 15 minutos. Solo se repite si se mueve la cámara cenital o el robot.
 
 ### 3. Soltar en el alveolo
@@ -175,6 +214,9 @@ marcan otro patrón). Tests: `cd backend && uv run pytest`.
     [SO-ARM100](https://github.com/TheRobotStudio/SO-ARM100/tree/main/Simulation/SO101).
 
 ### Riesgos y cómo mitigarlos
+- **El URDF tiene que coincidir con nuestra calibración**: `so101_new_calib` está pensado
+  para la calibración de LeRobot, pero hay que comprobarlo en 10 minutos. Se mueve el brazo
+  a mano y se mira que la posición que da `forward_kinematics` coincida con la real.
 - **Precisión**: entre la calibración y la cinemática se puede acumular alrededor de 1 cm
   de error (estimación, **hay que medirlo**). Con alveolos de 4 cm y pelotas de 2,5 cm el
   margen es justo. Mitigación: soltar desde un poco más arriba, pelotas algo más pequeñas o
@@ -217,7 +259,7 @@ con la pinza del SO-101 fallaría demasiado para aguantar 5 demos seguidas.
     "red":    "tomate",
     "green":  "lechuga",
     "yellow": "girasol",
-    "blue":   "albahaca"
+    "purple": "albahaca"
   },
   "cells": [["red", "red", null, "green", "..."], "..."]
 }
@@ -251,19 +293,27 @@ con la pinza del SO-101 fallaría demasiado para aguantar 5 demos seguidas.
 - [ ] Servidor local (FastAPI + WebSocket) con los endpoints `POST /plan`, `POST /stop`
       y `WS /progress`, y streaming de la cámara.
 - [ ] Detección del semillero con ArUco → centros de los alveolos en píxeles.
-- [ ] Instalar `lerobot[kinematics]` y descargar el URDF del SO-101.
+- [ ] Instalar `lerobot[kinematics]` y descargar el URDF del SO-101. Comprobar que la
+      cinemática directa coincide con la posición real del brazo.
+- [ ] Enseñar con el leader la posición encima de cada zona de caja y la posición de
+      inicio.
 - [ ] Calibración cámara-robot (homografía píxel → x, y del robot).
 - [ ] Soltar por cinemática inversa y **medir el error** con una prueba de 10 alveolos.
 - [ ] Sábado a mediodía: decidir entre semillero libre o plan B (esquinas enseñadas).
-- [ ] Ejecutor de la cola con parada segura: **Stop** desactiva el par de los motores.
+- [ ] Ejecutor de la [secuencia de siembra](#secuencia-de-siembra): agarre con la ACT,
+      comprobación de la pinza con un reintento, movimiento interpolado y parada segura
+      (**Stop** desactiva el par de los motores).
 
 ### 4. Datos y policy (viernes noche-sábado)
-- [ ] Tanda de prueba: unos 10 episodios de un color, entrenar pocos pasos y comprobar
-      que aprende antes de grabar todo.
-- [ ] Grabar unos 50 episodios por color de "coger la pelota de la caja X" con
-      `lerobot-record`, **moviendo un poco la caja entre episodios**.
+- [ ] Tanda de prueba: unos 10 episodios, entrenar pocos pasos y comprobar que aprende
+      antes de grabar todo.
+- [ ] Grabar **60-80 episodios de agarre** con `lerobot-record` (tarea: *"grasp the seed
+      below the gripper"*). Cada episodio empieza en la posición enseñada encima de una
+      caja y acaba con la semilla cogida y levantada. Mezclar los 4 colores, **mover un
+      poco la caja dentro de su zona** y cambiar algo la luz entre episodios.
 - [ ] Subir los datasets al Hub de Hugging Face.
-- [ ] Entrenar (ACT en el Mac durante la noche, o en GPU cloud) y probar con rollout.
+- [ ] Entrenar **una ACT** en el Mac durante la noche (unas 4 h para 20 000 pasos), o en
+      GPU cloud, y probar con rollout.
 - [ ] Apuntar los fallos de cada iteración y cómo se arreglaron.
 
 ### 5. Demo y entrega (domingo antes de las 13:00)
