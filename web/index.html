@@ -134,6 +134,22 @@ html,body,.app{overflow-x:clip}
 @media(min-width:900px){.app{display:flex;min-height:100vh}.sidebar{display:block;position:sticky;top:0;width:245px;height:100vh;overflow-y:auto;flex:0 0 245px;background:var(--forest);color:#fff;padding:22px 16px}.sidebar .brandname{color:white}.sidebar .brand-sub{color:#c3d5c5}.sidebar .side-label{font-size:10px;letter-spacing:1.2px;font-weight:800;color:#a9c8aa;margin-top:30px}.main{flex:1;width:calc(100% - 245px);padding:28px clamp(18px,3vw,48px);min-width:0}.left-col{max-width:900px}.mobile-seed-dock{display:none!important}}
 @media(max-width:899px){.main{padding:14px 12px 180px}.sidebar{display:none!important}.mobile-seed-dock{display:block;position:fixed;left:0;right:0;bottom:64px;z-index:6;background:#fffefaf7;border-top:1px solid var(--line);padding:10px 12px 12px;box-shadow:0 -8px 25px #092e250d}.mobile-dock-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:8px}.mobile-dock-head strong{font:800 13px Manrope,sans-serif}.mobile-dock-head span{font-size:9px;color:var(--muted);text-align:right}#seedMobile .seed-grid{display:flex;gap:8px;overflow-x:auto;padding:2px 0 5px;scroll-snap-type:x proximity}#seedMobile .seed{flex:0 0 88px;min-width:0;padding:7px 6px;scroll-snap-align:start;text-align:center}#seedMobile .seed-photo{height:42px;margin-bottom:5px}#seedMobile .seed-name{font-size:11px}#seedMobile .seed-detail{display:none}#seedMobile .seed-check{right:5px;top:5px}.bottom-nav{display:none!important}.mobile-seed-dock{bottom:0;padding-bottom:max(12px,env(safe-area-inset-bottom))}.tray-actions{grid-template-columns:minmax(0,1fr)}}
 @media(max-width:380px){.scanner-gate{padding:16px 10px}.scanner-card{padding:20px}.main{padding-left:9px;padding-right:9px}.mobile-seed-dock{padding-left:8px;padding-right:8px}.tray-grid{gap:5px;padding:10px 7px}}
+
+/* Interfaz simplificada: sin navegación duplicada ni panel de cola visible */
+.bottom-nav, nav[aria-label], .nav-item, .side-link, #cola { display:none !important; }
+.mobile-seed-dock { display:none; }
+#mainApp:not([hidden]) .mobile-seed-dock { display:block; }
+@media (max-width:899px) {
+  .mobile-seed-dock { position:fixed; left:0; right:0; bottom:0; z-index:20; background:#fff; border-top:1px solid var(--line); padding:8px 10px max(10px,env(safe-area-inset-bottom)); box-shadow:0 -6px 22px #092e2518; }
+  .main { padding:12px 10px 190px !important; }
+  #seedMobile .seed-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:6px; overflow:visible; padding:0; }
+  #seedMobile .seed { min-width:0; width:100%; padding:5px 3px; border-radius:10px; text-align:center; }
+  #seedMobile .seed-photo { width:100%; height:42px; object-fit:cover; margin:0 0 4px; border-radius:7px; }
+  #seedMobile .seed-name { display:block; font-size:10px; line-height:1.2; overflow-wrap:anywhere; }
+  #seedMobile .seed-detail, #seedMobile .seed-check { display:none !important; }
+  #seedMobile .seed-grid { grid-template-columns:repeat(4,minmax(0,1fr)); }
+}
+@media (min-width:900px) { .mobile-seed-dock { display:none !important; } #cola { display:none !important; } }
 </style>
 </head>
 <body><section id="scannerGate" class="scanner-gate" aria-labelledby="scannerTitle">
@@ -167,7 +183,7 @@ html,body,.app{overflow-x:clip}
 <section class="panel" id="cola"><div class="panel-head"><div><h2 class="panel-title">Cola de siembra</h2><p class="panel-desc">Órdenes listas para el semillero.</p></div><span class="tag" id="queueTag">3 ÓRDENES</span></div><div class="queue" id="queueList"><div class="queue-item"><div class="queue-icon">🥬</div><div class="queue-info"><div class="queue-name">Lechuga</div><div class="queue-detail">10 semillas · Orden #024</div></div><span class="queue-status active">En curso</span></div><div class="queue-item"><div class="queue-icon">🍅</div><div class="queue-info"><div class="queue-name">Tomate</div><div class="queue-detail">15 semillas · Orden #025</div></div><span class="queue-status">Pendiente</span></div><div class="queue-item"><div class="queue-icon">🌿</div><div class="queue-info"><div class="queue-name">Albahaca</div><div class="queue-detail">8 semillas · Orden #026</div></div><span class="queue-status">Pendiente</span></div></div></section>
 </div></div><p class="footer-note">SMARTSEED © 2026 · Cultivando un futuro más verde · Prototipo visual</p>
 </main></div>
-<div class="mobile-seed-dock" id="mobileSeedDock"><div class="mobile-dock-head"><strong>Semillas</strong><span>Elige una variedad y toca un hueco</span></div><button type="button" class="fill-all-btn mobile-fill-all" data-fill-all>↟ Rellenar todo el mapa con la seleccionada</button><div id="seedMobile"></div></div><div class="toast" id="toast" role="status" aria-live="polite"></div>
+<div class="mobile-seed-dock" id="mobileSeedDock"><div id="seedMobile"></div></div><div class="toast" id="toast" role="status" aria-live="polite"></div>
 <script>
 (()=>{
 const $=id=>document.getElementById(id);let mobileDropAt=0;let seed={name:'Tomate',emoji:'🍅',time:2},paused=false,running=false,progress=0,planted=128,nextId=1,orders=[],logs=[];let toastTimer,progressTimer;
@@ -180,7 +196,7 @@ function startOrder(){if(paused||running)return;let o=orders.find(o=>o.status===
 
 
 let trayRows=3,trayCols=3,TRAY_SIZE=9;
-const seedColors={'Tomate':'#ffe2d7','Lechuga':'#dff2d8','Zanahoria':'#ffe8c8','Albahaca':'#d8f0dc','Girasol':'#fff0b8','Pimiento':'#fbe0d8'};
+const seedColors={'Tomate':'#ffe2d7','Pimiento':'#fbe0d8','Limon':'#fff4b8','Frambuesas':'#f3dced'};
 let tray=Array(TRAY_SIZE).fill(null);
 try{const saved=JSON.parse(localStorage.getItem('smartseed-last-layout')||'null');if(Array.isArray(saved))tray=Array.from({length:TRAY_SIZE},(_,i)=>saved[i]&&typeof saved[i].name==='string'?saved[i]:null)}catch(e){}
 function saveTray(){try{localStorage.setItem('smartseed-last-layout',JSON.stringify(tray))}catch(e){}}
@@ -209,6 +225,13 @@ const mobilePalette=seedPalette.cloneNode(true);mobilePalette.id='seedGridMobile
 function selectSeed(b){document.querySelectorAll('.seed').forEach(x=>x.classList.toggle('selected',x.dataset.seed===b.dataset.seed));seed={name:b.dataset.seed,emoji:b.dataset.emoji,time:Number(b.dataset.time)};updateTrayLegend()}
 function bindSeedButtons(root){root.querySelectorAll('.seed').forEach(b=>{b.draggable=matchMedia('(min-width: 900px)').matches;b.addEventListener('click',()=>selectSeed(b));b.addEventListener('dragstart',e=>{selectSeed(b);e.dataTransfer.setData('text/plain',JSON.stringify(seed));e.dataTransfer.effectAllowed='copy'});b.addEventListener('pointerdown',()=>{if(matchMedia('(max-width: 899px)').matches)selectSeed(b)});});}
 bindSeedButtons($('seedSidebar'));bindSeedButtons($('seedMobile'));
+const fillSlots=document.querySelectorAll('[data-fill-all]');
+fillSlots.forEach(slot=>{
+ slot.setAttribute('aria-label','Arrastra aquí una semilla para rellenar todo el mapa');
+ slot.addEventListener('dragover',e=>{e.preventDefault();slot.classList.add('drop-target');if(e.dataTransfer)e.dataTransfer.dropEffect='copy'});
+ slot.addEventListener('dragleave',()=>slot.classList.remove('drop-target'));
+ slot.addEventListener('drop',e=>{e.preventDefault();slot.classList.remove('drop-target');let picked=seed;try{const raw=e.dataTransfer.getData('text/plain');if(raw)picked=JSON.parse(raw)}catch(err){}seed=picked;tray=tray.map(()=>({...picked}));saveTray();renderTray();updateTrayLegend();toast('Mapa completo con '+picked.name+'.');});
+});
 $('startScanBtn').addEventListener('click',()=>$('cameraInput').click());
 $('manualTrayBtn').addEventListener('click',()=>{$('scanResult').hidden=true;$('customTrayForm').hidden=false;$('customRows').focus()});
 $('cameraInput').addEventListener('change',()=>{const file=$('cameraInput').files&&$('cameraInput').files[0];if(!file)return;$('scanResult').hidden=false;$('customTrayForm').hidden=false;$('scanResult').querySelector('strong').textContent='Imagen capturada: '+file.name;$('scanResult').querySelector('p').textContent='No se ha podido contar los huecos de forma fiable en este navegador. Ajusta las filas y columnas para crear el mapa; la detección automática requiere integrar un modelo de visión.';});
