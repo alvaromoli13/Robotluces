@@ -137,7 +137,7 @@ html,body,.app{overflow-x:clip}
 @media(max-width:380px){.scanner-gate{padding:16px 10px}.scanner-card{padding:20px}.main{padding-left:9px;padding-right:9px}.mobile-seed-dock{padding-left:8px;padding-right:8px}.tray-grid{gap:5px;padding:10px 7px}}
 
 /* Interfaz simplificada: sin navegación duplicada ni panel de cola visible */
-.bottom-nav, nav[aria-label], .nav-item, .side-link, #cola { display:none !important; }
+.bottom-nav, nav[aria-label], .nav-item, .side-link, [data-scroll="cola"], #cola { display:none !important; }
 .mobile-seed-dock { display:none; }
 #mainApp:not([hidden]) .mobile-seed-dock { display:block; }
 @media (max-width:899px) {
@@ -170,10 +170,10 @@ html,body,.app{overflow-x:clip}
 <div class="workspace"><div class="left-col">
 <section class="panel seed-source" id="siembra"><div class="panel-head"><div><h2 class="panel-title">Tipos de semilla</h2><p class="panel-desc">Elige una variedad y toca los huecos del mapa para asignarla. Las órdenes solo se crean desde el mapa.</p></div><span class="tag">PASO 01</span></div>
 <div class="seed-grid" id="seedGrid">
-<button class="seed selected" data-seed="Tomate" data-emoji="🍅" data-time="2"><span class="seed-check">✓</span><img class="seed-photo" src="https://images.unsplash.com/photo-1546094096-0df4bcaaa337?auto=format&fit=crop&w=360&q=75" alt="Tomates" loading="lazy"><div class="seed-name">Tomate</div><div class="seed-detail">Sol · 2 s / semilla</div></button>
-<button class="seed" data-seed="Pimiento" data-emoji="🫑" data-time="2"><span class="seed-check">✓</span><img class="seed-photo" src="https://images.unsplash.com/photo-1563565375-f3fdfdbefa83?auto=format&fit=crop&w=360&q=75" alt="Pimientos" loading="lazy"><div class="seed-name">Pimiento</div><div class="seed-detail">Calor · 2 s</div></button>
-<button class="seed" data-seed="Limon" data-emoji="🍋" data-time="2"><span class="seed-check">✓</span><img class="seed-photo" src="https://images.unsplash.com/photo-1590502593747-42a996133562?auto=format&fit=crop&w=360&q=75" alt="Limones" loading="lazy"><div class="seed-name">Limón</div><div class="seed-detail">Cítrico · 2 s</div></button>
-<button class="seed" data-seed="Frambuesas" data-emoji="🫐" data-time="2"><span class="seed-check">✓</span><img class="seed-photo" src="https://images.unsplash.com/photo-1577069861033-55d04cec4ef5?auto=format&fit=crop&w=360&q=75" alt="Frambuesas" loading="lazy"><div class="seed-name">Frambuesas</div><div class="seed-detail">Baya · 2 s</div></button>
+<button class="seed selected" data-seed="TOMATE" data-emoji="🍅" data-time="2"><span class="seed-check">✓</span><img class="seed-photo" src="https://images.unsplash.com/photo-1546094096-0df4bcaaa337?auto=format&fit=crop&w=360&q=75" alt="Tomates" loading="lazy"><div class="seed-name">TOMATE</div><div class="seed-detail">Sol · 2 s / semilla</div></button>
+<button class="seed" data-seed="PIMIENTO" data-emoji="🫑" data-time="2"><span class="seed-check">✓</span><img class="seed-photo" src="https://images.unsplash.com/photo-1563565375-f3fdfdbefa83?auto=format&fit=crop&w=360&q=75" alt="Pimientos" loading="lazy"><div class="seed-name">PIMIENTO</div><div class="seed-detail">Calor · 2 s</div></button>
+<button class="seed" data-seed="Limón" data-emoji="🍋" data-time="2"><span class="seed-check">✓</span><img class="seed-photo" src="https://images.unsplash.com/photo-1590502593747-42a996133562?auto=format&fit=crop&w=360&q=75" alt="Limones" loading="lazy"><div class="seed-name">LIMON</div><div class="seed-detail">Cítrico · 2 s</div></button>
+<button class="seed" data-seed="BERENJENAS" data-emoji="🍆" data-time="2"><span class="seed-check">✓</span><img class="seed-photo" src="https://images.unsplash.com/photo-1659261200824-6d6f8f6c06c2?auto=format&fit=crop&w=360&q=75" alt="Berenjenas" loading="lazy"><div class="seed-name">BERENJENAS</div><div class="seed-detail">Hortaliza · 2 s</div></button>
 </div></section>
 <section class="panel" id="mapa-semillero">
 <div class="panel-head"><div><h2 class="panel-title">Mapa del semillero</h2><p class="panel-desc" id="trayDescription">Arrastra las semillas desde el menú hasta cada hueco.</p></div><span class="tag" id="trayDimensions">3 × 3</span></div>
@@ -185,7 +185,7 @@ html,body,.app{overflow-x:clip}
 <section class="panel" id="cola"><div class="panel-head"><div><h2 class="panel-title">Cola de siembra</h2><p class="panel-desc">Órdenes listas para el semillero.</p></div><span class="tag" id="queueTag">3 ÓRDENES</span></div><div class="queue" id="queueList"><div class="queue-item"><div class="queue-icon">🥬</div><div class="queue-info"><div class="queue-name">Lechuga</div><div class="queue-detail">10 semillas · Orden #024</div></div><span class="queue-status active">En curso</span></div><div class="queue-item"><div class="queue-icon">🍅</div><div class="queue-info"><div class="queue-name">Tomate</div><div class="queue-detail">15 semillas · Orden #025</div></div><span class="queue-status">Pendiente</span></div><div class="queue-item"><div class="queue-icon">🌿</div><div class="queue-info"><div class="queue-name">Albahaca</div><div class="queue-detail">8 semillas · Orden #026</div></div><span class="queue-status">Pendiente</span></div></div></section>
 </div></div><p class="footer-note">SMARTSEED © 2026 · Cultivando un futuro más verde · Prototipo visual</p>
 </main></div>
-<div class="mobile-seed-dock" id="mobileSeedDock"><div id="seedMobile"></div></div><div class="toast" id="toast" role="status" aria-live="polite"></div>
+<div class="mobile-seed-dock" id="mobileSeedDock" hidden><div id="seedMobile"></div></div><div class="toast" id="toast" role="status" aria-live="polite"></div>
 <script>
 (()=>{
 const $=id=>document.getElementById(id);let mobileDropAt=0;let seed={name:'Tomate',emoji:'🍅',time:2},paused=false,running=false,progress=0,planted=128,nextId=1,orders=[],logs=[];let toastTimer,progressTimer;
@@ -198,7 +198,7 @@ function startOrder(){if(paused||running)return;let o=orders.find(o=>o.status===
 
 
 let trayRows=3,trayCols=3,TRAY_SIZE=9;
-const seedColors={'Tomate':'#ffe2d7','Pimiento':'#fbe0d8','Limon':'#fff4b8','Frambuesas':'#f3dced'};
+const seedColors={'TOMATE':'#ffe2d7','PIMIENTO':'#fbe0d8','Limón':'#fff4b8','BERENJENAS':'#e9ddf5'};
 let tray=Array(TRAY_SIZE).fill(null);
 try{const saved=JSON.parse(localStorage.getItem('smartseed-last-layout')||'null');if(Array.isArray(saved))tray=Array.from({length:TRAY_SIZE},(_,i)=>saved[i]&&typeof saved[i].name==='string'?saved[i]:null)}catch(e){}
 function saveTray(){try{localStorage.setItem('smartseed-last-layout',JSON.stringify(tray))}catch(e){}}
@@ -245,7 +245,7 @@ $('closeCameraBtn').addEventListener('click',()=>{stopCamera();$('cameraPanel').
 window.addEventListener('pagehide',stopCamera);
 $('manualTrayBtn').addEventListener('click',()=>{$('scanResult').hidden=true;$('customTrayForm').hidden=false;$('customRows').focus()});
 $('cameraInput').addEventListener('change',()=>{const file=$('cameraInput').files&&$('cameraInput').files[0];if(!file)return;$('scanResult').hidden=false;$('customTrayForm').hidden=false;$('scanResult').querySelector('strong').textContent='Imagen capturada: '+file.name;$('scanResult').querySelector('p').textContent='No se ha podido contar los huecos de forma fiable en este navegador. Ajusta las filas y columnas para crear el mapa; la detección automática requiere integrar un modelo de visión.';});
-function createTray(rows,cols){rows=Math.max(1,Math.min(20,Math.floor(Number(rows)||3)));cols=Math.max(1,Math.min(20,Math.floor(Number(cols)||3)));if(rows*cols>200){toast('El casillero puede tener como máximo 200 huecos.');return}trayRows=rows;trayCols=cols;TRAY_SIZE=rows*cols;tray=Array(TRAY_SIZE).fill(null);saveTray();$('scannerGate').hidden=true;$('mainApp').hidden=false;renderTray();updateTrayLegend();renderQueue();updateRobot();$('mapa-semillero').scrollIntoView({block:'start'});toast('Mapa creado: '+rows+' × '+cols+' ('+TRAY_SIZE+' huecos).');}
+function createTray(rows,cols){rows=Math.max(1,Math.min(20,Math.floor(Number(rows)||3)));cols=Math.max(1,Math.min(20,Math.floor(Number(cols)||3)));if(rows*cols>200){toast('El casillero puede tener como máximo 200 huecos.');return}trayRows=rows;trayCols=cols;TRAY_SIZE=rows*cols;tray=Array(TRAY_SIZE).fill(null);saveTray();$('scannerGate').hidden=true;$('mainApp').hidden=false;$('mobileSeedDock').hidden=false;renderTray();updateTrayLegend();renderQueue();updateRobot();$('mapa-semillero').scrollIntoView({block:'start'});toast('Mapa creado: '+rows+' × '+cols+' ('+TRAY_SIZE+' huecos).');}
 $('createCustomTrayBtn').addEventListener('click',()=>createTray($('customRows').value,$('customCols').value));
 
 document.querySelectorAll('[data-fill-all]').forEach(btn=>btn.addEventListener('click',()=>{if(!tray.length){toast('Crea primero un casillero.');return}if(!seed){toast('Selecciona una variedad primero.');return}tray=tray.map(()=>({...seed}));saveTray();renderTray();updateTrayLegend();renderQueue();updateRobot();log('Mapa rellenado con '+seed.name+'.','🌱');toast('Mapa completo con '+seed.name+'.')}));
@@ -254,3 +254,25 @@ document.addEventListener('pointerup',e=>{if(!matchMedia('(max-width: 899px)').m
 renderTray();updateTrayLegend();renderQueue();updateRobot();
 })();
 </script></body></html>
+/* Ajustes solicitados: mapa compacto en PC y barra móvil visible tras crear el casillero */
+.mobile-seed-dock[hidden] { display:none !important; }
+@media (min-width:900px) {
+  .sidebar { width:260px !important; flex-basis:260px !important; padding:18px 13px !important; }
+  .fill-all-wrap { display:block !important; margin:10px 0 14px !important; padding:10px !important; border:2px dashed #b9f36b !important; background:#ffffff12 !important; }
+  .fill-all-label { font-size:11px !important; color:#c3f56a !important; }
+  .fill-all-btn { min-height:58px; border:2px dashed #c3f56a !important; cursor:copy; }
+  #mapa-semillero { max-width:760px; }
+  #mapa-semillero .tray-grid { max-width:560px; margin-inline:auto; gap:5px; padding:8px; }
+  #mapa-semillero .tray-cell { border-radius:8px; }
+  #mapa-semillero .tray-cell .cell-emoji { font-size:18px; }
+  #mapa-semillero .tray-actions { margin-top:10px; }
+  #mapa-semillero .tray-actions button { padding:10px 12px; font-size:12px; }
+  #cola, [data-scroll="cola"] { display:none !important; }
+}
+@media (max-width:899px) {
+  #mainApp:not([hidden]) + .mobile-seed-dock { display:block !important; }
+  .mobile-seed-dock { z-index:50 !important; }
+  .main { padding-bottom:125px !important; }
+  #seedMobile .seed-grid { grid-template-columns:repeat(4,minmax(0,1fr)) !important; display:grid !important; }
+  #seedMobile .seed { min-width:0 !important; width:100% !important; }
+}
