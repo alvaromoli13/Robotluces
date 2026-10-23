@@ -1,4 +1,4 @@
-# Brota 🌱 — Control de siembra con LeRobot
+# SmartSeed 🌱 — Control de siembra con LeRobot
 
 Prototipo responsive, mobile-first para una hackathon de LeRobot. Interfaz en español para seleccionar semillas, preparar órdenes de siembra y visualizar el estado del robot.
 
