@@ -1,0 +1,25 @@
+[project]
+name = "smartseed-vision"
+version = "0.1.0"
+description = "Offline tray detection service for SmartSeed (OWLv2 + OpenCV)"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "fastapi",
+    "uvicorn[standard]",
+    "python-multipart",
+    "numpy",
+    "opencv-python-headless",
+    "pillow",
+    "torch",
+    "transformers",
+]
+
+[dependency-groups]
+dev = ["pytest", "httpx"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = [".", "tests"]
+
+[tool.uv]
+package = false
