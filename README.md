@@ -174,9 +174,18 @@ la web y desde el teclado del portátil.
   - La web le manda un fotograma por segundo y pinta el resultado en directo, con la
     rejilla en azul. En el Mac (MPS) tarda unos 0,7 s por fotograma; la primera vez,
     unos 12 s más mientras carga el modelo.
-- **Prioridad** en la web: ArUco (rejilla verde) > modelo de visión (azul) > esquinas
-  arrastradas a mano (amarilla). Si el usuario cambia filas o columnas a mano, el modelo
-  ya no las sobrescribe.
+- **Huecos por profundidad, sin esquinas.** **Depth Anything V2 Small**
+  (`depth-anything/Depth-Anything-V2-Small-hf`) estima la profundidad relativa de cada
+  píxel (unos 130 ms por fotograma en MPS). La mesa alrededor de la caja está tan baja
+  como el fondo de un compartimento, así que «hondo» no basta: un hueco es una **cuenca
+  rodeada de paredes**, una zona de la que el agua no podría salir hasta el borde de la
+  imagen sin pasar por encima de una pared. Cada cuenca da el centro de un hueco y la web
+  pone una casilla encima, sea cual sea la forma de la bandeja. Con la caja de cartón de
+  2 compartimentos detecta los 2 huecos con la cámara real.
+- **Prioridad** en la web: ArUco (rejilla verde) > huecos por profundidad (círculos azules)
+  > rejilla del modelo de visión (azul) > esquinas arrastradas a mano (amarilla). Si el
+  usuario escribe filas o columnas a mano, se vuelve a la rejilla y el modelo ya no las
+  sobrescribe.
 - Sin backend la web funciona igual, con marcadores o esquinas a mano.
 
 Arrancar el backend (en el portátil del robot):
@@ -335,7 +344,7 @@ web/                        interfaz (se publica en GitHub Pages)
   scanner.js                cámara en directo, rejilla, ArUco y llamada al backend
   README.md                 notas del prototipo de la interfaz
 backend/                    servicio local de visión (FastAPI + OWLv2 + OpenCV)
-  smartseed_vision/         geometry.py, detector.py, app.py
+  smartseed_vision/         geometry.py, detector.py, depth.py, app.py
   tests/                    pytest con bandejas sintéticas
   run.sh                    arranca en http://localhost:8000
 odd/tasks/                  documentos de tareas por funcionalidad

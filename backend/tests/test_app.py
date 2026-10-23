@@ -4,7 +4,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from smartseed_vision.app import create_app
-from synth import make_tray_image
+from synth import make_box_depth, make_tray_image
 
 
 class StubDetector:
@@ -18,6 +18,17 @@ class StubDetector:
     def detect(self, image_bgr):
         self.calls += 1
         return self.result
+
+
+class StubDepth:
+    device = "stub"
+    loaded = True
+
+    def __init__(self, depth):
+        self.depth = depth
+
+    def estimate(self, image_bgr):
+        return self.depth
 
 
 def png(img):
@@ -37,7 +48,8 @@ def tray():
 
 def test_health_reports_model_state():
     body = TestClient(create_app(StubDetector(None))).get("/health").json()
-    assert body == {"status": "ok", "model_loaded": True, "device": "stub"}
+    assert body == {"status": "ok", "model_loaded": True, "device": "stub",
+                    "depth_loaded": False, "depth_device": "none"}
 
 
 def test_health_without_model():
@@ -111,3 +123,23 @@ def test_normalized_corners_are_clamped_to_the_frame():
     img, _ = make_tray_image(4, 6, 10.0, center=(600, 240))  # tray overhangs the right edge
     corners = post(TestClient(create_app(None)), img).json()["corners"]
     assert all(0 <= v <= 1 for p in corners for v in p)
+
+
+def test_holes_come_from_the_depth_map():
+    depth, centers = make_box_depth(1, 2)
+    img = np.full((480, 640, 3), 200, np.uint8)  # no tray in the colour image at all
+    body = post(TestClient(create_app(None, depth=StubDepth(depth))), img).json()
+    assert [(h["row"], h["col"]) for h in body["holes"]] == [(0, 0), (0, 1)]
+    got = np.array([[h["x"], h["y"]] for h in body["holes"]])
+    assert np.abs(got - np.array(centers)).max() < 0.06
+    assert all(set(h) == {"x", "y", "area", "depth", "row", "col"} for h in body["holes"])
+
+
+def test_no_holes_without_depth_model(tray):
+    img, _ = tray
+    assert post(TestClient(create_app(None)), img).json()["holes"] == []
+
+
+def test_health_reports_depth_model():
+    body = TestClient(create_app(None, depth=StubDepth(None))).get("/health").json()
+    assert body["depth_loaded"] is True and body["depth_device"] == "stub"

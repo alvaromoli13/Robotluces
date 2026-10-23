@@ -6,6 +6,7 @@ import numpy as np
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
+from .depth import find_holes
 from .geometry import analyze_tray
 
 MIN_CONTOUR_CONFIDENCE = 0.35  # without a detector hit, require a clear cell pattern
@@ -19,8 +20,22 @@ def default_detector():
     return Owlv2Detector()
 
 
-def create_app(detector="default"):
-    """`detector` needs `.detect(bgr) -> (bbox, score) | None`, `.loaded`, `.device`; None disables the model."""
+def default_depth():
+    if os.environ.get("SMARTSEED_DISABLE_MODEL") == "1":
+        return None
+    from .depth import DepthEstimator
+
+    return DepthEstimator()
+
+
+def create_app(detector="default", depth="default"):
+    """`detector` needs `.detect(bgr) -> (bbox, score) | None`, `.loaded`, `.device`; None disables the model.
+
+    `depth` needs `.estimate(bgr) -> relative depth map`, `.loaded`, `.device`. By default it is
+    only loaded together with the default detector, so a test passing a detector gets no depth.
+    """
+    if depth == "default":
+        depth = default_depth() if detector == "default" else None
     if detector == "default":
         detector = default_detector()
     app = FastAPI(title="SmartSeed vision")
@@ -35,6 +50,8 @@ def create_app(detector="default"):
             "status": "ok",
             "model_loaded": bool(detector and detector.loaded),
             "device": detector.device if detector else "none",
+            "depth_loaded": bool(depth and depth.loaded),
+            "depth_device": depth.device if depth else "none",
         }
 
     @app.post("/vision/tray")
@@ -52,6 +69,8 @@ def create_app(detector="default"):
         if geometry and bbox is None and geometry.confidence < MIN_CONTOUR_CONFIDENCE:
             geometry = None
         corners_px = geometry.corners_px if geometry else None
+        depth_map = depth.estimate(img) if depth else None
+        holes = find_holes(depth_map) if depth_map is not None else []
         return {
             "found": geometry is not None,
             "corners": [[min(max(x / w, 0), 1), min(max(y / h, 0), 1)] for x, y in corners_px] if geometry else None,
@@ -61,6 +80,8 @@ def create_app(detector="default"):
             "confidence": geometry.confidence if geometry else 0.0,
             "detector_score": score,
             "source": "owlv2" if bbox is not None else "contour",
+            "holes": [{k: float(v) if k in ("x", "y", "area", "depth") else int(v) for k, v in h.items()}
+                      for h in holes],
             "elapsed_ms": round((time.perf_counter() - start) * 1000, 1),
             "image_size": [w, h],
         }

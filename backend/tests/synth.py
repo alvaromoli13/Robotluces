@@ -75,3 +75,35 @@ def make_cardboard_box_image(rows, cols, cell_px=120, size=(800, 640), seed=0):
     img = cv2.GaussianBlur(img, (0, 0), 1.0) + rng.normal(0, 3, img.shape)
     true = np.array([[x0, y0], [x0 + box_w, y0], [x0 + box_w, y0 + box_h], [x0, y0 + box_h]], np.float32)
     return np.clip(img, 0, 255).astype(np.uint8), true
+
+
+def make_box_depth(rows, cols, size=(320, 240), seed=0, angle_deg=0.0):
+    """Relative depth map (higher = closer, like Depth Anything) of a box with compartments.
+
+    The table is a tilted plane, the box walls stand out from it and each compartment floor
+    sits back down at table level. Return (depth, true hole centers normalized, row-major).
+    """
+    w, h = size
+    yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
+    depth = 0.2 + 0.3 * (1 - yy / h) + 0.05 * xx / w  # tilted table
+    box_w, box_h = int(w * 0.6), int(h * 0.6)
+    x0, y0 = (w - box_w) // 2, (h - box_h) // 2
+    wall = 6
+    depth[y0:y0 + box_h, x0:x0 + box_w] += 0.35
+    cell_w, cell_h = (box_w - wall) / cols, (box_h - wall) / rows
+    centers = []
+    for r in range(rows):
+        for c in range(cols):
+            cx0, cy0 = int(x0 + wall + c * cell_w), int(y0 + wall + r * cell_h)
+            cx1, cy1 = int(x0 + (c + 1) * cell_w), int(y0 + (r + 1) * cell_h)
+            depth[cy0:cy1, cx0:cx1] -= 0.35
+            centers.append(((cx0 + cx1) / 2 / w, (cy0 + cy1) / 2 / h))
+    if angle_deg:
+        table = 0.2 + 0.3 * (1 - yy / h) + 0.05 * xx / w
+        m = cv2.getRotationMatrix2D((w / 2, h / 2), angle_deg, 1.0)
+        box = cv2.warpAffine(depth - table, m, (w, h), flags=cv2.INTER_LINEAR)
+        depth = table + box
+        centers = [tuple((m[:, :2] @ [x * w, y * h] + m[:, 2]) / [w, h]) for x, y in centers]
+    rng = np.random.default_rng(seed)
+    depth = cv2.GaussianBlur(depth, (0, 0), 1.5) + rng.normal(0, 0.003, depth.shape).astype(np.float32)
+    return depth.astype(np.float32), centers

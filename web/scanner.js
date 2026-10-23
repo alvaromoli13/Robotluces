@@ -36,6 +36,15 @@
   let modelFound = false;
   let userSetSize = false;
   let mapMode = false;
+  // Holes found by the depth model, row-major, normalized x/y and area. They place the cells
+  // directly, no corners needed; ArUco markers or a size typed by hand take over from them.
+  let holes = null;
+  // A new hole count must repeat this many times before the tray is resized, so one noisy
+  // depth frame does not wipe the seeds already assigned.
+  const HOLE_COUNT_CONFIRMATIONS = 2;
+  let candidateCount = 0;
+  let candidateSeen = 0;
+  const holesActive = () => !!holes && !locked && !userSetSize;
   // Original DOM spots, to put the camera panel, size fields and tray grid back on close.
   const cameraPanel = q('cameraPanel');
   const sizeFields = q('customRows').closest('.custom-fields');
@@ -67,9 +76,22 @@
     return [top[0] + (bot[0] - top[0]) * v, top[1] + (bot[1] - top[1]) * v];
   }
 
+  // Rows x cols for detected holes; a ragged layout becomes a single row.
+  function holesLayout(list) {
+    const r = Math.max(...list.map(h => h.row)) + 1;
+    const c = Math.max(...list.map(h => h.col)) + 1;
+    if (r * c === list.length) return { r, c, cells: list };
+    return { r: 1, c: list.length, cells: list.map((h, i) => ({ ...h, row: 0, col: i })) };
+  }
+
+  // On-screen diameter of a hole, from its area; W and H are the overlay size.
+  const holeSize = (hole, W, H) =>
+    Math.min(0.25 * Math.min(W, H), Math.max(24, 2 * Math.sqrt(hole.area * W * H / Math.PI)));
+
   // Cell centers in video pixels, row by row. Exposed for the robot backend.
   function cellCenters() {
     const w = video.videoWidth, h = video.videoHeight, r = rows(), c = cols();
+    if (holesActive()) return holes.map(({ row, col, x, y }) => ({ row, col, x: Math.round(x * w), y: Math.round(y * h) }));
     const out = [];
     for (let i = 0; i < r; i++) for (let j = 0; j < c; j++) {
       const [x, y] = quadPoint((j + 0.5) / c, (i + 0.5) / r);
@@ -85,14 +107,19 @@
     const r = rows(), c = cols();
     if (cells.length !== r * c) return;
     const { width: W, height: H } = overlay.getBoundingClientRect();
+    const place = (cell, x, y, size) =>
+      Object.assign(cell.style, { left: x * W - size / 2 + 'px', top: y * H - size / 2 + 'px', width: size + 'px', height: size + 'px' });
+    if (holesActive()) {
+      if (cells.length === holes.length) cells.forEach((cell, i) => place(cell, holes[i].x, holes[i].y, holeSize(holes[i], W, H)));
+      return;
+    }
     const dist = (a, b) => Math.hypot((b[0] - a[0]) * W, (b[1] - a[1]) * H);
     cells.forEach((cell, i) => {
       const row = Math.floor(i / c), col = i % c;
       const [x, y] = quadPoint((col + 0.5) / c, (row + 0.5) / r);
       const cw = dist(quadPoint(col / c, (row + 0.5) / r), quadPoint((col + 1) / c, (row + 0.5) / r));
       const ch = dist(quadPoint((col + 0.5) / c, row / r), quadPoint((col + 0.5) / c, (row + 1) / r));
-      const size = Math.max(18, Math.min(cw, ch) * 0.8);
-      Object.assign(cell.style, { left: x * W - size / 2 + 'px', top: y * H - size / 2 + 'px', width: size + 'px', height: size + 'px' });
+      place(cell, x, y, Math.max(18, Math.min(cw, ch) * 0.8));
     });
   }
 
@@ -195,11 +222,23 @@
       if (!res.ok) throw new Error('HTTP ' + res.status);
       const data = await res.json();
       modelFound = !!data.found;
+      const found = Array.isArray(data.holes) && data.holes.length ? holesLayout(data.holes) : null;
+      const count = found ? found.cells.length : 0;
+      candidateSeen = count === candidateCount ? candidateSeen + 1 : 1;
+      candidateCount = count;
+      const current = holes ? holes.length : 0;
+      if (count === current) holes = found ? found.cells : null;  // same layout: just follow the holes
+      else if (candidateSeen >= HOLE_COUNT_CONFIRMATIONS) holes = found ? found.cells : null;
+      if (found && holes === found.cells && holesActive() && dragIndex < 0) {
+        q('customRows').value = found.r;
+        q('customCols').value = found.c;
+        syncTraySize();
+      }
       // ArUco or a drag may have taken over while the request was in flight.
       if (data.found && !locked && dragIndex < 0) {
         corners = data.corners.map(p => p.slice());
         saveCorners();
-        if (!userSetSize && data.rows && data.cols) {
+        if (!userSetSize && !holes && data.rows && data.cols) {
           q('customRows').value = data.rows;
           q('customCols').value = data.cols;
           syncTraySize();
@@ -208,6 +247,7 @@
     } catch (e) {
       backendOk = false;
       modelFound = false;
+      holes = null;
     } finally {
       modelBusy = false;
     }
@@ -215,6 +255,7 @@
 
   function statusText(r, c) {
     if (locked) return 'Bandeja localizada con los 4 marcadores · ' + r + ' × ' + c + ' huecos';
+    if (holesActive()) return 'Huecos detectados por profundidad: ' + holes.length + ' · cada casilla está sobre su hueco · escribe filas y columnas para usar la rejilla';
     if (backendOk && modelFound) return 'Bandeja detectada por el modelo de visión · ' + r + ' × ' + c + ' huecos · puedes corregir filas, columnas o esquinas';
     const markers = detector ? 'Marcadores detectados: ' + markersSeen + '/4 · ' : '';
     const model = backendOk ? 'Modelo de visión buscando la bandeja… · ' : 'Modelo de visión no disponible (arranca backend/) · ';
@@ -232,6 +273,16 @@
     const px = ([x, y]) => [x * W, y * H];
     ctx.clearRect(0, 0, W, H);
     ctx.lineWidth = 2 * dpr;
+    if (holesActive()) {
+      ctx.strokeStyle = '#5ac8f0';
+      holes.forEach(hole => {
+        const [x, y] = px([hole.x, hole.y]);
+        ctx.beginPath(); ctx.arc(x, y, holeSize(hole, W, H) / 2 + 3 * dpr, 0, Math.PI * 2); ctx.stroke();
+      });
+      q('scanStatus').textContent = statusText(r, c);
+      layoutCells();
+      return;
+    }
     ctx.strokeStyle = locked ? '#7ddc5a' : (backendOk && modelFound ? '#5ac8f0' : '#ffd23f');
     ctx.beginPath();
     for (let j = 0; j <= c; j++) {
@@ -277,7 +328,7 @@
   }
 
   overlay.addEventListener('pointerdown', e => {
-    if (locked) return;
+    if (locked || holesActive()) return;
     const [x, y] = pointerPos(e);
     const rect = overlay.getBoundingClientRect();
     let best = -1, bestDist = Infinity;

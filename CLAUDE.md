@@ -31,15 +31,20 @@ Implications for any work here:
 - `web/` — the web UI. Plain HTML/CSS/JS, no build step, no framework. This folder is the
   **GitHub Pages site root**.
 - `web/scanner.js` — live camera, grid overlay, tray localisation. Source priority:
-  ArUco markers (ARUCO_MIP_36h12, ids 0-3 TL/TR/BR/BL) > local vision backend > manually
-  dragged corners. It must keep working when the backend is down.
+  ArUco markers (ARUCO_MIP_36h12, ids 0-3 TL/TR/BR/BL) > depth holes from the backend (one
+  cell per hole, no corners) > backend tray grid > manually dragged corners. A size typed
+  by hand switches back to the grid. A new hole count must repeat twice before the tray
+  is resized, so one noisy frame does not wipe assigned seeds. It must keep working when the backend is down.
 - `backend/` — offline vision service (uv project, Python 3.12, own `.venv`). FastAPI on
   `127.0.0.1:8000`: `GET /health`, `POST /vision/tray` (multipart `image` → `found`,
-  normalized `corners` TL/TR/BR/BL, `rows`, `cols`, `confidence`, `source`). OWLv2 bbox +
-  OpenCV contour/warp/periodicity in `smartseed_vision/`. CORS open plus Chrome Private
+  normalized `corners` TL/TR/BR/BL, `rows`, `cols`, `confidence`, `source`, `holes`).
+  OWLv2 bbox + OpenCV contour/warp/periodicity in `geometry.py` (dark, light and
+  saturated blobs, so cardboard boxes work too). `depth.py`: Depth Anything V2 Small gives
+  relative depth, and holes are basins enclosed by walls (grayscale fill from the frame
+  border), returned row-major as normalized `x`, `y`, `area`, `depth`, `row`, `col`. CORS open plus Chrome Private
   Network Access, because the HTTPS Pages site calls localhost. Run `./run.sh`; tests
   `uv run pytest` (wrap in `~/.claude/bin/testsem --` on the team Mac). Tests use synthetic
-  trays and a stubbed detector; never download the model in tests.
+  trays, synthetic depth maps and stubbed models; never download a model in tests.
   `SMARTSEED_DISABLE_MODEL=1` skips OWLv2 (contour only).
 - `odd/tasks/` — per-feature task documents.
 - `.github/workflows/pages.yml` — deploys `web/` to GitHub Pages.
