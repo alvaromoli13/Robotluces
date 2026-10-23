@@ -118,7 +118,10 @@ Cada alveolo del plan se siembra en dos fases:
 ## Semillero libre: detección y cinemática inversa
 
 ### 1. Detectar el semillero
-- Se pegan **4 marcadores ArUco** en las esquinas de la bandeja. OpenCV (`cv2.aruco`, ya
+- Se pegan **4 marcadores ArUco** del diccionario `ARUCO_MIP_36h12` en las esquinas de la
+  bandeja: id 0 arriba a la izquierda, 1 arriba a la derecha, 2 abajo a la derecha y 3 abajo
+  a la izquierda ([generador para imprimirlos](https://damianofalcioni.github.io/js-aruco2/samples/marker-creator/marker-creator.html?dictionary=ARUCO_MIP_36h12)).
+  La web (`web/scanner.js`) los detecta en directo con `js-aruco2`. OpenCV (`cv2.aruco`, ya
   instalado) los encuentra con cualquier luz, mucho mejor que intentar detectar una
   bandeja negra con alveolos negros.
 - Con las 4 esquinas y el número de filas × columnas se calcula el centro de cada alveolo
