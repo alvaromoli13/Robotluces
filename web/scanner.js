@@ -35,6 +35,12 @@
   let modelBusy = false;
   let modelFound = false;
   let userSetSize = false;
+  let mapMode = false;
+  // Original DOM spots, to put the camera panel, size fields and tray grid back on close.
+  const cameraPanel = q('cameraPanel');
+  const sizeFields = q('customRows').closest('.custom-fields');
+  const trayGrid = q('trayGrid');
+  const homes = [cameraPanel, sizeFields, trayGrid].map(el => [el, el.parentNode, el.nextSibling]);
   // Normalized (0..1) corners: top-left, top-right, bottom-right, bottom-left.
   let corners = loadCorners();
 
@@ -70,6 +76,50 @@
       out.push({ row: i, col: j, x: Math.round(x * w), y: Math.round(y * h) });
     }
     return out;
+  }
+
+  // Places each seed map cell over its hole in the camera image.
+  function layoutCells() {
+    if (!mapMode) return;
+    const cells = trayGrid.querySelectorAll('[data-cell]');
+    const r = rows(), c = cols();
+    if (cells.length !== r * c) return;
+    const { width: W, height: H } = overlay.getBoundingClientRect();
+    const dist = (a, b) => Math.hypot((b[0] - a[0]) * W, (b[1] - a[1]) * H);
+    cells.forEach((cell, i) => {
+      const row = Math.floor(i / c), col = i % c;
+      const [x, y] = quadPoint((col + 0.5) / c, (row + 0.5) / r);
+      const cw = dist(quadPoint(col / c, (row + 0.5) / r), quadPoint((col + 1) / c, (row + 0.5) / r));
+      const ch = dist(quadPoint((col + 0.5) / c, row / r), quadPoint((col + 0.5) / c, (row + 1) / r));
+      const size = Math.max(18, Math.min(cw, ch) * 0.8);
+      Object.assign(cell.style, { left: x * W - size / 2 + 'px', top: y * H - size / 2 + 'px', width: size + 'px', height: size + 'px' });
+    });
+  }
+
+  // Skip the scanner step: build the seed map and show it on top of the camera.
+  function enterMapMode() {
+    const panel = q('mapa-semillero');
+    window.smartseedApp.createTray(rows(), cols());
+    panel.classList.add('camera-mode');
+    panel.insertBefore(cameraPanel, panel.querySelector('.tray-toolbar'));
+    cameraPanel.insertBefore(sizeFields, q('scanStatus'));
+    cameraPanel.querySelector('.scan-stage').appendChild(trayGrid);
+    cameraPanel.hidden = false;
+    mapMode = true;
+    layoutCells();
+  }
+
+  function exitMapMode() {
+    mapMode = false;
+    q('mapa-semillero').classList.remove('camera-mode');
+    homes.forEach(([el, parent, next]) => parent.insertBefore(el, next));
+    trayGrid.querySelectorAll('[data-cell]').forEach(cell =>
+      Object.assign(cell.style, { left: '', top: '', width: '', height: '' }));
+    cameraPanel.hidden = true;
+  }
+
+  function syncTraySize() {
+    if (mapMode) window.smartseedApp.resizeTray(rows(), cols());
   }
 
   function stopCamera() {
@@ -152,6 +202,7 @@
         if (!userSetSize && data.rows && data.cols) {
           q('customRows').value = data.rows;
           q('customCols').value = data.cols;
+          syncTraySize();
         }
       }
     } catch (e) {
@@ -205,6 +256,7 @@
       });
     }
     q('scanStatus').textContent = statusText(r, c);
+    layoutCells();
   }
 
   function loop(t) {
@@ -252,21 +304,20 @@
       let active;
       try { active = await openCamera(saved); } catch (e) { if (!saved) throw e; active = await openCamera(null); }
       await listCameras(active);
-      q('cameraPanel').hidden = false;
-      q('customTrayForm').hidden = false;
       q('scanResult').hidden = true;
-      q('startScanBtn').hidden = true;
+      enterMapMode();
     } catch (err) {
       notify('No se ha podido abrir la cámara: ' + (err.message || err.name));
       q('cameraInput').click();
     }
   });
-  ['customRows', 'customCols'].forEach(id => q(id).addEventListener('input', () => { userSetSize = true; }));
+  ['customRows', 'customCols'].forEach(id => q(id).addEventListener('input', () => { userSetSize = true; syncTraySize(); }));
   q('cameraSelect').addEventListener('change', e =>
     openCamera(e.target.value).catch(err => notify('No se ha podido abrir esa cámara: ' + (err.message || err.name))));
   q('closeCameraBtn').addEventListener('click', () => {
     stopCamera();
-    q('cameraPanel').hidden = true;
+    if (mapMode) exitMapMode();
+    cameraPanel.hidden = true;
     q('startScanBtn').hidden = false;
   });
   q('createCustomTrayBtn').addEventListener('click', () => {
@@ -278,5 +329,5 @@
   });
   window.addEventListener('pagehide', stopCamera);
 
-  window.smartseedScan = { cellCenters, get corners() { return corners; }, get locked() { return locked; }, lastLayout: null };
+  window.smartseedScan = { cellCenters, layoutCells, get corners() { return corners; }, get locked() { return locked; }, lastLayout: null };
 })();

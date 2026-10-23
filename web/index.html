@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="es">
 <head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="theme-color" content="#173d2b"><meta name="description" content="Control de siembra inteligente para semilleros con LeRobot.">
 <title>SmartSeed — Control de siembra</title>
 <style>
@@ -175,35 +175,119 @@ input, select, textarea { font-size:16px !important; }
   #seedMobile .seed-grid { grid-template-columns:repeat(4,minmax(0,1fr)) !important; display:grid !important; }
   #seedMobile .seed { min-width:0 !important; width:100% !important; }
 }
+/* Camera map mode: the seed map is painted over the live camera feed */
+#mapa-semillero.camera-mode .camera-panel{margin:0 0 12px}
+#mapa-semillero.camera-mode .custom-fields{margin-top:10px}
+#mapa-semillero.camera-mode .scan-stage .tray-grid{position:absolute;inset:0;display:block;max-width:none;margin:0;padding:0;gap:0;background:none;border:0;border-radius:0;pointer-events:none;touch-action:none}
+#mapa-semillero.camera-mode .scan-stage .tray-cell{position:absolute;aspect-ratio:auto;min-height:0;min-width:0;padding:0;pointer-events:auto;border:1.5px solid #ffffffcc;border-radius:50%;background:#0b1a1440;color:#fff;gap:0}
+#mapa-semillero.camera-mode .scan-stage .tray-cell:before{display:none}
+#mapa-semillero.camera-mode .scan-stage .tray-cell.filled{background:var(--cell-tint,#e6f5e8);border-color:#fff;opacity:.92}
+#mapa-semillero.camera-mode .scan-stage .tray-cell .cell-num{display:none}
+#mapa-semillero.camera-mode .scan-stage .tray-cell .cell-emoji{font-size:clamp(12px,3vw,20px)}
+#mapa-semillero.camera-mode .scan-stage .tray-cell .cell-clear{width:14px;height:14px;font-size:10px}
+/* UI polish: box colours, SVG icons, square tray cells, focus and toast */
+:root{--muted:#5a6b60}
+.ic{width:1.15em;height:1.15em;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:none;vertical-align:-.2em}
+.logo .ic,.scanner-logo .ic{width:24px;height:24px}.scanner-icon .ic{width:28px;height:28px}
+.scanner-primary{display:flex}.scanner-primary .ic{width:20px;height:20px}
+.icon-btn{display:grid;place-items:center;transition:background .2s,border-color .2s}.icon-btn .ic{width:20px;height:20px}.icon-btn:hover{background:var(--mint);border-color:#b9d3b8}
+.primary,.scanner-secondary,.secondary-btn,.fill-all-btn{cursor:pointer;transition:background .2s,border-color .2s,box-shadow .2s}
+.scanner-secondary:hover,.secondary-btn:hover{background:var(--mint);border-color:#b9d3b8}
+a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,.seed:focus-visible,.tray-cell:focus-visible{outline:3px solid #197647;outline-offset:2px}
+.sidebar :focus-visible{outline-color:var(--lime)}
+@media(min-width:900px){.topbar .brand{display:none}.topbar{justify-content:flex-end;margin-bottom:10px}}
+/* Seed palette: the tile stripe and the dot carry the colour of the physical box */
+.seed{display:flex;align-items:center;gap:10px;text-align:left;cursor:pointer;transition:background .2s,border-color .2s,box-shadow .2s,transform .2s}
+@media(min-width:900px){.seed{cursor:grab}}
+.seed-tile{width:44px;height:44px;flex:none;border-radius:12px;background:var(--box-tint);box-shadow:inset 0 -5px 0 var(--box);display:grid;place-items:center;font-size:22px;line-height:1;padding-bottom:5px}
+.seed-text{display:flex;flex-direction:column;gap:3px;min-width:0}
+.seed-name{font-weight:700;font-size:14px}
+.seed-box{display:flex;align-items:center;gap:6px;font-size:12px;color:#4f5f55}
+#seedSidebar .seed-box{color:#c3d5c5}
+.box-dot{width:10px;height:10px;border-radius:50%;background:var(--box);box-shadow:0 0 0 1.5px #ffffffc0,0 0 0 2.5px #00000030;display:inline-block;flex:none;margin:0 1px}
+.seed-check .ic{width:12px;height:12px;stroke-width:3}
+#seedSidebar .seed-check{color:var(--lime);width:20px;height:20px}
+.seed.selected .seed-tile{box-shadow:inset 0 -5px 0 var(--box),0 0 0 2px var(--lime)}
+#seedMobile .seed.selected .seed-tile{box-shadow:inset 0 -5px 0 var(--box),0 0 0 2px var(--leaf)}
+.fill-all-btn{display:flex;align-items:center;justify-content:center;gap:8px;font-size:14px}
+.side-hint{font-size:13px}
+.box-legend{list-style:none;margin:0 0 12px;padding:0;display:flex;flex-wrap:wrap;gap:6px 8px}
+.box-legend li{display:flex;align-items:center;gap:7px;font-size:13px;color:var(--ink);background:#fff;border:1px solid var(--line);border-radius:100px;padding:5px 11px 5px 9px}
+.legend-dot{background:var(--box,var(--leaf))}
+/* Tray: square cells; scroll inside the grid instead of shrinking below 36 px */
+.tray-grid{overflow-x:auto;overscroll-behavior-x:contain;touch-action:pan-x pan-y;grid-template-columns:repeat(var(--tray-cols,3),minmax(36px,1fr));gap:6px;padding:12px 8px}
+.tray-cell{min-height:0;cursor:pointer}
+.tray-cell:not(.filled):hover{border-color:var(--leaf);background:#fff}
+.tray-cell .cell-num{font-size:12px;font-weight:700;color:#4e5f54}
+.tray-cell .cell-emoji:empty{display:none}
+.tray-cell.filled{border:1.5px solid var(--cell-strong,#7aa786);background:var(--cell-tint,#e6f5e8)}
+.tray-cell.filled:before{background:var(--cell-mid,#cfe6d2)}
+.tray-cell.filled .cell-num{color:#1d2b24}
+.tray-cell .cell-clear{display:grid;place-items:center;width:20px;height:20px;right:2px;top:2px;cursor:pointer}
+.tray-cell .cell-clear svg{width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:2.5;stroke-linecap:round}
+#mapa-semillero.camera-mode .scan-stage .tray-grid{overflow:visible}
+@media(max-width:639px){.panel{padding:14px 12px}.tray-grid{gap:4px;padding:10px 6px}.tray-cell.filled .cell-num{display:none}.tray-cell .cell-emoji{font-size:20px}}
+.primary:disabled{background:#e3e9df;color:#4d5f54;box-shadow:none;opacity:1;cursor:not-allowed}
+.tray-hint{font-size:13px;color:#4d5f54;margin:8px 0 0}
+/* Mobile palette dock */
+@media(max-width:899px){
+ .seed,.seed:active{cursor:pointer}
+ #seedMobile .seed{flex-direction:column;align-items:stretch;gap:5px;padding:5px 3px 7px;text-align:center}
+ #seedMobile .seed.selected{border:2px solid var(--leaf);padding:4px 2px 6px;background:#f0f7eb}
+ #seedMobile .seed-tile{width:100%;height:38px;font-size:20px;padding-bottom:4px}
+ #seedMobile .seed-text{align-items:center;gap:1px}
+ #seedMobile .seed-name{font-size:13px;line-height:1.2}
+ #seedMobile .seed-box{font-size:11px;line-height:1.2}
+ #seedMobile .box-dot{display:none}
+ .main{padding-bottom:170px!important}
+}
+/* Readable copy */
+.scanner-copy,.scan-result p{font-size:14px}.scanner-kicker{font-size:12px}.scanner-secondary{font-size:14px}.scanner-footnote{font-size:12px;color:#5a6b60}.scan-status{font-size:13px}.scan-result{font-size:13px}.custom-fields label{font-size:14px}
+.panel-desc{font-size:14px}.tag,.tray-count{font-size:12px}.tray-legend{font-size:14px}.tray-note,.footer-note{font-size:12px;color:#5a6b60}.secondary-btn{font-size:13px}.brand-sub{font-size:12px}
+/* Toast: bottom-right on desktop, above the palette dock on mobile */
+.toast{left:auto;right:24px;bottom:24px;transform:translateY(12px);max-width:min(360px,calc(100% - 32px));text-align:left;font-size:14px;line-height:1.4}
+.toast.show{transform:none}
+@media(max-width:899px){.toast{left:50%;right:auto;bottom:calc(138px + env(safe-area-inset-bottom));transform:translate(-50%,12px);text-align:center}.toast.show{transform:translate(-50%,0)}}
 </style>
 </head>
-<body><section id="scannerGate" class="scanner-gate" aria-labelledby="scannerTitle">
-<div class="scanner-brand"><span class="scanner-logo">🌱</span><span>SmartSeed</span></div>
-<div class="scanner-card"><div class="scanner-icon">▦</div><p class="scanner-kicker">CONFIGURACIÓN DEL SEMILLERO</p>
+<body><svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false"><defs>
+<symbol id="i-sprout" viewBox="0 0 24 24"><path d="M7 20h10"/><path d="M10 20c5.5-2.5.8-6.4 3-10"/><path d="M9.5 9.4c1.1.8 1.8 2.2 2.3 3.7-2 .4-3.5.4-4.8-.3-1.2-.6-2.3-1.9-3-4.2 2.8-.5 4.4 0 5.5.8z"/><path d="M14.1 6a7 7 0 0 0-1.1 4c1.9-.1 3.3-.6 4.3-1.4 1-1 1.6-2.3 1.7-4.6-2.7.1-4 1-4.9 2z"/></symbol>
+<symbol id="i-grid" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18"/><path d="M3 15h18"/><path d="M9 3v18"/><path d="M15 3v18"/></symbol>
+<symbol id="i-camera" viewBox="0 0 24 24"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></symbol>
+<symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></symbol>
+<symbol id="i-fill" viewBox="0 0 24 24"><path d="m19 11-8-8-8.6 8.6a2 2 0 0 0 0 2.8l5.2 5.2c.8.8 2 .8 2.8 0L19 11Z"/><path d="m5 2 5 5"/><path d="M2 13h15"/><path d="M22 20a2 2 0 1 1-4 0c0-1.6 1.7-2.4 2-4 .3 1.6 2 2.4 2 4Z"/></symbol>
+<symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></symbol>
+<symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></symbol>
+<symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+</defs></svg><section id="scannerGate" class="scanner-gate" aria-labelledby="scannerTitle">
+<div class="scanner-brand"><span class="scanner-logo"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-sprout"/></svg></span><span>SmartSeed</span></div>
+<div class="scanner-card"><div class="scanner-icon"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-grid"/></svg></div><p class="scanner-kicker">CONFIGURACIÓN DEL SEMILLERO</p>
 <h1 id="scannerTitle">Primero, localicemos tu casillero</h1>
 <p class="scanner-copy">Abre la cámara y enfoca el semillero. Si no podemos identificar sus huecos con fiabilidad, podrás definir el tamaño manualmente.</p>
 <input id="cameraInput" type="file" accept="image/*" capture="environment" hidden>
-<button id="startScanBtn" class="primary scanner-primary" type="button">◎ Escanear con cámara</button>
+<button id="startScanBtn" class="primary scanner-primary" type="button"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-camera"/></svg> Escanear con cámara</button>
 <div id="cameraPanel" class="camera-panel" hidden><label for="cameraSelect">Cámara</label><select id="cameraSelect"></select><div class="scan-stage"><video id="cameraPreview" autoplay playsinline muted></video><canvas id="scanOverlay" aria-label="Rejilla del semillero sobre la cámara"></canvas></div><p id="scanStatus" class="scan-status" aria-live="polite"></p><button id="closeCameraBtn" class="scanner-secondary" type="button">Cerrar cámara</button></div>
 <div id="scanResult" class="scan-result" aria-live="polite" hidden><strong>No se ha podido confirmar automáticamente el número de huecos.</strong><p>La lectura visual automática necesita un módulo de visión conectado. Puedes crear el mapa provisional indicando las filas y columnas.</p></div>
 <div id="customTrayForm" class="custom-tray-form" hidden><h2>Crear casillero personalizado</h2><div class="custom-fields"><label>Filas<input id="customRows" type="number" min="1" max="20" value="3" inputmode="numeric"></label><label>Columnas<input id="customCols" type="number" min="1" max="20" value="3" inputmode="numeric"></label></div><button id="createCustomTrayBtn" class="primary scanner-primary" type="button">Crear mapa</button></div>
 <button id="manualTrayBtn" class="scanner-secondary" type="button">No encuentro un casillero · Crear uno manualmente</button><p class="scanner-footnote">La cámara solo se activa cuando pulsas el botón. No se suben imágenes a ningún servidor.</p></div></section><div class="app" id="mainApp" hidden>
-<aside class="sidebar"><div class="brand"><div class="logo">🌱</div><div><div class="brandname">Smart<span>Seed</span></div><div class="brand-sub">Siembra inteligente</div></div></div><div class="side-label">ARRASTRA UNA SEMILLA</div><p class="side-hint">Suelta cada variedad directamente sobre un hueco del mapa.</p><div id="seedSidebar"></div><div class="fill-all-wrap"><div class="fill-all-label">RELLENO RÁPIDO</div><button type="button" class="fill-all-btn" data-fill-all>↟ Rellenar todo el mapa</button></div></aside>
+<aside class="sidebar"><div class="brand"><div class="logo"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-sprout"/></svg></div><div><div class="brandname">Smart<span>Seed</span></div><div class="brand-sub">Siembra inteligente</div></div></div><div class="side-label">ARRASTRA UNA SEMILLA</div><p class="side-hint">Suelta cada variedad directamente sobre un hueco del mapa.</p><div id="seedSidebar"></div><div class="fill-all-wrap"><div class="fill-all-label">RELLENO RÁPIDO</div><button type="button" class="fill-all-btn" data-fill-all><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-fill"/></svg> Rellenar todo el mapa</button></div></aside>
 <main class="main" id="inicio">
-<header class="topbar"><div class="brand"><div class="logo">🌱</div><div><div class="brandname">Smart<span>Seed</span></div><div class="brand-sub">siembra inteligente</div></div></div><div class="top-actions"><button class="icon-btn" id="helpBtn" aria-label="Ayuda">?</button><div class="avatar">A</div></div></header>
+<header class="topbar"><div class="brand"><div class="logo"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-sprout"/></svg></div><div><div class="brandname">Smart<span>Seed</span></div><div class="brand-sub">Siembra inteligente</div></div></div><div class="top-actions"><button class="icon-btn" id="helpBtn" type="button" aria-label="Ayuda" title="Ayuda"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-help"/></svg></button></div></header>
 <div class="workspace"><div class="left-col">
 <section class="panel seed-source" id="siembra"><div class="panel-head"><div><h2 class="panel-title">Tipos de semilla</h2><p class="panel-desc">Elige una variedad y toca los huecos del mapa para asignarla. Las órdenes solo se crean desde el mapa.</p></div><span class="tag">PASO 01</span></div>
 <div class="seed-grid" id="seedGrid">
-<button class="seed selected" data-seed="TOMATE" data-emoji="🍅" data-time="2"><span class="seed-check">✓</span><img class="seed-photo" src="https://images.unsplash.com/photo-1546094096-0df4bcaaa337?auto=format&fit=crop&w=360&q=75" alt="Tomates" loading="lazy"><div class="seed-name">TOMATE</div><div class="seed-detail">Sol · 2 s / semilla</div></button>
-<button class="seed" data-seed="PIMIENTO" data-emoji="🫑" data-time="2"><span class="seed-check">✓</span><img class="seed-photo" src="https://images.unsplash.com/photo-1563565375-f3fdfdbefa83?auto=format&fit=crop&w=360&q=75" alt="Pimientos" loading="lazy"><div class="seed-name">PIMIENTO</div><div class="seed-detail">Calor · 2 s</div></button>
-<button class="seed" data-seed="LIMON" data-emoji="🍋" data-time="2"><span class="seed-check">✓</span><img class="seed-photo" src="https://images.unsplash.com/photo-1590502593747-42a996133562?auto=format&fit=crop&w=360&q=75" alt="Limones" loading="lazy"><div class="seed-name">LIMON</div><div class="seed-detail">Cítrico · 2 s</div></button>
-<button class="seed" data-seed="BERENJENAS" data-emoji="🍆" data-time="2"><span class="seed-check">✓</span><img class="seed-photo" src="https://images.unsplash.com/photo-1659261200824-6d6f8f6c06c2?auto=format&fit=crop&w=360&q=75" alt="Berenjenas" loading="lazy"><div class="seed-name">BERENJENAS</div><div class="seed-detail">Hortaliza · 2 s</div></button>
+<button type="button" class="seed selected" data-seed="TOMATE" data-label="Tomate" data-emoji="🍅" data-time="2" data-box="red" aria-pressed="true" title="Tomate · Caja rojo"><span class="seed-check" aria-hidden="true"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-check"/></svg></span><span class="seed-tile" aria-hidden="true">🍅</span><span class="seed-text"><span class="seed-name">Tomate</span><span class="seed-box"><i class="box-dot"></i>Caja rojo</span></span></button>
+<button type="button" class="seed" data-seed="PIMIENTO" data-label="Pimiento" data-emoji="🫑" data-time="2" data-box="green" aria-pressed="false" title="Pimiento · Caja verde"><span class="seed-check" aria-hidden="true"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-check"/></svg></span><span class="seed-tile" aria-hidden="true">🫑</span><span class="seed-text"><span class="seed-name">Pimiento</span><span class="seed-box"><i class="box-dot"></i>Caja verde</span></span></button>
+<button type="button" class="seed" data-seed="LIMON" data-label="Limón" data-emoji="🍋" data-time="2" data-box="yellow" aria-pressed="false" title="Limón · Caja amarillo"><span class="seed-check" aria-hidden="true"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-check"/></svg></span><span class="seed-tile" aria-hidden="true">🍋</span><span class="seed-text"><span class="seed-name">Limón</span><span class="seed-box"><i class="box-dot"></i>Caja amarillo</span></span></button>
+<button type="button" class="seed" data-seed="BERENJENAS" data-label="Berenjena" data-emoji="🍆" data-time="2" data-box="purple" aria-pressed="false" title="Berenjena · Caja morada"><span class="seed-check" aria-hidden="true"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-check"/></svg></span><span class="seed-tile" aria-hidden="true">🍆</span><span class="seed-text"><span class="seed-name">Berenjena</span><span class="seed-box"><i class="box-dot"></i>Caja morada</span></span></button>
 </div></section>
 <section class="panel" id="mapa-semillero">
 <div class="panel-head"><div><h2 class="panel-title">Mapa del semillero</h2><p class="panel-desc" id="trayDescription">Arrastra las semillas desde el menú hasta cada hueco.</p></div><span class="tag" id="trayDimensions">3 × 3</span></div>
 <div class="tray-toolbar"><div class="tray-legend" id="trayLegend"><span class="legend-dot"></span><span>Seleccionada: Tomate</span></div><span class="tray-count" id="trayCount">0 / 9 huecos</span></div>
+<ul class="box-legend" id="boxLegend" aria-label="Color de caja de cada variedad"></ul>
 <div class="tray-grid" id="trayGrid" role="group" aria-label="Casillas del semillero"></div>
-<div class="tray-actions"><button class="secondary-btn" id="clearTrayBtn">Vaciar mapa</button><button class="primary" id="mapPlantBtn">Añadir mapa de sembrado actual <span>→</span></button></div>
+<div class="tray-actions"><button class="secondary-btn" id="clearTrayBtn" type="button">Vaciar mapa</button><button class="primary" id="mapPlantBtn" type="button" aria-describedby="mapPlantHint">Añadir mapa de sembrado actual <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-arrow"/></svg></button></div>
+<p class="tray-hint" id="mapPlantHint">Asigna al menos un hueco para poder añadir el mapa.</p>
 <p class="tray-note">La posición de cada variedad se conserva en este navegador. El control del robot sigue en modo de demostración.</p>
 </section>
 <section class="panel" id="cola"><div class="panel-head"><div><h2 class="panel-title">Cola de siembra</h2><p class="panel-desc">Órdenes listas para el semillero.</p></div><span class="tag" id="queueTag">3 ÓRDENES</span></div><div class="queue" id="queueList"><div class="queue-item"><div class="queue-icon">🥬</div><div class="queue-info"><div class="queue-name">Lechuga</div><div class="queue-detail">10 semillas · Orden #024</div></div><span class="queue-status active">En curso</span></div><div class="queue-item"><div class="queue-icon">🍅</div><div class="queue-info"><div class="queue-name">Tomate</div><div class="queue-detail">15 semillas · Orden #025</div></div><span class="queue-status">Pendiente</span></div><div class="queue-item"><div class="queue-icon">🌿</div><div class="queue-info"><div class="queue-name">Albahaca</div><div class="queue-detail">8 semillas · Orden #026</div></div><span class="queue-status">Pendiente</span></div></div></section>
@@ -212,7 +296,7 @@ input, select, textarea { font-size:16px !important; }
 <div class="mobile-seed-dock" id="mobileSeedDock" hidden><div id="seedMobile"></div></div><div class="toast" id="toast" role="status" aria-live="polite"></div>
 <script>
 (()=>{
-const $=id=>document.getElementById(id);let mobileDropAt=0;let seed={name:'Tomate',emoji:'🍅',time:2},paused=false,running=false,progress=0,planted=128,nextId=1,orders=[],logs=[];let toastTimer,progressTimer;
+const $=id=>document.getElementById(id);let mobileDropAt=0;let seed={name:'TOMATE',emoji:'🍅',time:2},paused=false,running=false,progress=0,planted=128,nextId=1,orders=[],logs=[];let toastTimer,progressTimer;
 function toast(msg){$('toast').textContent=msg;$('toast').classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').classList.remove('show'),2600)}
 function log(msg,emoji='🌱'){logs.unshift({msg,emoji,time:'Ahora · Demo'});renderLogs()}
 function renderLogs(){const el=$('activityList');if(!el)return;el.innerHTML=logs.slice(0,5).map(x=>'<div class="activity-item"><div class="activity-icon">'+x.emoji+'</div><div><div class="activity-text">'+x.msg+'</div><div class="activity-time">'+x.time+'</div></div></div>').join('')||'<div class="empty">Todavía no hay actividad.</div>'}
@@ -222,12 +306,22 @@ function startOrder(){if(paused||running)return;let o=orders.find(o=>o.status===
 
 
 let trayRows=3,trayCols=3,TRAY_SIZE=9;
-const seedColors={'TOMATE':'#ffe2d7','PIMIENTO':'#fbe0d8','LIMON':'#fff4b8','BERENJENAS':'#e9ddf5'};
+// Each variety maps to the colour of its physical box. Keys are stored in localStorage layouts, keep them stable.
+const SEEDS={
+ TOMATE:{label:'Tomate',box:'roja',strong:'#c8372d',tint:'#fde3df',mid:'#f4b1a9'},
+ PIMIENTO:{label:'Pimiento',box:'verde',strong:'#2b8a4e',tint:'#dcf3e0',mid:'#a3dbb1'},
+ LIMON:{label:'Limón',box:'amarilla',strong:'#d9a400',tint:'#fff2b8',mid:'#f7dc6a'},
+ BERENJENAS:{label:'Berenjena',box:'morada',strong:'#7440b0',tint:'#ece2f8',mid:'#c9afe8'}
+};
+const seedMeta=name=>{const k=String(name||'').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');return SEEDS[k]||SEEDS[k+'S']||null};
+const seedLabel=name=>{const m=seedMeta(name);return m?m.label:String(name||'')};
+document.querySelectorAll('#seedGrid .seed').forEach(b=>{const m=SEEDS[b.dataset.seed];if(m){b.style.setProperty('--box',m.strong);b.style.setProperty('--box-tint',m.tint)}});
+$('boxLegend').innerHTML=Object.values(SEEDS).map(m=>'<li><i class="box-dot" style="--box:'+m.strong+'"></i><span><strong>'+m.label+'</strong> · caja '+m.box+'</span></li>').join('');
 let tray=Array(TRAY_SIZE).fill(null);
 try{const saved=JSON.parse(localStorage.getItem('smartseed-last-layout')||'null');if(Array.isArray(saved))tray=Array.from({length:TRAY_SIZE},(_,i)=>saved[i]&&typeof saved[i].name==='string'?saved[i]:null)}catch(e){}
 function saveTray(){try{localStorage.setItem('smartseed-last-layout',JSON.stringify(tray))}catch(e){}}
-function updateTrayLegend(){$('trayLegend').innerHTML='<span class="legend-dot"></span><span>Seleccionada: <strong>'+seed.emoji+' '+seed.name+'</strong></span>'}
-function renderTray(){$('trayGrid').style.setProperty('--tray-cols',trayCols);$('trayDimensions').textContent=trayRows+' × '+trayCols;$('trayDescription').textContent='Casillero de '+TRAY_SIZE+' huecos. Arrastra las variedades desde el menú.';$('trayGrid').innerHTML=tray.map((s,i)=>'<button type="button" class="tray-cell '+(s?'filled':'')+'" data-cell="'+i+'" aria-label="Casilla '+(i+1)+(s?': '+s.name:' vacía')+'" title="'+(s?s.name+' · toca para quitar':'Casilla '+(i+1)+' · toca para asignar '+seed.name)+'" '+(s?'style="--cell-tint:'+(seedColors[s.name]||'#e6f5e8')+'"':'')+'><span class="cell-emoji">'+(s?s.emoji:'＋')+'</span><span class="cell-num">'+String(i+1).padStart(2,'0')+'</span>'+(s?'<span class="cell-clear" data-clear-cell="'+i+'" aria-label="Vaciar casilla '+(i+1)+'">×</span>':'')+'</button>').join('');const n=tray.filter(Boolean).length;$('trayCount').textContent=n+' / '+TRAY_SIZE+' huecos';$('mapPlantBtn').disabled=n===0;$('mapPlantBtn').style.opacity=n===0?'.55':'1'}
+function updateTrayLegend(){const m=seedMeta(seed.name);$('trayLegend').innerHTML='<span class="legend-dot"'+(m?' style="--box:'+m.strong+'"':'')+'></span><span>Seleccionada: <strong>'+seed.emoji+' '+seedLabel(seed.name)+'</strong></span>'}
+function renderTray(){$('trayGrid').style.setProperty('--tray-cols',trayCols);$('trayDimensions').textContent=trayRows+' × '+trayCols;$('trayDescription').textContent='Casillero de '+TRAY_SIZE+' huecos. Arrastra las variedades desde el menú.';$('trayGrid').innerHTML=tray.map((s,i)=>{const m=s&&seedMeta(s.name),lab=s?seedLabel(s.name):'',num=String(i+1).padStart(2,'0');return '<button type="button" class="tray-cell '+(s?'filled':'')+'" data-cell="'+i+'" aria-label="Casilla '+(i+1)+(s?': '+lab+(m?', caja '+m.box:''):' vacía')+'" title="'+(s?lab+(m?' · caja '+m.box:'')+' · toca para quitar':'Casilla '+(i+1)+' · toca para asignar '+seedLabel(seed.name))+'" '+(s?'style="--cell-tint:'+(m?m.tint:'#e6f5e8')+';--cell-mid:'+(m?m.mid:'#cfe6d2')+';--cell-strong:'+(m?m.strong:'#7aa786')+'"':'')+'><span class="cell-emoji">'+(s?s.emoji:'')+'</span><span class="cell-num">'+num+'</span>'+(s?'<span class="cell-clear" data-clear-cell="'+i+'" role="button" aria-label="Vaciar casilla '+(i+1)+'" title="Vaciar casilla"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-x"/></svg></span>':'')+'</button>'}).join('');const n=tray.filter(Boolean).length;$('trayCount').textContent=n+' / '+TRAY_SIZE+' huecos';$('mapPlantBtn').disabled=n===0;$('mapPlantBtn').title=n===0?'Asigna al menos un hueco':'';$('mapPlantHint').hidden=n>0;if(window.smartseedScan)window.smartseedScan.layoutCells()}
 function setTrayCell(i,value){if(i<0||i>=TRAY_SIZE)return;tray[i]=value?{name:value.name,emoji:value.emoji,time:Number(value.time||1)}:null;saveTray();renderTray()}
 $('trayGrid').addEventListener('click',e=>{if(mobileDropAt&&Date.now()-mobileDropAt<700){mobileDropAt=0;e.preventDefault();return}const clear=e.target.closest('[data-clear-cell]');if(clear){e.stopPropagation();setTrayCell(Number(clear.dataset.clearCell),null);return}const cell=e.target.closest('[data-cell]');if(!cell)return;const i=Number(cell.dataset.cell);if(tray[i]&&tray[i].name===seed.name){setTrayCell(i,null)}else{setTrayCell(i,seed)}});
 $('trayGrid').addEventListener('dragover',e=>{if(e.target.closest('[data-cell]')){e.preventDefault();e.dataTransfer.dropEffect='copy';e.target.closest('[data-cell]').classList.add('drop-target')}});
@@ -236,7 +330,7 @@ $('trayGrid').addEventListener('drop',e=>{const cell=e.target.closest('[data-cel
 $('clearTrayBtn').addEventListener('click',()=>{tray=Array(TRAY_SIZE).fill(null);saveTray();renderTray();toast('Mapa vaciado.')});
 
 
-$('mapPlantBtn').addEventListener('click',()=>{const layout=tray.map((s,i)=>s?{cell:i+1,name:s.name,emoji:s.emoji,time:s.time}:null).filter(Boolean);if(!layout.length){toast('Asigna al menos una semilla a una casilla.');return}if(orders.filter(o=>o.status!=='done').length>=200){toast('La cola está llena. Completa órdenes antes de añadir más.');return}const counts={};layout.forEach(x=>counts[x.name]=(counts[x.name]||0)+1);const summary=Object.entries(counts).map(([name,n])=>n+' '+name).join(', ');const o={id:nextId++,name:'Mapa de semillero',emoji:'🗺️',qty:layout.length,status:'pending',layout};orders.push(o);renderQueue();log('Mapa añadido: '+summary+'.','🗺️');toast('Mapa añadido a la cola con '+layout.length+' casillas.');document.querySelectorAll('[data-scroll]').forEach(b=>{if(b.dataset.scroll==='cola')b.classList.add('active')});$('cola').scrollIntoView({behavior:'smooth',block:'start'})});
+$('mapPlantBtn').addEventListener('click',()=>{const layout=tray.map((s,i)=>s?{cell:i+1,name:s.name,emoji:s.emoji,time:s.time}:null).filter(Boolean);if(!layout.length){toast('Asigna al menos una semilla a una casilla.');return}if(orders.filter(o=>o.status!=='done').length>=200){toast('La cola está llena. Completa órdenes antes de añadir más.');return}const counts={};layout.forEach(x=>counts[x.name]=(counts[x.name]||0)+1);const summary=Object.entries(counts).map(([name,n])=>n+' '+seedLabel(name)).join(', ');const o={id:nextId++,name:'Mapa de semillero',emoji:'🗺️',qty:layout.length,status:'pending',layout};orders.push(o);renderQueue();log('Mapa añadido: '+summary+'.','🗺️');toast('Mapa añadido a la cola con '+layout.length+' casillas.');document.querySelectorAll('[data-scroll]').forEach(b=>{if(b.dataset.scroll==='cola')b.classList.add('active')});$('cola').scrollIntoView({behavior:'smooth',block:'start'})});
 $('queueList').addEventListener('click',e=>{const btn=e.target.closest('[data-remove-order]');if(!btn)return;const id=Number(btn.dataset.removeOrder);const o=orders.find(x=>x.id===id);if(!o||o.status!=='pending'){toast('Solo se pueden eliminar órdenes pendientes.');return}orders=orders.filter(x=>x.id!==id);renderQueue();log('Orden #'+String(id).padStart(3,'0')+' eliminada de la cola.','🗑️');toast('Orden pendiente eliminada.')});
 
 
@@ -248,7 +342,7 @@ document.querySelectorAll('[data-scroll]').forEach(b=>b.addEventListener('click'
 
 const seedPalette=$('seedGrid');$('seedSidebar').appendChild(seedPalette);
 const mobilePalette=seedPalette.cloneNode(true);mobilePalette.id='seedGridMobile';mobilePalette.querySelectorAll('[id]').forEach(el=>el.removeAttribute('id'));$('seedMobile').appendChild(mobilePalette);
-function selectSeed(b){document.querySelectorAll('.seed').forEach(x=>x.classList.toggle('selected',x.dataset.seed===b.dataset.seed));seed={name:b.dataset.seed,emoji:b.dataset.emoji,time:Number(b.dataset.time)};updateTrayLegend()}
+function selectSeed(b){document.querySelectorAll('.seed').forEach(x=>{const on=x.dataset.seed===b.dataset.seed;x.classList.toggle('selected',on);x.setAttribute('aria-pressed',on)});seed={name:b.dataset.seed,emoji:b.dataset.emoji,time:Number(b.dataset.time)};updateTrayLegend()}
 function bindSeedButtons(root){root.querySelectorAll('.seed').forEach(b=>{b.draggable=matchMedia('(min-width: 900px)').matches;b.addEventListener('click',()=>selectSeed(b));b.addEventListener('dragstart',e=>{selectSeed(b);e.dataTransfer.setData('text/plain',JSON.stringify(seed));e.dataTransfer.effectAllowed='copy'});b.addEventListener('pointerdown',()=>{if(matchMedia('(max-width: 899px)').matches)selectSeed(b)});});}
 bindSeedButtons($('seedSidebar'));bindSeedButtons($('seedMobile'));
 const fillSlots=document.querySelectorAll('[data-fill-all]');
@@ -256,15 +350,18 @@ fillSlots.forEach(slot=>{
  slot.setAttribute('aria-label','Arrastra aquí una semilla para rellenar todo el mapa');
  slot.addEventListener('dragover',e=>{e.preventDefault();slot.classList.add('drop-target');if(e.dataTransfer)e.dataTransfer.dropEffect='copy'});
  slot.addEventListener('dragleave',()=>slot.classList.remove('drop-target'));
- slot.addEventListener('drop',e=>{e.preventDefault();slot.classList.remove('drop-target');let picked=seed;try{const raw=e.dataTransfer.getData('text/plain');if(raw)picked=JSON.parse(raw)}catch(err){}seed=picked;tray=tray.map(()=>({...picked}));saveTray();renderTray();updateTrayLegend();toast('Mapa completo con '+picked.name+'.');});
+ slot.addEventListener('drop',e=>{e.preventDefault();slot.classList.remove('drop-target');let picked=seed;try{const raw=e.dataTransfer.getData('text/plain');if(raw)picked=JSON.parse(raw)}catch(err){}seed=picked;tray=tray.map(()=>({...picked}));saveTray();renderTray();updateTrayLegend();toast('Mapa completo con '+seedLabel(picked.name)+'.');});
 });
 // Camera picker and live tray scanner live in scanner.js.
 $('manualTrayBtn').addEventListener('click',()=>{$('scanResult').hidden=true;$('customTrayForm').hidden=false;$('customRows').focus()});
 $('cameraInput').addEventListener('change',()=>{const file=$('cameraInput').files&&$('cameraInput').files[0];if(!file)return;$('scanResult').hidden=false;$('customTrayForm').hidden=false;$('scanResult').querySelector('strong').textContent='Imagen capturada: '+file.name;$('scanResult').querySelector('p').textContent='No se ha podido contar los huecos de forma fiable en este navegador. Ajusta las filas y columnas para crear el mapa; la detección automática requiere integrar un modelo de visión.';});
 function createTray(rows,cols){rows=Math.max(1,Math.min(20,Math.floor(Number(rows)||3)));cols=Math.max(1,Math.min(20,Math.floor(Number(cols)||3)));if(rows*cols>200){toast('El casillero puede tener como máximo 200 huecos.');return}trayRows=rows;trayCols=cols;TRAY_SIZE=rows*cols;tray=Array(TRAY_SIZE).fill(null);saveTray();$('scannerGate').hidden=true;$('mainApp').hidden=false;$('mobileSeedDock').hidden=false;renderTray();updateTrayLegend();renderQueue();updateRobot();$('mapa-semillero').scrollIntoView({block:'start'});toast('Mapa creado: '+rows+' × '+cols+' ('+TRAY_SIZE+' huecos).');}
 $('createCustomTrayBtn').addEventListener('click',()=>createTray($('customRows').value,$('customCols').value));
+// Resize keeping each seed at the same (row, col) when it still fits. Used by the camera map.
+function resizeTray(rows,cols){rows=Math.max(1,Math.min(20,Math.floor(Number(rows)||1)));cols=Math.max(1,Math.min(20,Math.floor(Number(cols)||1)));if(rows*cols>200||(rows===trayRows&&cols===trayCols))return;const next=Array(rows*cols).fill(null);tray.forEach((s,i)=>{const r=Math.floor(i/trayCols),c=i%trayCols;if(s&&r<rows&&c<cols)next[r*cols+c]=s});trayRows=rows;trayCols=cols;TRAY_SIZE=rows*cols;tray=next;saveTray();renderTray()}
+window.smartseedApp={createTray,resizeTray};
 
-document.querySelectorAll('[data-fill-all]').forEach(btn=>btn.addEventListener('click',()=>{if(!tray.length){toast('Crea primero un casillero.');return}if(!seed){toast('Selecciona una variedad primero.');return}tray=tray.map(()=>({...seed}));saveTray();renderTray();updateTrayLegend();renderQueue();updateRobot();log('Mapa rellenado con '+seed.name+'.','🌱');toast('Mapa completo con '+seed.name+'.')}));
+document.querySelectorAll('[data-fill-all]').forEach(btn=>btn.addEventListener('click',()=>{if(!tray.length){toast('Crea primero un casillero.');return}if(!seed){toast('Selecciona una variedad primero.');return}tray=tray.map(()=>({...seed}));saveTray();renderTray();updateTrayLegend();renderQueue();updateRobot();log('Mapa rellenado con '+seedLabel(seed.name)+'.','🌱');toast('Mapa completo con '+seedLabel(seed.name)+'.')}));
 document.addEventListener('pointerup',e=>{if(!matchMedia('(max-width: 899px)').matches)return;const cell=e.target.closest&&e.target.closest('[data-cell]');if(!cell)return;const picked=seed;if(!picked)return;setTrayCell(Number(cell.dataset.cell),picked);mobileDropAt=Date.now();});
 
 renderTray();updateTrayLegend();renderQueue();updateRobot();
