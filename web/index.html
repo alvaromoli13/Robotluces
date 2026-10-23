@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="es">
 <head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
 <meta name="theme-color" content="#173d2b"><meta name="description" content="Control de siembra inteligente para semilleros con LeRobot.">
 <title>SmartSeed — Control de siembra</title>
 <style>
@@ -153,6 +153,8 @@ html,body,.app{overflow-x:clip}
 @media (min-width:900px) { .mobile-seed-dock { display:none !important; } #cola { display:none !important; } }
 /* Ajustes solicitados: mapa compacto en PC y barra móvil visible tras crear el casillero */
 .mobile-seed-dock[hidden] { display:none !important; }
+/* iOS hace zoom al enfocar campos con fuente < 16px */
+input, select, textarea { font-size:16px !important; }
 @media (min-width:900px) {
   .sidebar { width:260px !important; flex-basis:260px !important; padding:18px 13px !important; }
   .fill-all-wrap { display:block !important; margin:10px 0 14px !important; padding:10px !important; border:2px dashed #b9f36b !important; background:#ffffff12 !important; }
