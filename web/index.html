@@ -172,7 +172,7 @@ html,body,.app{overflow-x:clip}
 <div class="seed-grid" id="seedGrid">
 <button class="seed selected" data-seed="TOMATE" data-emoji="🍅" data-time="2"><span class="seed-check">✓</span><img class="seed-photo" src="https://images.unsplash.com/photo-1546094096-0df4bcaaa337?auto=format&fit=crop&w=360&q=75" alt="Tomates" loading="lazy"><div class="seed-name">TOMATE</div><div class="seed-detail">Sol · 2 s / semilla</div></button>
 <button class="seed" data-seed="PIMIENTO" data-emoji="🫑" data-time="2"><span class="seed-check">✓</span><img class="seed-photo" src="https://images.unsplash.com/photo-1563565375-f3fdfdbefa83?auto=format&fit=crop&w=360&q=75" alt="Pimientos" loading="lazy"><div class="seed-name">PIMIENTO</div><div class="seed-detail">Calor · 2 s</div></button>
-<button class="seed" data-seed="Limón" data-emoji="🍋" data-time="2"><span class="seed-check">✓</span><img class="seed-photo" src="https://images.unsplash.com/photo-1590502593747-42a996133562?auto=format&fit=crop&w=360&q=75" alt="Limones" loading="lazy"><div class="seed-name">LIMON</div><div class="seed-detail">Cítrico · 2 s</div></button>
+<button class="seed" data-seed="LIMON" data-emoji="🍋" data-time="2"><span class="seed-check">✓</span><img class="seed-photo" src="https://images.unsplash.com/photo-1590502593747-42a996133562?auto=format&fit=crop&w=360&q=75" alt="Limones" loading="lazy"><div class="seed-name">LIMON</div><div class="seed-detail">Cítrico · 2 s</div></button>
 <button class="seed" data-seed="BERENJENAS" data-emoji="🍆" data-time="2"><span class="seed-check">✓</span><img class="seed-photo" src="https://images.unsplash.com/photo-1659261200824-6d6f8f6c06c2?auto=format&fit=crop&w=360&q=75" alt="Berenjenas" loading="lazy"><div class="seed-name">BERENJENAS</div><div class="seed-detail">Hortaliza · 2 s</div></button>
 </div></section>
 <section class="panel" id="mapa-semillero">
@@ -198,7 +198,7 @@ function startOrder(){if(paused||running)return;let o=orders.find(o=>o.status===
 
 
 let trayRows=3,trayCols=3,TRAY_SIZE=9;
-const seedColors={'TOMATE':'#ffe2d7','PIMIENTO':'#fbe0d8','Limón':'#fff4b8','BERENJENAS':'#e9ddf5'};
+const seedColors={'TOMATE':'#ffe2d7','PIMIENTO':'#fbe0d8','LIMON':'#fff4b8','BERENJENAS':'#e9ddf5'};
 let tray=Array(TRAY_SIZE).fill(null);
 try{const saved=JSON.parse(localStorage.getItem('smartseed-last-layout')||'null');if(Array.isArray(saved))tray=Array.from({length:TRAY_SIZE},(_,i)=>saved[i]&&typeof saved[i].name==='string'?saved[i]:null)}catch(e){}
 function saveTray(){try{localStorage.setItem('smartseed-last-layout',JSON.stringify(tray))}catch(e){}}
