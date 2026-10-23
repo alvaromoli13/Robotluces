@@ -145,7 +145,8 @@ con la pinza del SO-101 fallaría demasiado para aguantar 5 demos seguidas.
 ## Pasos a seguir
 
 ### 1. Hardware y escena (viernes)
-- [ ] Montar el leader y el follower, calibrarlos y comprobar que la teleoperación va bien.
+- [x] Montar el leader y el follower y calibrarlos (hecho el viernes 23).
+- [ ] Comprobar que la teleoperación va bien, pinza incluida.
 - [ ] Conseguir las pelotas y las 4 cajas de colores (ver [Escena y objetos](#escena-y-objetos)).
 - [ ] **Fijar el semillero** a la mesa con topes o cinta. Marcar en la mesa la zona de
       cada caja: se pueden mover dentro de su zona.
