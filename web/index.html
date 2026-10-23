@@ -201,8 +201,8 @@ $('queueList').addEventListener('click',e=>{const btn=e.target.closest('[data-re
 
 
 
-$('pauseBtn').addEventListener('click',()=>{if(!running)return;paused=true;updateRobot();log('Siembra pausada por el usuario.','⏸️');toast('Robot pausado en la simulación.')});
-$('resumeBtn').addEventListener('click',()=>{if(!paused)return;paused=false;updateRobot();log('Siembra reanudada.','▶️');toast('Siembra reanudada en la simulación.')});
+const legacyPauseBtn=$('pauseBtn');if(legacyPauseBtn)legacyPauseBtn.addEventListener('click',()=>{if(!running)return;paused=true;updateRobot();log('Siembra pausada por el usuario.','⏸️');toast('Robot pausado en la simulación.')});
+const legacyResumeBtn=$('resumeBtn');if(legacyResumeBtn)legacyResumeBtn.addEventListener('click',()=>{if(!paused)return;paused=false;updateRobot();log('Siembra reanudada.','▶️');toast('Siembra reanudada en la simulación.')});
 $('helpBtn').addEventListener('click',()=>toast('Prototipo visual: las órdenes se simulan en el navegador; aún no hay conexión física con LeRobot.'));
 document.querySelectorAll('[data-scroll]').forEach(b=>b.addEventListener('click',()=>{const el=$(b.dataset.scroll);if(el)el.scrollIntoView({behavior:'smooth',block:'start'});document.querySelectorAll('.nav-item,.side-link').forEach(x=>x.classList.toggle('active',x.dataset.scroll===b.dataset.scroll))}));
 
