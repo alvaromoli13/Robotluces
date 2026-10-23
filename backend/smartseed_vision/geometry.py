@@ -9,6 +9,7 @@ MIN_CELL_PX = 12  # smaller periods are edges inside one cell
 MIN_PERIOD_STRENGTH = 0.25  # weaker autocorrelation peaks are noise, not cells
 MAX_PERIOD_FRAC = 0.6  # 2 cells give ~0.5; a single cell's own walls give 0.65+
 MIN_NESTED_CONFIDENCE = 0.35  # a blob inside the best one wins with at least this grid confidence
+MAX_NESTED_AREA_FRAC = 0.6  # ...and when clearly smaller (box on a mat), not the same object
 MAX_CANDIDATES_PER_POLARITY = 2
 
 
@@ -34,10 +35,11 @@ def _is_background(contour, w, h, margin=2):
 
 
 def tray_candidates(img, bbox=None):
-    """Ordered corner quads of dark and light blobs inside bbox (x0, y0, x1, y1).
+    """Ordered corner quads of dark, light and coloured blobs inside bbox (x0, y0, x1, y1).
 
     The tray can be darker (plastic tray on a table) or lighter (cardboard box on a mat)
-    than its surroundings, so both polarities are tried. Without a bbox, blobs touching
+    than its surroundings, so both polarities are tried. Cardboard walls in shadow are as
+    dark as the mat, so saturated (coloured) blobs are tried too. Without a bbox, blobs touching
     most of the frame border are background (table, paper) and are skipped.
     """
     h, w = img.shape[:2]
@@ -45,11 +47,14 @@ def tray_candidates(img, bbox=None):
                                                          min(w, int(bbox[2])), min(h, int(bbox[3])))
     if x1 - x0 < 4 or y1 - y0 < 4:
         return []
-    gray = cv2.cvtColor(img[y0:y1, x0:x1], cv2.COLOR_BGR2GRAY)
-    gray = cv2.GaussianBlur(gray, (0, 0), 2)
+    roi = img[y0:y1, x0:x1]
+    gray = cv2.GaussianBlur(cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY), (0, 0), 2)
+    sat = cv2.GaussianBlur(cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)[..., 1], (0, 0), 2)
     quads = []
-    for mode in (cv2.THRESH_BINARY_INV, cv2.THRESH_BINARY):
-        _, mask = cv2.threshold(gray, 0, 255, mode + cv2.THRESH_OTSU)
+    for channel, mode in ((gray, cv2.THRESH_BINARY_INV), (gray, cv2.THRESH_BINARY), (sat, cv2.THRESH_BINARY)):
+        if channel.std() < 1e-6:  # e.g. no colour at all in a grey image
+            continue
+        _, mask = cv2.threshold(channel, 0, 255, mode + cv2.THRESH_OTSU)
         mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((9, 9), np.uint8))
         # CCOMP keeps blobs that sit inside a hole of another blob (box on a mat on paper)
         contours, hierarchy = cv2.findContours(mask, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_SIMPLE)
@@ -118,9 +123,10 @@ def estimate_grid(warped):
 
 
 def _contains(outer, inner):
-    """True when inner's center lies inside outer and inner is smaller."""
+    """True when inner's center lies inside outer and inner is clearly smaller."""
     center = tuple(float(v) for v in inner.mean(axis=0))
-    return cv2.contourArea(inner) < cv2.contourArea(outer) and cv2.pointPolygonTest(outer, center, False) > 0
+    return (cv2.contourArea(inner) < MAX_NESTED_AREA_FRAC * cv2.contourArea(outer)
+            and cv2.pointPolygonTest(outer, center, False) > 0)
 
 
 def analyze_tray(img, bbox=None):

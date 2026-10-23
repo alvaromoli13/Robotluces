@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 
 from smartseed_vision.geometry import analyze_tray
-from synth import make_box_on_mat_image, make_tray_image
+from synth import make_box_on_mat_image, make_cardboard_box_image, make_tray_image
 
 
 @pytest.mark.parametrize("rows,cols", [(4, 6), (5, 8), (3, 3), (6, 4), (1, 2), (2, 1), (2, 2), (2, 3)])
@@ -39,3 +39,11 @@ def test_light_box_on_dark_mat_is_found_instead_of_the_mat(rows, cols):
     assert (result.rows, result.cols) == (rows, cols)
     assert np.abs(np.array(result.corners_px) - true).max() < 8
     assert result.confidence > 0.35
+
+
+@pytest.mark.parametrize("rows,cols", [(1, 2), (2, 2)])
+def test_cardboard_box_with_shadowed_wall_is_located_by_colour(rows, cols):
+    img, true = make_cardboard_box_image(rows, cols)
+    result = analyze_tray(img)
+    assert (result.rows, result.cols) == (rows, cols)
+    assert np.abs(np.array(result.corners_px) - true).max() < 8

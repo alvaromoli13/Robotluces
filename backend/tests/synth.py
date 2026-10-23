@@ -51,3 +51,27 @@ def make_box_on_mat_image(rows, cols, cell_px=120, size=(800, 640), seed=0):
     img = cv2.cvtColor(np.clip(gray, 0, 255).astype(np.uint8), cv2.COLOR_GRAY2BGR)
     true = np.array([[x0, y0], [x0 + box_w, y0], [x0 + box_w, y0 + box_h], [x0, y0 + box_h]], np.float32)
     return img, true
+
+
+def make_cardboard_box_image(rows, cols, cell_px=120, size=(800, 640), seed=0):
+    """Tan cardboard box on a grey mat over white paper, with its bottom wall in shadow.
+
+    The shadowed wall is as dark as the mat, so only colour (saturation) separates it.
+    Return (BGR image, true box corners TL,TR,BR,BL in pixels).
+    """
+    w, h = size
+    img = np.full((h, w, 3), 235, np.float32)
+    cv2.rectangle(img, (60, 50), (w - 60, h - 50), (80, 72, 70), -1)  # grey-blue mat
+    box_w, box_h = cols * cell_px + 2 * BORDER_PX, rows * cell_px + 2 * BORDER_PX
+    x0, y0 = (w - box_w) // 2, (h - box_h) // 2
+    cv2.rectangle(img, (x0, y0), (x0 + box_w, y0 + box_h), (120, 170, 215), -1)  # lit walls
+    shadow = 30
+    cv2.rectangle(img, (x0, y0 + box_h - shadow), (x0 + box_w, y0 + box_h), (35, 65, 105), -1)
+    for r in range(rows):
+        for c in range(cols):
+            cx, cy = x0 + BORDER_PX + c * cell_px, y0 + BORDER_PX + r * cell_px
+            cv2.rectangle(img, (cx + 4, cy + 4), (cx + cell_px - 5, cy + cell_px - 5), (95, 140, 185), -1)
+    rng = np.random.default_rng(seed)
+    img = cv2.GaussianBlur(img, (0, 0), 1.0) + rng.normal(0, 3, img.shape)
+    true = np.array([[x0, y0], [x0 + box_w, y0], [x0 + box_w, y0 + box_h], [x0, y0 + box_h]], np.float32)
+    return np.clip(img, 0, 255).astype(np.uint8), true
