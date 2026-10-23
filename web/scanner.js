@@ -1,6 +1,7 @@
-// Live tray scanner: camera picker, real-time grid overlay and ArUco tray detection.
-// Markers (ARUCO_MIP_36h12 dictionary) go on the tray corners: id 0 top-left, 1 top-right,
-// 2 bottom-right, 3 bottom-left. Without markers the user drags the 4 corners by hand.
+// Live tray scanner: camera picker, real-time grid overlay and tray localisation.
+// Sources, by priority: ArUco markers (ARUCO_MIP_36h12; id 0 top-left, 1 top-right,
+// 2 bottom-right, 3 bottom-left) > local vision backend (backend/, OWLv2 + OpenCV, gives
+// corners and rows x cols) > corners dragged by hand. Without backend the page still works.
 (() => {
   const q = id => document.getElementById(id);
   const notify = msg => (typeof toast === 'function' ? toast(msg) : console.log(msg));
@@ -9,6 +10,11 @@
   const DETECT_EVERY_MS = 100;
   const DETECT_WIDTH = 640;
   const HANDLE_RADIUS = 14;
+  const MODEL_EVERY_MS = 1000;
+  const HEALTH_RETRY_MS = 5000;
+  const BACKEND_URL = (() => {
+    try { return localStorage.getItem('smartseed.backendUrl') || 'http://localhost:8000'; } catch (e) { return 'http://localhost:8000'; }
+  })();
 
   const video = q('cameraPreview');
   const overlay = q('scanOverlay');
@@ -23,6 +29,12 @@
   let locked = false;
   let markersSeen = 0;
   let dragIndex = -1;
+  let backendOk = false;
+  let lastHealth = -Infinity;
+  let lastModel = 0;
+  let modelBusy = false;
+  let modelFound = false;
+  let userSetSize = false;
   // Normalized (0..1) corners: top-left, top-right, bottom-right, bottom-left.
   let corners = loadCorners();
 
@@ -108,6 +120,56 @@
     if (locked && dragIndex < 0) { corners = [byId[0], byId[1], byId[2], byId[3]]; saveCorners(); }
   }
 
+  async function fetchWithTimeout(url, opts, ms) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), ms);
+    try { return await fetch(url, { ...opts, signal: ctrl.signal }); } finally { clearTimeout(timer); }
+  }
+
+  async function checkBackend() {
+    try {
+      const res = await fetchWithTimeout(BACKEND_URL + '/health', {}, 1500);
+      backendOk = res.ok;
+    } catch (e) { backendOk = false; }
+  }
+
+  async function askModel() {
+    modelBusy = true;
+    try {
+      work.width = video.videoWidth; work.height = video.videoHeight;
+      workCtx.drawImage(video, 0, 0);
+      const blob = await new Promise(resolve => work.toBlob(resolve, 'image/jpeg', 0.85));
+      const form = new FormData();
+      form.append('image', blob, 'frame.jpg');
+      const res = await fetchWithTimeout(BACKEND_URL + '/vision/tray', { method: 'POST', body: form }, 8000);
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const data = await res.json();
+      modelFound = !!data.found;
+      // ArUco or a drag may have taken over while the request was in flight.
+      if (data.found && !locked && dragIndex < 0) {
+        corners = data.corners.map(p => p.slice());
+        saveCorners();
+        if (!userSetSize && data.rows && data.cols) {
+          q('customRows').value = data.rows;
+          q('customCols').value = data.cols;
+        }
+      }
+    } catch (e) {
+      backendOk = false;
+      modelFound = false;
+    } finally {
+      modelBusy = false;
+    }
+  }
+
+  function statusText(r, c) {
+    if (locked) return 'Bandeja localizada con los 4 marcadores · ' + r + ' × ' + c + ' huecos';
+    if (backendOk && modelFound) return 'Bandeja detectada por el modelo de visión · ' + r + ' × ' + c + ' huecos · puedes corregir filas, columnas o esquinas';
+    const markers = detector ? 'Marcadores detectados: ' + markersSeen + '/4 · ' : '';
+    const model = backendOk ? 'Modelo de visión buscando la bandeja… · ' : 'Modelo de visión no disponible (arranca backend/) · ';
+    return markers + model + 'Arrastra las esquinas amarillas hasta las esquinas de la bandeja';
+  }
+
   function draw() {
     const rect = video.getBoundingClientRect();
     const dpr = window.devicePixelRatio || 1;
@@ -119,7 +181,7 @@
     const px = ([x, y]) => [x * W, y * H];
     ctx.clearRect(0, 0, W, H);
     ctx.lineWidth = 2 * dpr;
-    ctx.strokeStyle = locked ? '#7ddc5a' : '#ffd23f';
+    ctx.strokeStyle = locked ? '#7ddc5a' : (backendOk && modelFound ? '#5ac8f0' : '#ffd23f');
     ctx.beginPath();
     for (let j = 0; j <= c; j++) {
       ctx.moveTo(...px(quadPoint(j / c, 0)));
@@ -142,15 +204,17 @@
         ctx.fillStyle = '#ffffffcc'; ctx.fill(); ctx.stroke();
       });
     }
-    q('scanStatus').textContent = locked
-      ? 'Bandeja localizada con los 4 marcadores · ' + r + ' × ' + c + ' huecos'
-      : (detector ? 'Marcadores detectados: ' + markersSeen + '/4 · ' : '') +
-        'Arrastra las esquinas amarillas hasta las esquinas de la bandeja';
+    q('scanStatus').textContent = statusText(r, c);
   }
 
   function loop(t) {
     if (!stream) return;
     if (t - lastDetect > DETECT_EVERY_MS) { lastDetect = t; detectMarkers(); }
+    if (!backendOk && t - lastHealth > HEALTH_RETRY_MS) { lastHealth = t; checkBackend(); }
+    if (backendOk && !locked && dragIndex < 0 && !modelBusy && video.videoWidth && t - lastModel > MODEL_EVERY_MS) {
+      lastModel = t;
+      askModel();
+    }
     draw();
     rafId = requestAnimationFrame(loop);
   }
@@ -197,6 +261,7 @@
       q('cameraInput').click();
     }
   });
+  ['customRows', 'customCols'].forEach(id => q(id).addEventListener('input', () => { userSetSize = true; }));
   q('cameraSelect').addEventListener('change', e =>
     openCamera(e.target.value).catch(err => notify('No se ha podido abrir esa cámara: ' + (err.message || err.name))));
   q('closeCameraBtn').addEventListener('click', () => {
