@@ -1,4 +1,5 @@
 import os
+import threading
 import time
 
 import cv2
@@ -9,6 +10,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from .depth import find_holes
 from .geometry import analyze_tray
 
+# One model at a time on the GPU: two threads driving MPS at once abort the whole process
+# ("failed assertion _status < MTLCommandBufferStatusCommitted").
+GPU_LOCK = threading.Lock()
 MIN_CONTOUR_CONFIDENCE = 0.35  # without a detector hit, require a clear cell pattern
 
 
@@ -61,7 +65,8 @@ def create_app(detector="default", depth="default"):
         if img is None:
             raise HTTPException(400, "image could not be decoded")
         h, w = img.shape[:2]
-        detection = detector.detect(img) if detector else None
+        with GPU_LOCK:
+            detection = detector.detect(img) if detector else None
         bbox, score = detection if detection else (None, None)
         geometry = analyze_tray(img, bbox)
         if geometry is None and bbox is not None:  # bbox too tight or wrong: retry on the whole frame
@@ -69,7 +74,8 @@ def create_app(detector="default", depth="default"):
         if geometry and bbox is None and geometry.confidence < MIN_CONTOUR_CONFIDENCE:
             geometry = None
         corners_px = geometry.corners_px if geometry else None
-        depth_map = depth.estimate(img) if depth else None
+        with GPU_LOCK:
+            depth_map = depth.estimate(img) if depth else None
         holes = find_holes(depth_map) if depth_map is not None else []
         return {
             "found": geometry is not None,

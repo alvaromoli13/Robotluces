@@ -41,7 +41,8 @@ Implications for any work here:
   OWLv2 bbox + OpenCV contour/warp/periodicity in `geometry.py` (dark, light and
   saturated blobs, so cardboard boxes work too). `depth.py`: Depth Anything V2 Small gives
   relative depth, and holes are basins enclosed by walls (grayscale fill from the frame
-  border), returned row-major as normalized `x`, `y`, `area`, `depth`, `row`, `col`. CORS open plus Chrome Private
+  border), returned row-major as normalized `x`, `y`, `area`, `depth`, `row`, `col`.
+  All model inference shares one `GPU_LOCK`: two threads on MPS at once abort the process. CORS open plus Chrome Private
   Network Access, because the HTTPS Pages site calls localhost. Run `./run.sh`; tests
   `uv run pytest` (wrap in `~/.claude/bin/testsem --` on the team Mac). Tests use synthetic
   trays, synthetic depth maps and stubbed models; never download a model in tests.

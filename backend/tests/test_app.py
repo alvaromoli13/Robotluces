@@ -1,3 +1,6 @@
+import threading
+import time
+
 import cv2
 import numpy as np
 import pytest
@@ -143,3 +146,37 @@ def test_no_holes_without_depth_model(tray):
 def test_health_reports_depth_model():
     body = TestClient(create_app(None, depth=StubDepth(None))).get("/health").json()
     assert body["depth_loaded"] is True and body["depth_device"] == "stub"
+
+
+class OverlapProbe:
+    """Detector and depth stubs sharing one counter, to catch two models on the GPU at once."""
+
+    def __init__(self):
+        self.active = 0
+        self.max_active = 0
+        self.guard = threading.Lock()
+
+    def run(self, result):
+        with self.guard:
+            self.active += 1
+            self.max_active = max(self.max_active, self.active)
+        time.sleep(0.05)
+        with self.guard:
+            self.active -= 1
+        return result
+
+
+def test_models_never_run_concurrently_across_requests(tray):
+    img, _ = tray
+    probe = OverlapProbe()
+    detector = StubDetector(None)
+    detector.detect = lambda image: probe.run(None)
+    depth = StubDepth(None)
+    depth.estimate = lambda image: probe.run(None)
+    client = TestClient(create_app(detector, depth=depth))
+    threads = [threading.Thread(target=post, args=(client, img)) for _ in range(4)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert probe.max_active == 1

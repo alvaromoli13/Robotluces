@@ -12,7 +12,7 @@ import numpy as np
 
 MODEL_ID = "depth-anything/Depth-Anything-V2-Small-hf"
 WORK_WIDTH = 320  # smaller maps blur thin walls between compartments into one basin
-MIN_HOLE_DEPTH = 0.05  # basin depth, as a share of the frame's depth range; below is noise
+MIN_HOLE_DEPTH = 0.035  # basin depth, as a share of the frame's depth range; real noise reached 0.026
 MIN_HOLE_AREA_FRAC = 0.002
 HOLE_LEVEL = 0.25  # pixels deeper than this share of their basin's max depth form the hole
 
