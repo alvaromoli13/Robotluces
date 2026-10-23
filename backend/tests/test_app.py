@@ -99,3 +99,15 @@ def test_private_network_preflight_is_answered():
     )
     assert r.status_code == 200
     assert r.headers["access-control-allow-private-network"] == "true"
+
+
+def test_contour_fallback_rejects_dark_blob_without_a_cell_pattern():
+    img = np.full((480, 640, 3), 200, np.uint8)
+    cv2.rectangle(img, (60, 40), (560, 440), (30, 30, 30), -1)
+    assert post(TestClient(create_app(None)), img).json()["found"] is False
+
+
+def test_normalized_corners_are_clamped_to_the_frame():
+    img, _ = make_tray_image(4, 6, 10.0, center=(600, 240))  # tray overhangs the right edge
+    corners = post(TestClient(create_app(None)), img).json()["corners"]
+    assert all(0 <= v <= 1 for p in corners for v in p)

@@ -8,6 +8,7 @@ dependencies = [
     "uvicorn[standard]",
     "python-multipart",
     "numpy",
+    "scipy",
     "opencv-python-headless",
     "pillow",
     "torch",

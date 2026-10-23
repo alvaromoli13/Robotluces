@@ -8,6 +8,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .geometry import analyze_tray
 
+MIN_CONTOUR_CONFIDENCE = 0.35  # without a detector hit, require a clear cell pattern
+
 
 def default_detector():
     if os.environ.get("SMARTSEED_DISABLE_MODEL") == "1":
@@ -47,10 +49,12 @@ def create_app(detector="default"):
         geometry = analyze_tray(img, bbox)
         if geometry is None and bbox is not None:  # bbox too tight or wrong: retry on the whole frame
             geometry, bbox, score = analyze_tray(img), None, None
+        if geometry and bbox is None and geometry.confidence < MIN_CONTOUR_CONFIDENCE:
+            geometry = None
         corners_px = geometry.corners_px if geometry else None
         return {
             "found": geometry is not None,
-            "corners": [[x / w, y / h] for x, y in corners_px] if geometry else None,
+            "corners": [[min(max(x / w, 0), 1), min(max(y / h, 0), 1)] for x, y in corners_px] if geometry else None,
             "corners_px": corners_px,
             "rows": geometry.rows if geometry else None,
             "cols": geometry.cols if geometry else None,
