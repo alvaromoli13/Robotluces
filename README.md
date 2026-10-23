@@ -57,9 +57,13 @@ diseño que el cliente elige en una interfaz gráfica.
 
 ## Flujo de uso
 
+0. **Colocar el semillero**: el agricultor deja la bandeja **en cualquier sitio de la zona
+   de trabajo** de la mesa. La cámara cenital la detecta y la web muestra la rejilla real
+   (número de alveolos y su posición) sobre la imagen en directo.
 1. **Elegir plantilla**: al abrir la app se carga la **última fórmula usada**. También se
    puede escoger una **plantilla guardada**.
-2. **Editar**: el cliente toca alveolos para cambiar su semilla, o usa los botones de
+2. **Editar**: el cliente toca alveolos para cambiar su semilla (cada alveolo puede llevar
+   una semilla distinta), o usa los botones de
    **rellenar todo de un color**. Los alveolos vacíos se quedan sin sembrar.
 3. **Guardar (opcional)**: el diseño se puede guardar como plantilla con nombre.
 4. **Listo**: se envía el plan al robot. La interfaz muestra en directo qué alveolo se
@@ -83,7 +87,8 @@ el semillero real con el plan superpuesto, y el progreso se puede comprobar a si
   `localStorage`. Se publica en GitHub Pages en **modo demo**, sin robot.
 - **Backend local**: servidor en Python en el portátil conectado al robot. Recibe el plan,
   lo convierte en una cola de tareas `(color de caja → alveolo fila,columna)` y transmite
-  la cámara y el progreso. Es el único sitio que habla con el hardware.
+  la cámara y el progreso. También detecta el semillero en la imagen. Es el único sitio
+  que habla con el hardware.
 - **Ejecución en el robot**: enfoque híbrido, ver la sección siguiente.
 
 ## Enfoque del robot: híbrido
@@ -93,7 +98,7 @@ Cada alveolo del plan se siembra en dos fases:
 | Fase | Cómo se hace | Qué se mueve en la escena |
 |---|---|---|
 | 1. **Coger** la "semilla" de la caja del color X | **Policy aprendida** de LeRobot, entrenada con demostraciones teleoperadas | Las **cajas pueden moverse** unos centímetros: la policy las encuentra con la cámara |
-| 2. **Soltarla** en el alveolo (fila, columna) | **Posiciones enseñadas**: se graban las 4 esquinas del semillero con el leader y el resto se interpola | El **semillero va fijo** a la mesa, con topes o cinta |
+| 2. **Soltarla** en el alveolo (fila, columna) | **Visión + cinemática inversa**: la cámara localiza el alveolo y el brazo calcula cómo llegar encima | El **semillero va donde lo deje el agricultor**, dentro de la zona de trabajo |
 
 - **Policy**: 4 ACT, una por color, con unos 50 episodios cada una. Es lo más seguro.
   Alternativa: una sola SmolVLA que reciba el color como texto (*"pick the ball from the
@@ -106,8 +111,55 @@ Cada alveolo del plan se siembra en dos fases:
 - **Lo que suma puntos**: la variación de las cajas en las demostraciones es lo que
   demuestra el criterio de dificultad ("aguanta cambios de posición o de luz") y el de
   datos y entrenamiento.
-- **Plan B**: si la policy no es fiable a tiempo, las cajas también se fijan y la recogida
-  se hace con posiciones enseñadas. La demo sale igual y la policy queda como mejora.
+- **Plan B de la recogida**: si la policy no es fiable a tiempo, las cajas también se fijan
+  y la recogida se hace con posiciones enseñadas. La demo sale igual y la policy queda
+  como mejora.
+
+## Semillero libre: detección y cinemática inversa
+
+### 1. Detectar el semillero
+- Se pegan **4 marcadores ArUco** en las esquinas de la bandeja. OpenCV (`cv2.aruco`, ya
+  instalado) los encuentra con cualquier luz, mucho mejor que intentar detectar una
+  bandeja negra con alveolos negros.
+- Con las 4 esquinas y el número de filas × columnas se calcula el centro de cada alveolo
+  en píxeles, aunque la bandeja esté girada. Eso es lo que la web pinta sobre la imagen.
+- Opcional: contar filas y columnas automáticamente por la repetición de los bordes de los
+  alveolos. Si falla, se indican a mano, una sola vez por modelo de bandeja.
+- Respaldo sin marcadores: el usuario marca las 4 esquinas en la imagen de la web.
+
+### 2. Calibrar la cámara con el robot (una vez)
+- Se lleva la punta de la pinza a 4-6 marcas de la mesa. En cada una se guarda el píxel
+  donde la ve la cámara y la posición de la punta que da la cinemática directa.
+- `cv2.findHomography` convierte esas parejas en una transformación **píxel de la mesa →
+  coordenadas (x, y) del robot**.
+- Unos 15 minutos. Solo se repite si se mueve la cámara cenital o el robot.
+
+### 3. Soltar en el alveolo
+- Para cada alveolo: píxel → (x, y) del robot → **cinemática inversa** a una altura fija
+  unos centímetros por encima del alveolo → abrir la pinza.
+- LeRobot trae la cinemática: `lerobot.model.kinematics.RobotKinematics`
+  (`forward_kinematics` / `inverse_kinematics`). Requisitos:
+  - `uv pip install -e "vendor/lerobot[kinematics]"`, que instala `placo`.
+  - El URDF del SO-101, `so101_new_calib.urdf`, del repositorio
+    [SO-ARM100](https://github.com/TheRobotStudio/SO-ARM100/tree/main/Simulation/SO101).
+
+### Riesgos y cómo mitigarlos
+- **Precisión**: entre la calibración y la cinemática se puede acumular alrededor de 1 cm
+  de error (estimación, **hay que medirlo**). Con alveolos de 4 cm y pelotas de 2,5 cm el
+  margen es justo. Mitigación: soltar desde un poco más arriba, pelotas algo más pequeñas o
+  una bandeja con alveolos más grandes, y medir el error real con una prueba de
+  10 alveolos.
+- **Zona de trabajo**: "cualquier sitio" significa dentro de la zona donde llega el brazo
+  y que ve la cámara cenital. Se marca en la mesa. Si la bandeja queda fuera, la web avisa
+  y no arranca.
+- **Tiempo**: instalar, calibrar y ajustar cuesta medio sábado. Es el mayor riesgo técnico
+  del proyecto.
+
+### Plan B del semillero
+Si el **sábado a mediodía** la prueba de 10 alveolos no acierta de forma fiable, se dibuja
+en la mesa el contorno de la bandeja y se sueltan las pelotas con **4 esquinas enseñadas
+con el leader** e interpolación. La cámara sigue detectando la rejilla para la web y
+comprueba que la bandeja está en su sitio.
 
 ## Escena y objetos
 
@@ -148,10 +200,11 @@ con la pinza del SO-101 fallaría demasiado para aguantar 5 demos seguidas.
 - [x] Montar el leader y el follower y calibrarlos (hecho el viernes 23).
 - [ ] Comprobar que la teleoperación va bien, pinza incluida.
 - [ ] Conseguir las pelotas y las 4 cajas de colores (ver [Escena y objetos](#escena-y-objetos)).
-- [ ] **Fijar el semillero** a la mesa con topes o cinta. Marcar en la mesa la zona de
-      cada caja: se pueden mover dentro de su zona.
-- [ ] Colocar la cámara cenital (`top`), que vea el semillero y todas las zonas de las
-      cajas, y la del brazo (`wrist`). Las cámaras no se mueven más.
+- [ ] Marcar en la mesa la **zona de trabajo** del semillero y la zona de cada caja: se
+      pueden mover dentro de su zona.
+- [ ] Pegar los 4 marcadores ArUco en las esquinas de la bandeja.
+- [ ] Colocar la cámara cenital (`top`), que vea toda la zona de trabajo y las zonas de
+      las cajas, y la del brazo (`wrist`). **Las cámaras y el robot no se mueven más.**
 - [ ] Probar con la teleoperación que se coge una pelota de cada caja y se suelta en un
       alveolo.
 
@@ -160,13 +213,17 @@ con la pinza del SO-101 fallaría demasiado para aguantar 5 demos seguidas.
 - [ ] Selector de las 4 semillas/colores y botones de "rellenar todo de un color".
 - [ ] Guardar y cargar plantillas, y cargar automáticamente la última fórmula usada.
 - [ ] Botón **Listo** que envía el plan al backend, con vista de progreso.
-- [ ] Imagen de la cámara cenital con la rejilla superpuesta.
+- [ ] Imagen de la cámara cenital con la rejilla **detectada** superpuesta, y aviso si la
+      bandeja está fuera de la zona de trabajo.
 
 ### 3. Backend y conexión con el robot (sábado)
 - [ ] Servidor local (FastAPI + WebSocket) con los endpoints `POST /plan`, `POST /stop`
       y `WS /progress`, y streaming de la cámara.
-- [ ] Mapa alveolo → posición articular: enseñar las 4 esquinas con el leader e
-      interpolar.
+- [ ] Detección del semillero con ArUco → centros de los alveolos en píxeles.
+- [ ] Instalar `lerobot[kinematics]` y descargar el URDF del SO-101.
+- [ ] Calibración cámara-robot (homografía píxel → x, y del robot).
+- [ ] Soltar por cinemática inversa y **medir el error** con una prueba de 10 alveolos.
+- [ ] Sábado a mediodía: decidir entre semillero libre o plan B (esquinas enseñadas).
 - [ ] Ejecutor de la cola con parada segura: **Stop** desactiva el par de los motores.
 
 ### 4. Datos y policy (viernes noche-sábado)
