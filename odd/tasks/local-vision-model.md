@@ -42,9 +42,9 @@ Out of scope: robot control endpoints, cell occupancy/colour check (possible fol
       estimation) with pytest on synthetic tray images. Route: delegated (writer, 2+ files).
 - [x] T2 OWLv2 detection wrapper + `POST /vision/tray` endpoint, model loaded once, test
       with the detector stubbed; one manual run with the real model. Route: delegated.
-- [ ] T3 Web integration in `scanner.js` (backend polling, priority, status). Route:
+- [x] T3 Web integration in `scanner.js` (backend polling, priority, status). Route:
       delegated or inline depending on size.
-- [ ] T4 Docs (README, CLAUDE.md, `backend/README.md`) + run script. Route: inline.
+- [x] T4 Docs (README, CLAUDE.md, `backend/README.md`) + run script. Route: inline.
 - [ ] T5 Tune on real tray frames once available.
 
 ## Acceptance criteria
@@ -66,5 +66,14 @@ Out of scope: robot control endpoints, cell occupancy/colour check (possible fol
   `MIN_CONTOUR_CONFIDENCE=0.35`.
 - Added scipy dependency (required by Owlv2 image processor).
 
+- T3 (5ae71c9, inline: single file): Playwright smoke with fake camera showing a synthetic
+  5x8 tray rotated 8 deg. Backend off -> status "Modelo de visión no disponible", 3x3 default,
+  no errors. Backend on (real OWLv2, MPS) -> "Bandeja detectada por el modelo de visión ·
+  5 × 8", rows/cols filled automatically, blue grid aligned with the tray, no page errors.
+- T4 (docs commit): README section + structure, CLAUDE.md layout. Run script `backend/run.sh`
+  already existed from T2.
+- Unrelated uncommitted change in `web/index.html` (CSS "Ajustes solicitados") found in the
+  working tree; not authored by this feature, left untouched.
+
 ## Next step
-T3 (web integration in `web/scanner.js`).
+T5: capture top-camera frames with the real tray and tune thresholds / rows-cols estimation.

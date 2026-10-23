@@ -30,6 +30,18 @@ Implications for any work here:
 
 - `web/` — the web UI. Plain HTML/CSS/JS, no build step, no framework. This folder is the
   **GitHub Pages site root**.
+- `web/scanner.js` — live camera, grid overlay, tray localisation. Source priority:
+  ArUco markers (ARUCO_MIP_36h12, ids 0-3 TL/TR/BR/BL) > local vision backend > manually
+  dragged corners. It must keep working when the backend is down.
+- `backend/` — offline vision service (uv project, Python 3.12, own `.venv`). FastAPI on
+  `127.0.0.1:8000`: `GET /health`, `POST /vision/tray` (multipart `image` → `found`,
+  normalized `corners` TL/TR/BR/BL, `rows`, `cols`, `confidence`, `source`). OWLv2 bbox +
+  OpenCV contour/warp/periodicity in `smartseed_vision/`. CORS open plus Chrome Private
+  Network Access, because the HTTPS Pages site calls localhost. Run `./run.sh`; tests
+  `uv run pytest` (wrap in `~/.claude/bin/testsem --` on the team Mac). Tests use synthetic
+  trays and a stubbed detector; never download the model in tests.
+  `SMARTSEED_DISABLE_MODEL=1` skips OWLv2 (contour only).
+- `odd/tasks/` — per-feature task documents.
 - `.github/workflows/pages.yml` — deploys `web/` to GitHub Pages.
 - Root `README.md` — project idea and plan. `web/README.md` — notes on the UI prototype.
 

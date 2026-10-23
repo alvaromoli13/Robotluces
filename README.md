@@ -126,9 +126,37 @@ Cada alveolo del plan se siembra en dos fases:
   bandeja negra con alveolos negros.
 - Con las 4 esquinas y el número de filas × columnas se calcula el centro de cada alveolo
   en píxeles, aunque la bandeja esté girada. Eso es lo que la web pinta sobre la imagen.
-- Opcional: contar filas y columnas automáticamente por la repetición de los bordes de los
-  alveolos. Si falla, se indican a mano, una sola vez por modelo de bandeja.
-- Respaldo sin marcadores: el usuario marca las 4 esquinas en la imagen de la web.
+- **Sin marcadores: modelo de visión local** (`backend/`). Funciona sin internet una vez
+  descargado el modelo:
+  - **OWLv2** (`google/owlv2-base-patch16-ensemble`), un detector abierto que busca
+    objetos a partir de texto ("a black plastic seed tray"), localiza la bandeja en la
+    imagen.
+  - **OpenCV** saca dentro de esa zona las 4 esquinas exactas, endereza la bandeja y
+    **cuenta filas y columnas** por la repetición de los bordes de los alveolos.
+  - La web le manda un fotograma por segundo y pinta el resultado en directo, con la
+    rejilla en azul. En el Mac (MPS) tarda unos 0,7 s por fotograma; la primera vez,
+    unos 12 s más mientras carga el modelo.
+- **Prioridad** en la web: ArUco (rejilla verde) > modelo de visión (azul) > esquinas
+  arrastradas a mano (amarilla). Si el usuario cambia filas o columnas a mano, el modelo
+  ya no las sobrescribe.
+- Sin backend la web funciona igual, con marcadores o esquinas a mano.
+
+Arrancar el backend (en el portátil del robot):
+
+```bash
+cd backend
+uv sync          # la primera vez; instala torch, transformers y OpenCV en backend/.venv
+./run.sh         # http://localhost:8000 · GET /health · POST /vision/tray
+```
+
+Después abre la web (publicada o `web/index.html`) y pulsa **Escanear con cámara**. Si
+el backend está en otra dirección, ejecuta esto en la consola del navegador:
+`localStorage.setItem('smartseed.backendUrl', 'http://IP:8000')`.
+
+Limitaciones conocidas: está ajustado con imágenes sintéticas. Con la bandeja real hay
+que comprobar los brillos sobre el plástico negro, una mesa oscura que se confunda con la
+bandeja y si cuenta bien los huecos (puede contar la mitad o el doble si las sombras
+marcan otro patrón). Tests: `cd backend && uv run pytest`.
 
 ### 2. Calibrar la cámara con el robot (una vez)
 - Se lleva la punta de la pinza a 4-6 marcas de la mesa. En cada una se guarda el píxel
@@ -254,7 +282,13 @@ con la pinza del SO-101 fallaría demasiado para aguantar 5 demos seguidas.
 ```
 web/                        interfaz (se publica en GitHub Pages)
   index.html
+  scanner.js                cámara en directo, rejilla, ArUco y llamada al backend
   README.md                 notas del prototipo de la interfaz
+backend/                    servicio local de visión (FastAPI + OWLv2 + OpenCV)
+  smartseed_vision/         geometry.py, detector.py, app.py
+  tests/                    pytest con bandejas sintéticas
+  run.sh                    arranca en http://localhost:8000
+odd/tasks/                  documentos de tareas por funcionalidad
 .github/workflows/pages.yml despliega web/ en GitHub Pages
 CLAUDE.md                   guía para agentes y colaboradores
 ```
