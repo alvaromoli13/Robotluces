@@ -95,6 +95,18 @@
 .footer-note{line-height:1.6}}
 @media(min-width:640px){.hero-banner{min-height:240px;padding:28px}.hero-row{align-items:center}}
 
+
+/* Responsive guardrails: prevent horizontal overflow on narrow phones. */
+html,body,.app,.main,.workspace,.left-col,.right-col,.panel{max-width:100%;min-width:0}
+html,body,.app{overflow-x:clip}
+.tray-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+.tray-toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between}
+.tray-actions{display:grid;grid-template-columns:minmax(0,1fr);align-items:stretch}
+.tray-actions>*{min-width:0;max-width:100%}
+.secondary-btn{white-space:normal}
+.queue-item{min-width:0;gap:8px}.queue-info{min-width:0;overflow-wrap:anywhere}
+@media(min-width:640px){.tray-actions{grid-template-columns:minmax(0,1fr) minmax(0,1.5fr)}.workspace{grid-template-columns:minmax(0,1.25fr) minmax(0,.85fr)}}
+@media(max-width:380px){.main{padding-left:10px;padding-right:10px}.panel{padding:13px}.topbar{gap:8px;flex-wrap:wrap}.seed-grid{gap:7px}.seed{padding:9px 7px}.seed-photo{height:58px}.tray-grid{gap:5px;padding:10px 7px}.tray-cell{min-height:68px}.tray-actions .primary{padding:12px 8px;font-size:12px}.tray-count{font-size:10px}}
 </style>
 </head>
 <body><div class="app">
@@ -110,24 +122,21 @@
 <div class="stat"><div class="stat-top"><span>Precisión estimada</span><span class="stat-icon">◎</span></div><div class="stat-num">98<span style="font-size:17px">%</span></div><div class="stat-note">Objetivo de precisión</div></div>
 </section>
 <div class="workspace"><div class="left-col">
-<section class="panel" id="siembra"><div class="panel-head"><div><h2 class="panel-title">¿Qué vamos a sembrar?</h2><p class="panel-desc">Selecciona el tipo de semilla para tu próxima orden.</p></div><span class="tag">PASO 01</span></div>
+<section class="panel" id="siembra"><div class="panel-head"><div><h2 class="panel-title">Tipos de semilla</h2><p class="panel-desc">Elige una variedad y toca los huecos del mapa para asignarla. Las órdenes solo se crean desde el mapa.</p></div><span class="tag">PASO 01</span></div>
 <div class="seed-grid" id="seedGrid">
 <button class="seed selected" data-seed="Tomate" data-emoji="🍅" data-time="2"><span class="seed-check">✓</span><img class="seed-photo" src="https://images.unsplash.com/photo-1546094096-0df4bcaaa337?auto=format&fit=crop&w=360&q=75" alt="Tomates frescos" loading="lazy"><div class="seed-name">Tomate</div><div class="seed-detail">Sol · 2 s / semilla</div></button>
-<button class="seed" data-seed="Lechuga" data-emoji="🥬" data-time="1"><span class="seed-check">✓</span><img class="seed-photo" src="https://images.unsplash.com/photo-1622206151226-18ca2c9ab4a1?auto=format&fit=crop&w=360&q=75" alt="Hojas verdes de lechuga" loading="lazy"><div class="seed-name">Lechuga</div><div class="seed-detail">Frescor · 1 s / semilla</div></button>
+<button class="seed" data-seed="Lechuga" data-emoji="🥬" data-time="1"><span class="seed-check">✓</span><img class="seed-photo" src="https://images.unsplash.com/photo-1622206151226-18ca2c9ab4a1?auto=format&fit=crop&w=360&q=75" alt="Lechuga" loading="lazy"><div class="seed-name">Lechuga</div><div class="seed-detail">Frescor · 1 s / semilla</div></button>
 <button class="seed" data-seed="Zanahoria" data-emoji="🥕" data-time="2"><span class="seed-check">✓</span><img class="seed-photo" src="https://images.unsplash.com/photo-1445282768818-728615cc910a?auto=format&fit=crop&w=360&q=75" alt="Zanahorias" loading="lazy"><div class="seed-name">Zanahoria</div><div class="seed-detail">Sustrato suelto · 2 s</div></button>
-<button class="seed" data-seed="Albahaca" data-emoji="🌿" data-time="1"><span class="seed-check">✓</span><img class="seed-photo" src="https://images.unsplash.com/photo-1618164436241-4473940d1f5c?auto=format&fit=crop&w=360&q=75" alt="Plantas aromáticas" loading="lazy"><div class="seed-name">Albahaca</div><div class="seed-detail">Aromática · 1 s / semilla</div></button>
-<button class="seed" data-seed="Girasol" data-emoji="🌻" data-time="3"><span class="seed-check">✓</span><img class="seed-photo" src="https://images.unsplash.com/photo-1597848212624-e6c2b5c6d8a7?auto=format&fit=crop&w=360&q=75" alt="Girasol" loading="lazy"><div class="seed-name">Girasol</div><div class="seed-detail">Luz · 3 s / semilla</div></button>
-<button class="seed" data-seed="Pimiento" data-emoji="🫑" data-time="2"><span class="seed-check">✓</span><img class="seed-photo" src="https://images.unsplash.com/photo-1563565375-f3fdfdbefa83?auto=format&fit=crop&w=360&q=75" alt="Pimientos" loading="lazy"><div class="seed-name">Pimiento</div><div class="seed-detail">Calor · 2 s / semilla</div></button>
-</div>
-<div class="qty-row"><div><div class="qty-label">Cantidad de semillas</div><div class="qty-hint">Número de huecos que preparará el robot</div></div><div class="stepper"><button id="minusQty" aria-label="Restar una semilla">−</button><strong id="qtyValue">5</strong><button id="plusQty" aria-label="Añadir una semilla">+</button></div></div>
-<button class="primary" id="plantBtn"><span>＋</span> Añadir orden de siembra <span>→</span></button><div class="btn-sub">Revisa la cola antes de iniciar el robot.</div>
-</section>
+<button class="seed" data-seed="Albahaca" data-emoji="🌿" data-time="1"><span class="seed-check">✓</span><img class="seed-photo" src="https://images.unsplash.com/photo-1618164436241-4473940d1f5c?auto=format&fit=crop&w=360&q=75" alt="Albahaca" loading="lazy"><div class="seed-name">Albahaca</div><div class="seed-detail">Aromática · 1 s / semilla</div></button>
+<button class="seed" data-seed="Girasol" data-emoji="🌻" data-time="3"><span class="seed-check">✓</span><img class="seed-photo" src="https://images.unsplash.com/photo-1597848212624-e6c2b5c6d8a7?auto=format&fit=crop&w=360&q=75" alt="Girasol" loading="lazy"><div class="seed-name">Girasol</div><div class="seed-detail">Luz · 3 s</div></button>
+<button class="seed" data-seed="Pimiento" data-emoji="🫑" data-time="2"><span class="seed-check">✓</span><img class="seed-photo" src="https://images.unsplash.com/photo-1563565375-f3fdfdbefa83?auto=format&fit=crop&w=360&q=75" alt="Pimientos" loading="lazy"><div class="seed-name">Pimiento</div><div class="seed-detail">Calor · 2 s</div></button>
+</div></section>
 <section class="panel" id="mapa-semillero">
-<div class="panel-head"><div><h2 class="panel-title">Mapa del semillero</h2><p class="panel-desc">Arrastra una semilla a cada hueco, o selecciona una variedad y toca las casillas.</p></div><span class="tag">PASO 02</span></div>
-<div class="tray-toolbar"><div class="tray-legend" id="trayLegend"><span class="legend-dot"></span><span>Elige una variedad arriba</span></div><span class="tray-count" id="trayCount">0 / 20 huecos</span></div>
+<div class="panel-head"><div><h2 class="panel-title">Mapa del semillero</h2><p class="panel-desc">Asigna una semilla a cada hueco. Este mapa provisional representa un casillero de 3 × 3.</p></div><span class="tag">PASO 02</span></div>
+<div class="tray-toolbar"><div class="tray-legend" id="trayLegend"><span class="legend-dot"></span><span>Seleccionada: Tomate</span></div><span class="tray-count" id="trayCount">0 / 9 huecos</span></div><div class="camera-actions"><button class="secondary-btn" id="cameraBtn" type="button">▣ Leer huecos con cámara</button><input id="cameraInput" type="file" accept="image/*" capture="environment" hidden></div><p class="camera-note" id="cameraNote" aria-live="polite">La lectura automática con visión está en desarrollo. Mientras tanto, se utiliza el mapa provisional de 3 × 3.</p>
 <div class="tray-grid" id="trayGrid" role="group" aria-label="Casillas del semillero"></div>
-<div class="tray-actions"><button class="secondary-btn" id="clearTrayBtn">Vaciar mapa</button><button class="primary" id="mapPlantBtn">Crear orden desde el mapa <span>→</span></button></div>
-<p class="tray-note">El mapa tiene 20 casillas de ejemplo. La posición se guarda en este navegador. La demo no mueve físicamente el robot.</p>
+<div class="tray-actions"><button class="secondary-btn" id="clearTrayBtn">Vaciar mapa</button><button class="primary" id="mapPlantBtn">Añadir mapa de sembrado actual <span>→</span></button></div>
+<p class="tray-note">Mapa provisional de 3 × 3 huecos. La posición se guarda en este navegador. La demo no mueve físicamente el robot.</p>
 </section>
 <section class="panel" id="cola"><div class="panel-head"><div><h2 class="panel-title">Cola de siembra</h2><p class="panel-desc">Órdenes listas para el semillero.</p></div><span class="tag" id="queueTag">3 ÓRDENES</span></div><div class="queue" id="queueList"><div class="queue-item"><div class="queue-icon">🥬</div><div class="queue-info"><div class="queue-name">Lechuga</div><div class="queue-detail">10 semillas · Orden #024</div></div><span class="queue-status active">En curso</span></div><div class="queue-item"><div class="queue-icon">🍅</div><div class="queue-info"><div class="queue-name">Tomate</div><div class="queue-detail">15 semillas · Orden #025</div></div><span class="queue-status">Pendiente</span></div><div class="queue-item"><div class="queue-icon">🌿</div><div class="queue-info"><div class="queue-name">Albahaca</div><div class="queue-detail">8 semillas · Orden #026</div></div><span class="queue-status">Pendiente</span></div></div></section>
 </div><div class="right-col">
@@ -143,7 +152,7 @@
 <nav class="bottom-nav" aria-label="Navegación principal"><button class="nav-item active" data-scroll="inicio"><span>⌂</span>Inicio</button><button class="nav-item" data-scroll="siembra"><span>🌱</span>Sembrar</button><button class="nav-item" data-scroll="cola"><span>▤</span>Cola</button><button class="nav-item" data-scroll="actividad"><span>◷</span>Actividad</button></nav><div class="toast" id="toast" role="status" aria-live="polite"></div>
 <script>
 (()=>{
-const $=id=>document.getElementById(id);let seed={name:'Tomate',emoji:'🍅',time:2},qty=5,paused=false,running=false,progress=0,planted=128,nextId=27,orders=[{id:24,name:'Lechuga',emoji:'🥬',qty:10,status:'active'},{id:25,name:'Tomate',emoji:'🍅',qty:15,status:'pending'},{id:26,name:'Albahaca',emoji:'🌿',qty:8,status:'pending'}],logs=[];let toastTimer,progressTimer;
+const $=id=>document.getElementById(id);let seed={name:'Tomate',emoji:'🍅',time:2},paused=false,running=false,progress=0,planted=128,nextId=1,orders=[],logs=[];let toastTimer,progressTimer;
 function toast(msg){$('toast').textContent=msg;$('toast').classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').classList.remove('show'),2600)}
 function log(msg,emoji='🌱'){logs.unshift({msg,emoji,time:'Ahora · Demo'});renderLogs()}
 function renderLogs(){$('activityList').innerHTML=logs.slice(0,5).map(x=>'<div class="activity-item"><div class="activity-icon">'+x.emoji+'</div><div><div class="activity-text">'+x.msg+'</div><div class="activity-time">'+x.time+'</div></div></div>').join('')||'<div class="empty">Todavía no hay actividad.</div>'}
@@ -152,10 +161,10 @@ function updateRobot(){const status=paused?'Pausado':running?'Sembrando':'En esp
 function startOrder(){if(paused||running)return;let o=orders.find(o=>o.status==='pending');if(!o){toast('Añade una orden para iniciar la siembra.');return}o.status='active';running=true;progress=0;renderQueue();updateRobot();log('Orden #'+String(o.id).padStart(3,'0')+' iniciada: '+o.name+' ('+o.qty+' semillas).','🤖');clearInterval(progressTimer);progressTimer=setInterval(()=>{if(!running||paused)return;progress=Math.min(100,progress+Math.max(1,Math.round(100/(o.qty*2))));if(progress>=100){clearInterval(progressTimer);running=false;o.status='done';planted+=o.qty;$('plantedCount').textContent=planted;$('availableCount').innerHTML=Math.max(0,200-(planted-128))+'<span style="font-size:14px;color:#778579"> / 200</span>';log(o.layout?'¡Mapa completado! '+o.qty+' casillas sembradas.':'¡Siembra completada! '+o.qty+' semillas de '+o.name+'.','✅');const next=orders.find(x=>x.status==='pending');if(next){toast('¡Orden completada! Preparando la siguiente…');setTimeout(()=>{startOrder();},1100)}else toast('¡Siembra completada! Buen trabajo 🌱')}renderQueue();updateRobot()},Math.max(150,Number(o.time||2)*180));toast('Orden de '+o.name+' iniciada (modo demo).')}
 document.querySelectorAll('.seed').forEach(b=>{b.draggable=true;b.addEventListener('click',()=>{document.querySelectorAll('.seed').forEach(x=>x.classList.remove('selected'));b.classList.add('selected');seed={name:b.dataset.seed,emoji:b.dataset.emoji,time:Number(b.dataset.time)};updateTrayLegend();});b.addEventListener('dragstart',e=>{seed={name:b.dataset.seed,emoji:b.dataset.emoji,time:Number(b.dataset.time)};e.dataTransfer.setData('text/plain',JSON.stringify(seed));e.dataTransfer.effectAllowed='copy';document.querySelectorAll('.seed').forEach(x=>x.classList.toggle('selected',x===b));updateTrayLegend();});});
 
-const TRAY_SIZE=20;
+const TRAY_SIZE=9;
 const seedColors={'Tomate':'#ffe2d7','Lechuga':'#dff2d8','Zanahoria':'#ffe8c8','Albahaca':'#d8f0dc','Girasol':'#fff0b8','Pimiento':'#fbe0d8'};
 let tray=Array(TRAY_SIZE).fill(null);
-try{const saved=JSON.parse(localStorage.getItem('smartseed-last-layout')||'null');if(Array.isArray(saved)&&saved.length===TRAY_SIZE)tray=saved.map(x=>x&&typeof x.name==='string'?x:null)}catch(e){}
+try{const saved=JSON.parse(localStorage.getItem('smartseed-last-layout')||'null');if(Array.isArray(saved))tray=Array.from({length:TRAY_SIZE},(_,i)=>saved[i]&&typeof saved[i].name==='string'?saved[i]:null)}catch(e){}
 function saveTray(){try{localStorage.setItem('smartseed-last-layout',JSON.stringify(tray))}catch(e){}}
 function updateTrayLegend(){$('trayLegend').innerHTML='<span class="legend-dot"></span><span>Seleccionada: <strong>'+seed.emoji+' '+seed.name+'</strong></span>'}
 function renderTray(){$('trayGrid').innerHTML=tray.map((s,i)=>'<button type="button" class="tray-cell '+(s?'filled':'')+'" data-cell="'+i+'" aria-label="Casilla '+(i+1)+(s?': '+s.name:' vacía')+'" title="'+(s?s.name+' · toca para quitar':'Casilla '+(i+1)+' · toca para asignar '+seed.name)+'" '+(s?'style="--cell-tint:'+(seedColors[s.name]||'#e6f5e8')+'"':'')+'><span class="cell-emoji">'+(s?s.emoji:'＋')+'</span><span class="cell-num">'+String(i+1).padStart(2,'0')+'</span>'+(s?'<span class="cell-clear" data-clear-cell="'+i+'" aria-label="Vaciar casilla '+(i+1)+'">×</span>':'')+'</button>').join('');const n=tray.filter(Boolean).length;$('trayCount').textContent=n+' / '+TRAY_SIZE+' huecos';$('mapPlantBtn').disabled=n===0;$('mapPlantBtn').style.opacity=n===0?'.55':'1'}
@@ -165,11 +174,13 @@ $('trayGrid').addEventListener('dragover',e=>{if(e.target.closest('[data-cell]')
 $('trayGrid').addEventListener('dragleave',e=>{const cell=e.target.closest('[data-cell]');if(cell&&!cell.contains(e.relatedTarget))cell.classList.remove('drop-target')});
 $('trayGrid').addEventListener('drop',e=>{const cell=e.target.closest('[data-cell]');if(!cell)return;e.preventDefault();cell.classList.remove('drop-target');let picked=seed;try{const raw=e.dataTransfer.getData('text/plain');if(raw)picked=JSON.parse(raw)}catch(err){}setTrayCell(Number(cell.dataset.cell),picked)});
 $('clearTrayBtn').addEventListener('click',()=>{tray=Array(TRAY_SIZE).fill(null);saveTray();renderTray();toast('Mapa vaciado.')});
+$('cameraBtn').addEventListener('click',()=>$('cameraInput').click());
+$('cameraInput').addEventListener('change',()=>{const file=$('cameraInput').files&&$('cameraInput').files[0];if(!file)return;$('cameraNote').textContent='Foto del casillero capturada ('+file.name+'). La detección automática del número de huecos todavía no está disponible; se mantiene el mapa provisional de 3 × 3.';toast('Foto capturada. La lectura automática está en desarrollo.');});
 $('mapPlantBtn').addEventListener('click',()=>{const layout=tray.map((s,i)=>s?{cell:i+1,name:s.name,emoji:s.emoji,time:s.time}:null).filter(Boolean);if(!layout.length){toast('Asigna al menos una semilla a una casilla.');return}if(orders.filter(o=>o.status!=='done').length>=200){toast('La cola está llena. Completa órdenes antes de añadir más.');return}const counts={};layout.forEach(x=>counts[x.name]=(counts[x.name]||0)+1);const summary=Object.entries(counts).map(([name,n])=>n+' '+name).join(', ');const o={id:nextId++,name:'Mapa de semillero',emoji:'🗺️',qty:layout.length,status:'pending',layout};orders.push(o);renderQueue();log('Mapa añadido: '+summary+'.','🗺️');toast('Mapa añadido a la cola con '+layout.length+' casillas.');document.querySelectorAll('[data-scroll]').forEach(b=>{if(b.dataset.scroll==='cola')b.classList.add('active')});$('cola').scrollIntoView({behavior:'smooth',block:'start'})});
 $('queueList').addEventListener('click',e=>{const btn=e.target.closest('[data-remove-order]');if(!btn)return;const id=Number(btn.dataset.removeOrder);const o=orders.find(x=>x.id===id);if(!o||o.status!=='pending'){toast('Solo se pueden eliminar órdenes pendientes.');return}orders=orders.filter(x=>x.id!==id);renderQueue();log('Orden #'+String(id).padStart(3,'0')+' eliminada de la cola.','🗑️');toast('Orden pendiente eliminada.')});
 
-$('minusQty').addEventListener('click',()=>{qty=Math.max(1,qty-1);$('qtyValue').textContent=qty});$('plusQty').addEventListener('click',()=>{qty=Math.min(50,qty+1);$('qtyValue').textContent=qty});
-$('plantBtn').addEventListener('click',()=>{if(orders.filter(o=>o.status!=='done').length>=200){toast('La cola está llena. Completa órdenes antes de añadir más.');return}const o={id:nextId++,name:seed.name,emoji:seed.emoji,qty,status:'pending'};orders.push(o);renderQueue();log('Nueva orden preparada: '+qty+' semillas de '+seed.name+'.','📝');toast('Orden #'+String(o.id).padStart(3,'0')+' añadida a la cola.')});
+
+
 $('pauseBtn').addEventListener('click',()=>{if(!running)return;paused=true;updateRobot();log('Siembra pausada por el usuario.','⏸️');toast('Robot pausado en la simulación.')});
 $('resumeBtn').addEventListener('click',()=>{if(!paused)return;paused=false;updateRobot();log('Siembra reanudada.','▶️');toast('Siembra reanudada en la simulación.')});
 $('helpBtn').addEventListener('click',()=>toast('Prototipo visual: las órdenes se simulan en el navegador; aún no hay conexión física con LeRobot.'));
