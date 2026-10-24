@@ -87,7 +87,7 @@ SMARTSEED_ROBOT=real SMARTSEED_ROBOT_PORT=/dev/tty.usbmodemXXXX ./run.sh
 | Endpoint | Para qué |
 |---|---|
 | `GET /health` | estado del servicio y si los modelos están cargados |
-| `POST /vision/tray` | fotograma → esquinas, filas × columnas, huecos y cuáles están ocupados |
+| `POST /vision/tray` | fotograma → esquinas, filas × columnas, huecos y cuáles están ocupados. Campo opcional `tray_hint` (JSON con las 4 esquinas normalizadas de la respuesta anterior): salta OWLv2 y busca solo alrededor (`source: "hint"`); si no encuentra bandeja con huecos, detecta desde cero. La web lo envía mientras la bandeja se ve y fuerza una detección completa cada 5 peticiones |
 | `GET /robot/status` | estado del ejecutor, par, poses, calibración y colores con policy |
 | `GET /robot/joints` | ángulos y posición de la punta (`tool`), por cinemática directa |
 | `POST /robot/poses/{nombre}` · `GET /robot/poses` | enseñar y listar poses |

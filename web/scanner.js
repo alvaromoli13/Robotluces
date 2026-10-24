@@ -14,6 +14,7 @@
   const DETECT_WIDTH = 640;
   const HANDLE_RADIUS = 14;
   const MODEL_EVERY_MS = 1000;
+  const FULL_DETECT_EVERY = 5;  // one request in 5 runs the full detector, so a moved tray is found again
   const HEALTH_RETRY_MS = 5000;
 
   const video = q('cameraPreview');
@@ -218,6 +219,19 @@
     } catch (e) { backendOk = false; }
   }
 
+  // The backend skips its slow detector when told where the tray was last time. Only a found
+  // tray is worth hinting, and every FULL_DETECT_EVERY-th request goes without a hint.
+  let modelHint = null;
+  let hintedRuns = 0;
+  function nextTrayHint() {
+    if (!modelHint || hintedRuns >= FULL_DETECT_EVERY - 1) { hintedRuns = 0; return null; }
+    hintedRuns++;
+    return modelHint;
+  }
+  function recordTray(data) {
+    modelHint = data && data.found && Array.isArray(data.corners) ? data.corners.map(p => p.slice()) : null;
+  }
+
   async function askModel() {
     modelBusy = true;
     try {
@@ -226,9 +240,12 @@
       const blob = await new Promise(resolve => work.toBlob(resolve, 'image/jpeg', 0.85));
       const form = new FormData();
       form.append('image', blob, 'frame.jpg');
+      const hint = nextTrayHint();
+      if (hint) form.append('tray_hint', JSON.stringify(hint));
       const res = await backend.fetch('/vision/tray', { method: 'POST', body: form }, 8000);
       if (!res.ok) throw new Error('HTTP ' + res.status);
       const data = await res.json();
+      recordTray(data);
       modelFound = !!data.found;
       if (data.found || (Array.isArray(data.holes) && data.holes.length)) lastFoundAt = performance.now();
       const found = Array.isArray(data.holes) && data.holes.length ? holesLayout(data.holes) : null;
@@ -256,6 +273,7 @@
     } catch (e) {
       backendOk = false;
       modelFound = false;
+      modelHint = null;
       holes = null;
     } finally {
       modelBusy = false;
@@ -439,6 +457,7 @@
     layoutCells,
     source,
     cameraActive: () => !!stream,
+    trayHint: { next: nextTrayHint, record: recordTray },
     imageSize: () => [video.videoWidth, video.videoHeight],
     get corners() { return corners; },
     get locked() { return locked; },

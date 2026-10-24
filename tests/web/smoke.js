@@ -613,6 +613,20 @@ vc.on('error', m => errs.push('console.error: ' + m));
     ok('terminar closes the panel', $('calPanel').hidden);
   }
 
+  // ── Tray hint: the backend skips its detector while the tray stays put ──────
+  {
+    const hint = window.smartseedScan.trayHint;
+    const quad = [[0.2, 0.2], [0.8, 0.2], [0.8, 0.8], [0.2, 0.8]];
+    ok('no hint before anything was found', hint.next() === null);
+    hint.record({ found: true, corners: quad });
+    const sent = [hint.next(), hint.next(), hint.next(), hint.next()];
+    ok('a found tray is sent back as the hint', sent.every(h => JSON.stringify(h) === JSON.stringify(quad)), JSON.stringify(sent));
+    ok('every 5th request goes without a hint', hint.next() === null);
+    ok('...and hints resume afterwards', hint.next() !== null);
+    hint.record({ found: false, corners: null });
+    ok('a lost tray forces a full detection', hint.next() === null);
+  }
+
   ok('no page errors', errs.length === 0, JSON.stringify(errs));
 
   report();

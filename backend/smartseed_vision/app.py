@@ -1,10 +1,12 @@
+import json
+import math
 import os
 import threading
 import time
 
 import cv2
 import numpy as np
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
 from .depth import find_holes, grid_in_tray
@@ -16,6 +18,30 @@ from .geometry import analyze_tray
 GPU_LOCK = threading.Lock()
 MIN_CONTOUR_CONFIDENCE = 0.35  # without a detector hit, require a clear cell pattern
 MIN_CONTOUR_HOLES = 2  # ...and, when depth is available, at least this many pits inside it
+
+
+HINT_PAD_FRAC = 0.04  # slack around the previous tray corners, in frame fractions
+
+
+def _hint_bbox(raw, w, h):
+    """Pixel bbox around `tray_hint` (JSON list of 4 normalized [x, y] corners), or None when absent/invalid."""
+    if not raw:
+        return None
+    try:
+        pts = json.loads(raw)
+        if not (isinstance(pts, list) and len(pts) == 4):
+            return None
+        xs, ys = [], []
+        for x, y in pts:
+            if not all(isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) and 0 <= v <= 1
+                       for v in (x, y)):
+                return None
+            xs.append(x)
+            ys.append(y)
+    except (ValueError, TypeError):
+        return None
+    return ((min(xs) - HINT_PAD_FRAC) * w, (min(ys) - HINT_PAD_FRAC) * h,
+            (max(xs) + HINT_PAD_FRAC) * w, (max(ys) + HINT_PAD_FRAC) * h)
 
 
 def default_detector():
@@ -74,29 +100,49 @@ def create_app(detector="default", depth="default", robot="default"):
         }
 
     @app.post("/vision/tray")
-    def tray(image: UploadFile = File(...)):
+    def tray(image: UploadFile = File(...), tray_hint: str | None = Form(None)):
         start = time.perf_counter()
         img = cv2.imdecode(np.frombuffer(image.file.read(), np.uint8), cv2.IMREAD_COLOR)
         if img is None:
             raise HTTPException(400, "image could not be decoded")
         h, w = img.shape[:2]
         with GPU_LOCK:
-            detection = detector.detect(img) if detector else None
-        bbox, score = detection if detection else (None, None)
-        geometry = analyze_tray(img, bbox)
-        if geometry is None and bbox is not None:  # bbox too tight or wrong: retry on the whole frame
-            geometry, bbox, score = analyze_tray(img), None, None
-        if geometry and bbox is None and geometry.confidence < MIN_CONTOUR_CONFIDENCE:
-            geometry = None
-        corners_px = geometry.corners_px if geometry else None
-        with GPU_LOCK:
             depth_map = depth.estimate(img) if depth else None
-        corners = [[min(max(x / w, 0), 1), min(max(y / h, 0), 1)] for x, y in corners_px] if geometry else None
-        holes = find_holes(depth_map, tray=corners) if depth_map is not None else []
-        if geometry and bbox is None and depth_map is not None and len(holes) < MIN_CONTOUR_HOLES:
-            # contours alone also match printed text or tiles; a real tray has pits in the depth map
-            geometry = corners = None
-            holes = find_holes(depth_map)
+
+        def normalize(geometry):
+            return [[min(max(x / w, 0), 1), min(max(y / h, 0), 1)] for x, y in geometry.corners_px]
+
+        geometry = bbox = score = corners = None
+        holes = []
+        hint_bbox = _hint_bbox(tray_hint, w, h)
+        if hint_bbox is not None:  # the tray was found last time: skip OWLv2, look only around it
+            geometry = analyze_tray(img, hint_bbox)
+            if geometry and geometry.confidence < MIN_CONTOUR_CONFIDENCE:
+                geometry = None  # no clear cell pattern around the hint (no detector hit vouches for it)
+            if geometry:
+                corners = normalize(geometry)
+                holes = find_holes(depth_map, tray=corners) if depth_map is not None else []
+                if depth_map is not None and len(holes) < MIN_CONTOUR_HOLES:
+                    geometry = corners = None  # the tray moved or left: detect from scratch
+            if geometry:
+                bbox, source = hint_bbox, "hint"
+        if geometry is None:
+            with GPU_LOCK:
+                detection = detector.detect(img) if detector else None
+            bbox, score = detection if detection else (None, None)
+            geometry = analyze_tray(img, bbox)
+            if geometry is None and bbox is not None:  # bbox too tight or wrong: retry on the whole frame
+                geometry, bbox, score = analyze_tray(img), None, None
+            if geometry and bbox is None and geometry.confidence < MIN_CONTOUR_CONFIDENCE:
+                geometry = None
+            corners = normalize(geometry) if geometry else None
+            holes = find_holes(depth_map, tray=corners) if depth_map is not None else []
+            if geometry and bbox is None and depth_map is not None and len(holes) < MIN_CONTOUR_HOLES:
+                # contours alone also match printed text or tiles; a real tray has pits in the depth map
+                geometry = corners = None
+                holes = find_holes(depth_map)
+            source = "owlv2" if bbox is not None else "contour"
+        corners_px = geometry.corners_px if geometry else None
         if holes and geometry:
             holes = grid_in_tray(holes, corners, geometry.rows, geometry.cols) or holes
         holes = mark_occupied(img, holes, corners)
@@ -108,7 +154,7 @@ def create_app(detector="default", depth="default", robot="default"):
             "cols": geometry.cols if geometry else None,
             "confidence": geometry.confidence if geometry else 0.0,
             "detector_score": score,
-            "source": "owlv2" if bbox is not None else "contour",
+            "source": source,
             "holes": [{k: bool(v) if k == "occupied" else float(v) if k in ("x", "y", "area", "depth", "fill_score")
                        else int(v) for k, v in h.items()} for h in holes],
             "elapsed_ms": round((time.perf_counter() - start) * 1000, 1),

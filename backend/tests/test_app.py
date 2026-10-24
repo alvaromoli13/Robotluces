@@ -1,3 +1,4 @@
+import json
 import threading
 import time
 
@@ -196,3 +197,67 @@ def test_detector_hit_is_trusted_even_without_holes(tray):
     hit = ((0, 0, img.shape[1], img.shape[0]), 0.4)
     body = post(TestClient(create_app(StubDetector(hit), depth=StubDepth(flat))), img).json()
     assert body["found"] is True
+
+
+def post_hint(client, img, hint):
+    return client.post("/vision/tray", data={"tray_hint": hint}, files={"image": ("frame.png", png(img), "image/png")})
+
+
+def previous_corners(tray):
+    img, _ = tray
+    body = post(TestClient(create_app(None)), img).json()
+    return json.dumps(body["corners"]), body
+
+
+def test_valid_hint_skips_the_detector_and_keeps_the_geometry(tray):
+    img, _ = tray
+    hint, full = previous_corners(tray)
+    stub = StubDetector(((60, 20, 580, 460), 0.42))
+    body = post_hint(TestClient(create_app(stub)), img, hint).json()
+    assert stub.calls == 0
+    assert body["found"] is True and body["source"] == "hint" and body["detector_score"] is None
+    assert (body["rows"], body["cols"]) == (full["rows"], full["cols"]) == (5, 8)
+    assert np.abs(np.array(body["corners_px"]) - np.array(full["corners_px"])).max() < 5
+
+
+def test_no_hint_runs_the_detector(tray):
+    img, _ = tray
+    stub = StubDetector(((60, 20, 580, 460), 0.42))
+    assert post(TestClient(create_app(stub)), img).json()["source"] == "owlv2"
+    assert stub.calls == 1
+
+
+@pytest.mark.parametrize("hint", ["not json", "{}", "[[0,0],[1,1]]", '[[0,0],[1,0],[1,1],["a",1]]', "[[0,0],[2,0],[1,1],[0,1]]"])
+def test_bad_hint_is_ignored_and_the_full_path_runs(tray, hint):
+    img, _ = tray
+    stub = StubDetector(((60, 20, 580, 460), 0.42))
+    body = post_hint(TestClient(create_app(stub)), img, hint).json()
+    assert stub.calls == 1 and body["source"] == "owlv2" and body["found"] is True
+
+
+def test_hint_over_an_empty_area_falls_back_to_the_detector(tray):
+    img, _ = tray
+    stub = StubDetector(((60, 20, 580, 460), 0.42))
+    blank = np.full_like(img, 200)
+    blank[20:460, 60:580] = img[20:460, 60:580]
+    hint = json.dumps([[0.01, 0.01], [0.08, 0.01], [0.08, 0.08], [0.01, 0.08]])  # tray moved away from here
+    body = post_hint(TestClient(create_app(stub)), img, hint).json()
+    assert stub.calls == 1 and body["source"] == "owlv2" and body["found"] is True
+
+
+def test_hint_without_pits_in_the_depth_map_falls_back_to_the_detector(tray):
+    img, _ = tray
+    hint, _ = previous_corners(tray)
+    flat = np.full((240, 320), 0.5, np.float32)
+    stub = StubDetector(((0, 0, img.shape[1], img.shape[0]), 0.4))
+    body = post_hint(TestClient(create_app(stub, depth=StubDepth(flat))), img, hint).json()
+    assert stub.calls == 1 and body["source"] == "owlv2"
+
+
+def test_hint_with_pits_in_the_depth_map_is_trusted():
+    depth, _ = make_box_depth(1, 2)
+    img, _ = make_tray_image(5, 8, 10.0)
+    hint, _ = previous_corners((img, None))
+    stub = StubDetector(((60, 20, 580, 460), 0.42))
+    body = post_hint(TestClient(create_app(stub, depth=StubDepth(depth))), img, hint).json()
+    assert stub.calls == 0 and body["source"] == "hint"
