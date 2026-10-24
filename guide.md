@@ -294,20 +294,51 @@ con la pinza del SO-101 fallaría demasiado para aguantar 5 demos seguidas.
 
 ### Formato del plan
 
+Al pulsar **Sembrar**, la web manda `POST /plan` con una entrada por alveolo que lleva
+semilla (los vacíos no se mandan). `u` y `v` son el centro del alveolo en **píxeles** del
+fotograma de la cámara, que es lo que el backend convierte a coordenadas de mesa con la
+homografía:
+
 ```json
 {
-  "tray": { "rows": 5, "cols": 8 },
-  "seeds": {
-    "red":    "tomate",
-    "green":  "lechuga",
-    "yellow": "girasol",
-    "purple": "albahaca"
-  },
-  "cells": [["red", "red", null, "green", "..."], "..."]
+  "image_size": [1280, 720],
+  "cells": [
+    { "cell_index": 0, "row": 0, "col": 0, "color": "red",    "u": 412, "v": 233 },
+    { "cell_index": 5, "row": 1, "col": 1, "color": "green",  "u": 498, "v": 301 },
+    { "cell_index": 9, "row": 2, "col": 1, "color": "purple", "u": 499, "v": 370 }
+  ]
 }
 ```
 
-`null` = alveolo vacío. El tamaño de la bandeja es configurable.
+`color` es el color de la **caja** de la que hay que coger, no el nombre de la variedad:
+tomate → `red`, pimiento → `green`, limón → `yellow`, berenjena → `purple`. `cell_index`
+es el índice de la casilla en el mapa (`fila * columnas + columna`) y vuelve tal cual en
+los eventos de progreso, así que la web sabe qué casilla pintar.
+
+Respuestas: `202 {"plan_id", "cells"}` si lo acepta; `4xx {"detail", "code"}` si no
+(`busy`, calibración sin ajustar, `unreachable` con la lista de alveolos fuera de
+alcance). La web enseña ese `detail` y **no** arranca ninguna animación: un plan
+rechazado nunca debe parecer una siembra correcta.
+
+Progreso por `WS /robot/progress`, un JSON por evento:
+
+| `type` | Campos | Qué hace la web |
+|---|---|---|
+| `plan_started` | `total` | Muestra el panel de siembra |
+| `cell_started` | `cell_index`, `row`, `col`, `color` | La casilla parpadea |
+| `cell_done` | `cell_index` | Marca ✓ y avanza la barra |
+| `cell_failed` | `cell_index`, `message` | Marca ✕ en rojo y lo cuenta aparte |
+| `finished` | `message` | Cierra la siembra como terminada |
+| `stopped` | `message` | Cierra la siembra como detenida |
+| `error` | `cell_index`, `message` | Enseña el error del robot |
+
+Un cliente que se conecta a mitad de un plan lo recibe desde el principio, así que
+recargar la web durante una siembra no pierde el progreso.
+
+**Sin backend** (la web publicada en GitHub Pages) el `POST` falla por red y la interfaz
+simula la siembra con la etiqueta **MODO DEMO** bien visible. Si el backend sí responde
+pero el semillero no se ha escaneado, la web se niega a sembrar y pide escanear: sin
+píxeles no hay posición a la que llevar el brazo.
 
 ## Pasos a seguir
 
@@ -324,16 +355,18 @@ con la pinza del SO-101 fallaría demasiado para aguantar 5 demos seguidas.
       alveolo.
 
 ### 2. Interfaz (viernes-sábado)
-- [ ] Rejilla de alveolos tipo cine, con tamaño configurable.
-- [ ] Selector de las 4 semillas/colores y botones de "rellenar todo de un color".
-- [ ] Guardar y cargar plantillas, y cargar automáticamente la última fórmula usada.
-- [ ] Botón **Listo** que envía el plan al backend, con vista de progreso.
-- [ ] Imagen de la cámara cenital con la rejilla **detectada** superpuesta, y aviso si la
-      bandeja está fuera de la zona de trabajo.
+- [x] Rejilla de alveolos tipo cine, con tamaño configurable.
+- [x] Selector de las 4 semillas/colores y botón de "rellenar todo de un color".
+- [x] Guardar y cargar plantillas, y cargar automáticamente la última fórmula usada.
+- [x] Botón **Sembrar** que envía el plan al backend, con vista de progreso y **Parar**.
+- [x] Imagen de la cámara cenital con la rejilla **detectada** superpuesta.
+- [x] Sin internet: tipografías y `js-aruco2` servidos desde `web/`, no desde un CDN.
+- [ ] Aviso si la bandeja queda fuera de la zona de trabajo del brazo (hoy lo detecta el
+      backend al recibir el plan, con `code: "unreachable"`, y la web enseña el motivo).
 
 ### 3. Backend y conexión con el robot (sábado)
-- [ ] Servidor local (FastAPI + WebSocket) con los endpoints `POST /plan`, `POST /stop`
-      y `WS /progress`, y streaming de la cámara.
+- [x] Servidor local (FastAPI + WebSocket) con los endpoints `POST /plan`, `POST /stop`
+      y `WS /robot/progress`.
 - [ ] Detección del semillero con ArUco → centros de los alveolos en píxeles.
 - [ ] Instalar `lerobot[kinematics]` y descargar el URDF del SO-101. Comprobar que la
       cinemática directa coincide con la posición real del brazo.
@@ -373,9 +406,14 @@ con la pinza del SO-101 fallaría demasiado para aguantar 5 demos seguidas.
 
 ```
 web/                        interfaz (la raíz del sitio de Pages redirige aquí)
-  index.html
-  scanner.js                cámara en directo, rejilla, ArUco y llamada al backend
-  README.md                 notas del prototipo de la interfaz
+  index.html                marcado: pantalla de escaneo, mapa y panel de siembra
+  app.css                   todos los estilos
+  app.js                    paleta, mapa, plantillas y siembra contra el backend
+  scanner.js                cámara en directo, rejilla, ArUco y modelo de visión
+  vendor/                   js-aruco2 (cv.js, aruco.js) servido desde el repo
+  fonts/                    DM Sans y Manrope en local, sin Google Fonts
+  README.md                 notas de la interfaz
+tests/web/                  smoke test de la interfaz (jsdom) y captura en navegador
 backend/                    servicio local (FastAPI): visión y control del robot
   smartseed_vision/         geometry.py, detector.py, depth.py, app.py
   smartseed_robot/          robot.py, kinematics.py, calibration.py, poses.py,
@@ -393,10 +431,28 @@ CLAUDE.md                   guía para agentes y colaboradores
 
 ## Probar la web
 
-Abre `web/index.html` en el navegador. No necesita compilación.
+Abre `web/index.html` en el navegador. No necesita compilación ni servidor, y funciona
+sin internet: la tipografía y `js-aruco2` están dentro de `web/`.
 Se publica en GitHub Pages: <https://alvaromoli13.github.io/Robotluces/> (la raíz redirige a
 `web/`). Pages está en modo *deploy from branch* (`main`, carpeta raíz), así que **cada push a
 `main` publica todo el repositorio**, no solo `web/`: no subas nada privado.
+
+Hay un smoke test que carga la página de verdad y la maneja:
+
+```bash
+cd tests/web
+npm install     # la primera vez (jsdom y puppeteer-core, solo para los tests)
+npm test        # 2 pasadas: sin backend (modo demo) y con el robot simulado
+CHROME_PATH="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" npm run render
+CHROME_PATH="..." npm run camera   # cámara falsa de Chromium: escaneo y mapa sobre el vídeo
+```
+
+`npm test` comprueba el comportamiento: mapa, plantillas, redimensionado, el plan que se
+envía (su forma exacta, la de `smartseed_robot`), el progreso por WebSocket, el plan
+rechazado y el modo demo. `npm run render` abre la página en un Chromium real a tamaño
+escritorio y móvil, guarda capturas en `tests/web/shots/` y falla si hay errores de
+consola o desbordamiento horizontal. `npm run camera` recorre el escaneo entero con la
+cámara sintética de Chromium.
 
 ## Seguridad
 

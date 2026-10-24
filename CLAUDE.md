@@ -31,6 +31,18 @@ Implications for any work here:
 
 - `web/` — the web UI. Plain HTML/CSS/JS, no build step, no framework. Served at
   `https://alvaromoli13.github.io/Robotluces/web/`; the root `index.html` redirects there.
+  `index.html` is markup only; `app.css` holds every style (one cascade, no dead rules)
+  and `app.js` the seed map, templates and planting run. **Nothing is loaded from a
+  CDN**: `web/fonts/` has DM Sans and Manrope and `web/vendor/` has js-aruco2, so the
+  demo survives the event wifi going down. Keep it that way.
+- `web/app.js` — palette, tray layout, saved templates (`smartseed.templates`,
+  `smartseed.lastLayout`) and the planting run. On **Sembrar** it posts the
+  `smartseed_robot` plan (`image_size` + one `{cell_index,row,col,color,u,v}` per filled
+  hole) and follows `WS /robot/progress`, painting each cell as it is planted, done or
+  failed. A plan the backend refuses (`unreachable`, `torque_off`, a plan already
+  running) shows its `detail` and does **not** animate; only a network failure (the
+  published Pages site) falls back to the labelled demo simulation. Exposes
+  `window.smartseedApp` / `smartseedBackend` / `smartseedToast`.
 - `web/scanner.js` — live camera, grid overlay, tray localisation. Source priority:
   ArUco markers (ARUCO_MIP_36h12, ids 0-3 TL/TR/BR/BL) > depth holes from the backend (one
   cell per hole, no corners) > backend tray grid > manually dragged corners. A size typed
@@ -55,6 +67,14 @@ Implications for any work here:
   (default) or `real` + `SMARTSEED_ROBOT_PORT`. Tests use `FakeRobot`; never open a serial port in tests.
   lerobot is pinned to commit `e595b79` (same as `vendor/lerobot`). Setup steps: `guide.md` "Ejecutor del robot"
   and `README.md` step 3.
+- `tests/web/` — smoke tests for the UI (dev only; `node_modules/` and `shots/` are
+  gitignored, and Pages serving the whole repo only exposes the sources). `npm install`
+  once, then: `npm test` drives the real page in jsdom twice (no backend → demo mode;
+  stubbed robot → the `smartseed_robot` protocol, including refused plans);
+  `CHROME_PATH=... npm run render` opens it in a real Chromium at desktop and phone
+  sizes, saving screenshots and failing on console errors or horizontal overflow;
+  `CHROME_PATH=... npm run camera` walks the whole scan flow with Chromium's synthetic
+  webcam. Run all three after any change to `web/`.
 - `odd/tasks/` — per-feature task documents.
 - `.github/workflows/pages.yml` — older Actions deployment of `web/` (see below).
 - Root `README.md` — resolved criteria and reproduction steps. `guide.md` — project
