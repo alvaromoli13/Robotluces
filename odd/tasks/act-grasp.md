@@ -44,6 +44,8 @@ Strict TDD (user config). Runner: `~/.claude/bin/testsem -- 'cd backend && uv ru
 - [ ] T3 Full loop with the user: real server, web Sembrar, one cell, then a full tray.
 - [x] T5 Full local loop: drop always, web calibration, scripts/stack.sh
       (route: delegated writer).
+- [x] T6 Debug settings: gear panel in the camera view, split tests (`mode` grasp/place),
+      `drop_z` (route: delegated writer).
 - [ ] T4 Second policy (clean dataset 2, train, add to `SMARTSEED_ACT_POLICIES`).
 
 ## Acceptance criteria
@@ -76,3 +78,18 @@ T1/T3 on the real arm with the user: run the server from Terminal.app (README "S
   port 8000 is busy, requires `SMARTSEED_ACT_POLICIES` in real mode (the policy colour is not
   recorded anywhere in the repo, so no default). Strict TDD: RED = executor test expected
   `cell_done`, got `cell_failed`; GREEN = full backend suite passes. Not run on hardware.
+
+- T6 done. Route: delegated writer (backend + web + docs). `POST /plan` takes optional `mode`
+  (`full` | `grasp` | `place`) and `drop_z` (0.02-0.25 m, per run, overrides `ExecutorConfig.drop_z`);
+  `plan_started` carries `mode`. `grasp` needs no calibration and runs only act_start -> policy (or
+  home -> above_box -> grasp -> lift on the taught path), holding the seed; colour with neither policy
+  nor taught pose is 409 `missing_pose`. `place` needs calibration + reachability but no policy or
+  `above_box_*`: IK over the cell with the gripper as it is, open, back to act_start (IK seed = `home`
+  or the current joints). Web: `Ajustes` gear holds the scan status, rows/cols, Calibrar robot, Cerrar
+  cámara, "Altura al soltar (cm)" (default 6, localStorage `smartseed.dropHeightCm`, sent as `drop_z`
+  with every plan) and the two test buttons (only visible over the map); runs are labelled "Prueba:
+  coger/dejar". Strict TDD: RED = 17 failed (`TypeError: ... unexpected keyword 'mode'`, missing `mode`
+  in events/422s); GREEN = full backend suite 188 passed. Web smoke 118/118 (nobackend) and 157/157
+  (robot); camera.js 24/25 where the one failure (`js-aruco2 ... counts markers`, synthetic webcam
+  shows no tray) also fails on the commit before this change. Not run on hardware; backend needs a
+  restart to pick up the new fields.

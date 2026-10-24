@@ -271,7 +271,9 @@ desactivado: `POST /robot/torque-off`):
    cinemática directa). Al menos 4 puntos repartidos y `POST /robot/calibration/fit`
    (devuelve el error en mm).
 4. **Sembrar**: `POST /plan {"image_size":[w,h],"cells":[{"cell_index","row","col","color","u","v"}]}`
-   y seguir el progreso por `WS /robot/progress`.
+   y seguir el progreso por `WS /robot/progress`. Opcionales: `mode` (`"full"` por defecto,
+   `"grasp"` solo coger, `"place"` solo dejar; son las pruebas del panel **Ajustes**) y
+   `drop_z` (m, 0.02–0.25) para la altura de la punta al soltar.
 5. **Parar**: `POST /stop` (el brazo se queda en su sitio con par). `POST /robot/torque-off`
    solo cuando el brazo esté en un lugar seguro; `POST /robot/torque-on` para recuperarlo.
 
@@ -320,6 +322,13 @@ tomate → `red`, pimiento → `green`, limón → `yellow`, berenjena → `purp
 pose enseñada responde `409 missing_pose`. `cell_index`
 es el índice de la casilla en el mapa (`fila * columnas + columna`) y vuelve tal cual en
 los eventos de progreso, así que la web sabe qué casilla pintar.
+
+Campos opcionales del cuerpo, usados por los botones de depuración de **Ajustes**:
+`mode` (`"full"` por defecto; `"grasp"` va a `act_start`, ejecuta la policy y se queda con la
+semilla, o en una ruta sin policy sube de la caja enseñada; `"place"` va encima de la celda con
+la pinza como esté, abre y vuelve a `act_start`, sin policy ni cajas) y `drop_z` (m,
+0.02–0.25, sustituye la altura por defecto de 6 cm solo en ese plan). `grasp` no necesita
+calibración; `place` sí. `plan_started` repite el `mode` en el evento.
 
 Respuestas: `202 {"plan_id", "cells"}` si lo acepta; `4xx {"detail", "code"}` si no
 (`busy`, calibración sin ajustar, `unreachable` con la lista de alveolos fuera de

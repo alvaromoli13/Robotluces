@@ -44,6 +44,8 @@ llegar a él, así que la siembra se simula y se marca **MODO DEMO** en pantalla
 
 - `POST /plan` — `image_size` y un `{cell_index, row, col, color, u, v}` por alveolo con
   semilla. `u` y `v` son píxeles del fotograma de la cámara.
+  Opcionales: `mode` (`full` | `grasp` | `place`) y `drop_z` (m); los mandan **Ajustes** →
+  «Probar coger (ACT)», «Probar dejar» y «Altura al soltar».
 - `WS /robot/progress` — `plan_started`, `cell_started`, `cell_done`, `cell_failed`,
   `finished`, `stopped`, `error`.
 - `POST /stop` — para la secuencia; el brazo se queda donde está, con par.

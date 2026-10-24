@@ -163,6 +163,20 @@ Con el brazo conectado y las policies publicadas:
    hace falta, **Guardar home**. Después **Bloquear brazo**.
 4. Escanea la bandeja, asigna las semillas a las casillas y pulsa **Sembrar**.
 
+Para depurar, el botón **Ajustes** (engranaje, bajo la cámara) esconde el estado del escaneo,
+las filas y columnas, **Calibrar robot** y **Cerrar cámara**, y añade:
+
+- **Altura al soltar (cm)** (por defecto 6, se recuerda en el navegador): altura de la punta
+  sobre la casilla al abrir la pinza. Se manda como `drop_z` (m, 0.02–0.25) en cada plan; si
+  el brazo empuja la bandeja al soltar, súbela.
+- **Probar coger (ACT)**: solo la primera mitad. Va a la pose de inicio, ejecuta la policy del
+  color de la semilla seleccionada y se queda con la semilla en la pinza (`mode: "grasp"`).
+- **Probar dejar**: solo la segunda mitad. Va encima de la primera casilla con semilla con la
+  pinza como esté, la abre y vuelve a la pose de inicio (`mode: "place"`; no necesita policy
+  ni cajas enseñadas, sí calibración). Hay que haber cogido antes una semilla (o ponerla a mano).
+
+Las pruebas usan el mismo panel de progreso, rotulado «Prueba: coger» / «Prueba: dejar».
+
 Si el agarre falla (la pinza se queda vacía), el brazo va igualmente a la casilla, abre la pinza
 y vuelve; la casilla cuenta como hecha y la web avisa de que la pinza parecía vacía.
 
