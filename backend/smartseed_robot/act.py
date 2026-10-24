@@ -5,6 +5,7 @@ import os
 import threading
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Callable, Mapping, Protocol
 
 from .poses import COLOR_ID
@@ -33,6 +34,7 @@ class ActConfig:
     cam_top: int | str = 0
     cam_wrist: int | str = 1
     device: str | None = None
+    debug_dir: Path | None = None  # per-run loop timing and the first camera frames, for diagnosis
 
     @property
     def enabled(self) -> bool:
@@ -54,7 +56,8 @@ class ActConfig:
                 raise ValueError('SMARTSEED_ACT_POLICIES must be a JSON object {"<colour>": "<repo or path>"}')
         return cls(policies, float(env.get("SMARTSEED_ACT_DURATION_S", 10.0)),
                    _camera(env.get("SMARTSEED_CAM_TOP", "0")), _camera(env.get("SMARTSEED_CAM_WRIST", "1")),
-                   env.get("SMARTSEED_POLICY_DEVICE") or None)
+                   env.get("SMARTSEED_POLICY_DEVICE") or None,
+                   Path(env["SMARTSEED_ACT_DEBUG_DIR"]) if env.get("SMARTSEED_ACT_DEBUG_DIR") else None)
 
 
 class ActGrasp:
@@ -83,18 +86,47 @@ class ActGrasp:
         policy = self.policy(color)
         policy.reset()
         steps = max(1, round((self.config.duration_s if duration_s is None else duration_s) * hz))
+        period, late, worst, done = 1 / hz, 0, 0.0, 0
         deadline = time.monotonic()
-        for _ in range(steps):
-            if stop.is_set():
-                return False
-            action = policy.step(robot.read_observation())
-            if stop.is_set():
-                return False
-            robot.send_joints(action)
-            deadline += 1 / hz
-            if stop.wait(max(0.0, deadline - time.monotonic())):
-                return False
-        return True
+        try:
+            for done in range(steps):
+                if stop.is_set():
+                    return False
+                started = time.monotonic()
+                observation = robot.read_observation()
+                if done == 0:
+                    self._save_frames(color, observation)
+                action = policy.step(observation)
+                if stop.is_set():
+                    return False
+                robot.send_joints(action)
+                worst = max(worst, time.monotonic() - started)
+                deadline += period
+                if deadline < time.monotonic():  # behind: restart the period instead of bursting the backlog
+                    late, deadline = late + 1, time.monotonic() + period
+                if stop.wait(max(0.0, deadline - time.monotonic())):
+                    return False
+            done = steps
+            return True
+        finally:
+            self._log(color, done, late, worst)
+
+    def _log(self, color: str, steps: int, late: int, worst: float) -> None:
+        if self.config.debug_dir:
+            self.config.debug_dir.mkdir(parents=True, exist_ok=True)
+            with open(self.config.debug_dir / "act_timing.log", "a") as log:
+                log.write(f"{time.strftime('%H:%M:%S')} {color} steps={steps} late={late} max_ms={worst * 1000:.0f}\n")
+
+    def _save_frames(self, color: str, observation: dict) -> None:
+        if not self.config.debug_dir:
+            return
+        import cv2
+
+        self.config.debug_dir.mkdir(parents=True, exist_ok=True)
+        for key, image in observation.items():
+            if key.startswith("observation.images."):
+                cam = key.rsplit(".", 1)[1]
+                cv2.imwrite(str(self.config.debug_dir / f"act_{color}_{cam}.png"), cv2.cvtColor(image, cv2.COLOR_RGB2BGR))
 
 
 def pick_device(override: str | None = None) -> str:

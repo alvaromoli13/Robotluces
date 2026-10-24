@@ -93,3 +93,34 @@ def test_run_stops_within_one_step():
     act = ActGrasp(ActConfig(policies={"red": "x"}, duration_s=1.0), lambda spec: FakePolicy())
     assert act.run("red", robot, stop, hz=1000) is False
     assert len(robot.commands) == 4
+
+
+def test_a_late_step_does_not_burst_the_next_ones():
+    """After a slow inference the loop resumes the period from now instead of firing the backlog at once."""
+    import time
+
+    class SlowOnce(FakePolicy):
+        def step(self, observation):
+            if len(self.observations) == 2:
+                time.sleep(0.08)
+            return super().step(observation)
+
+    sent = []
+
+    class Timed(FakeRobot):
+        def send_joints(self, target):
+            sent.append(time.monotonic())
+            super().send_joints(target)
+
+    act = ActGrasp(ActConfig(policies={"red": "x"}, duration_s=0.1), lambda spec: SlowOnce())
+    act.run("red", Timed(), threading.Event(), hz=100)
+    gaps = np.diff(sent[2:6])
+    assert gaps.min() > 0.007
+
+
+def test_run_writes_timing_and_first_frames_to_the_debug_dir(tmp_path):
+    act = ActGrasp(ActConfig(policies={"red": "x"}, duration_s=0.02, debug_dir=tmp_path), lambda spec: FakePolicy())
+    act.run("red", FakeRobot(), threading.Event(), hz=1000)
+    log = (tmp_path / "act_timing.log").read_text()
+    assert "red" in log and "steps=20" in log and "late=" in log and "max_ms=" in log
+    assert (tmp_path / "act_red_top.png").exists() and (tmp_path / "act_red_wrist.png").exists()
