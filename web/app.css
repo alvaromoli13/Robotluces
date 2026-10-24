@@ -313,6 +313,24 @@ select:focus-visible { outline: 3px solid var(--leaf); outline-offset: 2px; }
 
 .scan-status { font-size: 13px; color: var(--muted); line-height: 1.5; margin: 8px 0 0; }
 
+/* Debug settings: everything that is not the live camera lives behind the gear. */
+.settings-bar { margin-top: 12px; }
+.settings-bar .secondary-btn { display: inline-flex; align-items: center; gap: 8px; }
+.settings-bar .secondary-btn[aria-expanded="true"] { background: var(--mint); border-color: #b9d3b8; }
+.settings-panel { margin-top: 10px; padding: 12px; border: 1px solid var(--line); border-radius: 14px; }
+.settings-panel[hidden] { display: none; }
+.settings-panel .custom-fields { margin-top: 0; }
+.settings-panel .cal-row { margin: 12px 0 0; }
+.settings-panel .cal-panel .cal-row { margin: 0 0 8px; }
+.settings-panel .scanner-secondary { flex: 1 1 140px; width: auto; margin-top: 0; }
+.settings-tests { margin-top: 12px; }
+.settings-tests input { width: 100%; max-width: 160px; }
+.settings-tests .cal-help { margin-top: 8px; }
+.settings-tests .secondary-btn { flex: 1 1 140px; }
+/* The tests need the seed map, so they only show once the camera sits over it. */
+.settings-tests { display: none; }
+#mapa-semillero.camera-mode .settings-tests { display: block; }
+
 /* ── App shell ─────────────────────────────────────────────────────────────── */
 
 .app { min-height: 100vh; }

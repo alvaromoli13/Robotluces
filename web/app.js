@@ -386,7 +386,9 @@
 
   // ── Planting run ───────────────────────────────────────────────────────────
   // Wire protocol of backend/smartseed_robot (see guide.md):
-  //   POST /plan {image_size:[w,h], cells:[{cell_index,row,col,color,u,v}]} -> 202 {plan_id}
+  //   POST /plan {image_size:[w,h], cells:[{cell_index,row,col,color,u,v}], mode?, drop_z?} -> 202 {plan_id}
+  //     mode: "full" (default) | "grasp" (ACT/taught pick only) | "place" (IK over the cell + open only);
+  //     drop_z: tool height in metres when releasing (the "Altura al soltar" setting).
   //   WS   /robot/progress  -> plan_started | cell_started | cell_done | cell_failed
   //                            | finished | stopped | error
   //   POST /stop            -> {stopped}
@@ -429,6 +431,16 @@
     return { image_size: pixels.size, cells: planCells };
   }
 
+  // The pick needs no cell: the backend only wants the colour, so send one cell with any centre.
+  function buildGraspPlan() {
+    const pixels = cellPixels();
+    const [i, at] = pixels ? [...pixels.byIndex][0] : [0, { u: 0, v: 0 }];
+    return {
+      image_size: pixels ? pixels.size : [640, 480],
+      cells: [{ cell_index: i, row: Math.floor(i / cols), col: i % cols, color: SEEDS[selected].box, u: at.u, v: at.v }],
+    };
+  }
+
   function paintRunState() {
     $('trayGrid').querySelectorAll('[data-cell]').forEach(node => {
       const i = Number(node.dataset.cell);
@@ -441,16 +453,22 @@
     });
   }
 
+  // A debug run (one half of the cycle) is labelled so nobody mistakes it for a planting.
+  const runLabel = () => (run.test ? 'Prueba: ' + (run.test === 'grasp' ? 'coger' : 'dejar') : 'Sembrando');
+
   function renderRun() {
     if (!run) return;
     const done = run.queue.filter(i => run.state[i] === 'done').length;
     const failed = run.queue.filter(i => run.state[i] === 'failed').length;
-    const pct = run.queue.length ? Math.round(100 * (done + failed) / run.queue.length) : 0;
+    const pct = run.queue.length ? Math.round(100 * (done + failed) / run.queue.length) : (run.finished ? 100 : 0);
     $('runFill').style.width = pct + '%';
-    $('runCount').innerHTML = '<strong>' + done + '</strong> / ' + run.queue.length + ' huecos sembrados' +
-      (failed ? ' · ' + failed + ' fallidos' : '');
+    $('runCount').innerHTML = run.queue.length
+      ? '<strong>' + done + '</strong> / ' + run.queue.length + ' huecos ' + (run.test ? 'probados' : 'sembrados') +
+        (failed ? ' · ' + failed + ' fallidos' : '')
+      : 'Sin casillas: el brazo coge la semilla y se queda con ella';
     $('runDetail').textContent = run.detail;
-    $('runTitle').textContent = run.finished ? 'Siembra terminada' : 'Sembrando';
+    $('runTitle').textContent = run.test ? runLabel() + (run.finished ? ' · terminada' : '')
+      : (run.finished ? 'Siembra terminada' : 'Sembrando');
     const stop = $('stopRunBtn');
     stop.classList.toggle('danger-btn', !run.finished);
     stop.classList.toggle('secondary-btn', run.finished);
@@ -466,7 +484,7 @@
     if (!run || !(i in run.state)) return;
     if (status === 'planting') run.queue.forEach(j => { if (run.state[j] === 'planting') run.state[j] = 'pending'; });
     run.state[i] = status;
-    if (status === 'planting') run.detail = 'Sembrando ' + cellName(i);
+    if (status === 'planting') run.detail = (run.test ? 'Probando ' : 'Sembrando ') + cellName(i);
     if (status === 'failed') run.detail = detail || 'Fallo en ' + cellName(i);
     renderRun();
   }
@@ -545,10 +563,10 @@
           markCell(msg.cell_index, 'failed', 'Falló ' + cellName(msg.cell_index) + ': la pinza salió vacía');
           break;
         case 'finished':
-          finishRun('¡Siembra completada!', msg.message || 'El robot ha terminado el plan');
+          finishRun(run.test ? 'Prueba terminada.' : '¡Siembra completada!', msg.message || 'El robot ha terminado el plan');
           break;
         case 'stopped':
-          finishRun('Siembra detenida.', msg.message || 'Parada solicitada');
+          finishRun(run.test ? 'Prueba detenida.' : 'Siembra detenida.', msg.message || 'Parada solicitada');
           break;
         case 'error':
           finishRun('El robot ha informado de un error.', msg.message || 'Error del robot');
@@ -582,6 +600,15 @@
     return body.detail || 'el robot ha respondido HTTP ' + status + '.';
   }
 
+  // "Altura al soltar" setting (cm), persisted; null when the field holds nonsense.
+  const DROP_KEY = 'smartseed.dropHeightCm';
+  const DROP_RANGE_CM = [2, 25];
+  function dropHeightM() {
+    const cm = Number($('dropHeight').value);
+    if (!($('dropHeight').value !== '' && cm >= DROP_RANGE_CM[0] && cm <= DROP_RANGE_CM[1])) return null;
+    return Math.round(cm * 10) / 1000;
+  }
+
   function startDemo(message) {
     run.mode = 'demo';
     run.detail = 'Sin robot: simulación en el navegador';
@@ -591,11 +618,19 @@
     renderRun();
   }
 
-  async function startRun() {
+  // `test` is null for a normal planting, or "grasp" / "place" to run one half of the cycle for debugging.
+  async function startRun(test) {
     if (run) return;
-    const queue = order();
-    if (!queue.length) { toast('Asigna al menos una semilla a una casilla.'); return; }
+    test = test === 'grasp' || test === 'place' ? test : null;
+    const filled = order();
+    if (!filled.length && test !== 'grasp') { toast('Asigna al menos una semilla a una casilla.'); return; }
+    const dropZ = dropHeightM();
+    if (dropZ === null) { toast('La altura al soltar debe estar entre ' + DROP_RANGE_CM[0] + ' y ' + DROP_RANGE_CM[1] + ' cm.'); return; }
+    if (test === 'grasp' && !SEEDS[selected]) { toast('Selecciona una semilla: el robot coge de la caja de su color.'); return; }
+    // grasp: no cell is visited, the colour is the selected seed's; place: only the first filled cell
+    const queue = test === 'grasp' ? [] : test === 'place' ? filled.slice(0, 1) : filled;
     run = {
+      test,
       queue,
       state: Object.fromEntries(queue.map(i => [i, 'pending'])),
       mode: 'robot',
@@ -612,7 +647,8 @@
     setMode('Conectando…', false);
     renderRun();
 
-    const plan = buildPlan(queue);
+    let plan = test === 'grasp' ? buildGraspPlan() : buildPlan(queue);
+    if (plan) plan = { ...plan, mode: test || 'full', drop_z: dropZ };
     if (!plan) {
       // No pixel centres: a real robot could not place anything. Only simulate when
       // there is no backend to talk to in the first place.
@@ -637,12 +673,12 @@
     } catch (e) { offline = true; }
 
     if (!run) return;  // stopped while the request was in flight
-    if (offline) { startDemo('Sin backend del robot: se muestra la siembra simulada.'); return; }
+    if (offline) { startDemo('Sin backend del robot: se muestra la ' + (test ? 'prueba' : 'siembra') + ' simulada.'); return; }
 
     if (!res.ok) {
       let body = {};
       try { body = await res.json(); } catch (e) { /* no JSON body */ }
-      toast('No se puede sembrar: ' + refusalText(body, res.status));
+      toast('No se puede ' + (test ? 'probar' : 'sembrar') + ': ' + refusalText(body, res.status));
       closeRun();
       return;
     }
@@ -1005,7 +1041,19 @@
     toast('Mapa vaciado.');
   });
 
-  $('mapPlantBtn').addEventListener('click', startRun);
+  $('mapPlantBtn').addEventListener('click', () => startRun());
+  $('testGraspBtn').addEventListener('click', () => startRun('grasp'));
+  $('testPlaceBtn').addEventListener('click', () => startRun('place'));
+  $('settingsBtn').addEventListener('click', () => {
+    const open = $('settingsPanel').hidden;
+    $('settingsPanel').hidden = !open;
+    $('settingsBtn').setAttribute('aria-expanded', String(open));
+  });
+  try { const saved = localStorage.getItem(DROP_KEY); if (saved !== null && Number(saved) > 0) $('dropHeight').value = saved; }
+  catch (e) { /* storage blocked: keep the default */ }
+  $('dropHeight').addEventListener('input', () => {
+    try { localStorage.setItem(DROP_KEY, $('dropHeight').value); } catch (e) { /* storage full or blocked */ }
+  });
   $('stopRunBtn').addEventListener('click', stopRun);
   $('saveTemplateBtn').addEventListener('click', saveTemplate);
   $('deleteTemplateBtn').addEventListener('click', deleteTemplate);

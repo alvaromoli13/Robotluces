@@ -139,7 +139,7 @@
     window.smartseedApp.openApp(rows(), cols());
     panel.classList.add('camera-mode');
     panel.insertBefore(cameraPanel, panel.querySelector('.tray-toolbar'));
-    cameraPanel.insertBefore(sizeFields, q('scanStatus'));
+    q('scanStatus').parentNode.insertBefore(sizeFields, q('scanStatus'));
     cameraPanel.querySelector('.scan-stage').appendChild(trayGrid);
     cameraPanel.hidden = false;
     q('reopenCameraBtn').hidden = true;

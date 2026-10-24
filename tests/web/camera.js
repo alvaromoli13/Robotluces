@@ -80,6 +80,21 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   ok('js-aruco2 is available, so the status counts markers', scanned.arucoLoaded &&
     /Marcadores detectados/.test(scanned.status), scanned.status);
 
+  // Settings stay folded until the gear opens them; then the debug controls are really visible.
+  const folded = await page.evaluate(() => {
+    const shown = id => document.getElementById(id).offsetParent !== null;
+    return ['scanStatus', 'customRows', 'calibrateBtn', 'closeCameraBtn', 'testGraspBtn'].some(shown);
+  });
+  ok('settings are folded away by default', !folded);
+  await page.click('#settingsBtn');
+  await sleep(100);
+  await page.screenshot({ path: `${OUT}/camera-1b-settings.png` });
+  ok('the gear reveals status, size, calibration, close and the test buttons', await page.evaluate(() =>
+    ['scanStatus', 'customRows', 'customCols', 'calibrateBtn', 'closeCameraBtn', 'dropHeight', 'testGraspBtn', 'testPlaceBtn']
+      .every(id => document.getElementById(id).offsetParent !== null)));
+  ok('the settings fit the screen width', await page.evaluate(() =>
+    document.documentElement.scrollWidth <= document.documentElement.clientWidth));
+
   // Typing a size switches back to the grid and resizes the tray live.
   await page.evaluate(() => {
     const f = document.getElementById('customRows');

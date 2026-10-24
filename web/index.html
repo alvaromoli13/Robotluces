@@ -22,6 +22,7 @@
 <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14"/><path d="M5 12h14"/></symbol>
 <symbol id="i-edit" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></symbol>
 <symbol id="i-stop" viewBox="0 0 24 24"><rect width="12" height="12" x="6" y="6" rx="1.5"/></symbol>
+<symbol id="i-gear" viewBox="0 0 24 24"><path d="M12.2 2h-.4a2 2 0 0 0-2 2v.2a2 2 0 0 1-1 1.7l-.4.3a2 2 0 0 1-2 0l-.2-.1a2 2 0 0 0-2.7.7l-.2.4a2 2 0 0 0 .7 2.7l.2.1a2 2 0 0 1 1 1.7v.5a2 2 0 0 1-1 1.8l-.2.1a2 2 0 0 0-.7 2.7l.2.4a2 2 0 0 0 2.7.7l.2-.1a2 2 0 0 1 2 0l.4.3a2 2 0 0 1 1 1.7v.2a2 2 0 0 0 2 2h.4a2 2 0 0 0 2-2v-.2a2 2 0 0 1 1-1.7l.4-.3a2 2 0 0 1 2 0l.2.1a2 2 0 0 0 2.7-.7l.2-.4a2 2 0 0 0-.7-2.7l-.2-.1a2 2 0 0 1-1-1.8v-.5a2 2 0 0 1 1-1.7l.2-.1a2 2 0 0 0 .7-2.7l-.2-.4a2 2 0 0 0-2.7-.7l-.2.1a2 2 0 0 1-2 0l-.4-.3a2 2 0 0 1-1-1.7V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></symbol>
 <symbol id="i-save" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/></symbol>
 </defs></svg>
 
@@ -49,27 +50,46 @@
         <canvas id="scanOverlay" aria-label="Rejilla del semillero sobre la cámara"></canvas>
         <canvas id="calOverlay" aria-label="Puntos de calibración del robot"></canvas>
       </div>
-      <p id="scanStatus" class="scan-status" aria-live="polite"></p>
-      <div id="calPanel" class="cal-panel" hidden>
-        <p class="cal-help"><strong>Calibrar robot.</strong> Pulsa «Soltar brazo», lleva la punta de la pinza a un punto de la bandeja y haz clic en ese punto de la imagen. Repite con al menos 4 puntos repartidos por la bandeja, ajusta, guarda la pose de inicio y bloquea el brazo.</p>
-        <p id="calStatus" class="scan-status" aria-live="polite"></p>
-        <div class="cal-row">
-          <button type="button" class="secondary-btn" id="calTorqueOffBtn">Soltar brazo</button>
-          <button type="button" class="secondary-btn" id="calTorqueOnBtn">Bloquear brazo</button>
+      <div class="settings-bar">
+        <button id="settingsBtn" class="secondary-btn" type="button" aria-expanded="false" aria-controls="settingsPanel">
+          <svg class="ic" aria-hidden="true"><use href="#i-gear"/></svg> Ajustes
+        </button>
+      </div>
+      <!-- Debug settings: the scan status, the tray size, robot calibration and per-half robot tests. -->
+      <div id="settingsPanel" class="settings-panel" hidden>
+        <p id="scanStatus" class="scan-status" aria-live="polite"></p>
+        <div id="calPanel" class="cal-panel" hidden>
+          <p class="cal-help"><strong>Calibrar robot.</strong> Pulsa «Soltar brazo», lleva la punta de la pinza a un punto de la bandeja y haz clic en ese punto de la imagen. Repite con al menos 4 puntos repartidos por la bandeja, ajusta, guarda la pose de inicio y bloquea el brazo.</p>
+          <p id="calStatus" class="scan-status" aria-live="polite"></p>
+          <div class="cal-row">
+            <button type="button" class="secondary-btn" id="calTorqueOffBtn">Soltar brazo</button>
+            <button type="button" class="secondary-btn" id="calTorqueOnBtn">Bloquear brazo</button>
+          </div>
+          <p class="cal-count"><span id="calCount"></span> · <span id="calResult"></span></p>
+          <div class="cal-row">
+            <button type="button" class="primary" id="calFitBtn" disabled>Ajustar</button>
+            <button type="button" class="secondary-btn" id="calClearBtn">Borrar puntos</button>
+          </div>
+          <div class="cal-row">
+            <button type="button" class="secondary-btn" id="calSaveStartBtn">Guardar pose de inicio</button>
+            <button type="button" class="secondary-btn" id="calSaveHomeBtn">Guardar home</button>
+            <button type="button" class="secondary-btn" id="calCloseBtn">Terminar</button>
+          </div>
         </div>
-        <p class="cal-count"><span id="calCount"></span> · <span id="calResult"></span></p>
-        <div class="cal-row">
-          <button type="button" class="primary" id="calFitBtn" disabled>Ajustar</button>
-          <button type="button" class="secondary-btn" id="calClearBtn">Borrar puntos</button>
+        <div class="settings-tests">
+          <label for="dropHeight">Altura al soltar (cm)</label>
+          <input id="dropHeight" type="number" min="2" max="25" step="0.5" value="6" inputmode="decimal">
+          <p class="cal-help">Prueba cada mitad del ciclo por separado, con el brazo ya calibrado y la bandeja a la vista.</p>
+          <div class="cal-row">
+            <button id="testGraspBtn" class="secondary-btn" type="button" title="Mueve a la pose de inicio y ejecuta la política ACT del color de la semilla seleccionada; se queda con la semilla en la pinza">Probar coger (ACT)</button>
+            <button id="testPlaceBtn" class="secondary-btn" type="button" title="Lleva la pinza sobre la primera casilla con semilla, la abre y vuelve a la pose de inicio">Probar dejar</button>
+          </div>
         </div>
         <div class="cal-row">
-          <button type="button" class="secondary-btn" id="calSaveStartBtn">Guardar pose de inicio</button>
-          <button type="button" class="secondary-btn" id="calSaveHomeBtn">Guardar home</button>
-          <button type="button" class="secondary-btn" id="calCloseBtn">Terminar</button>
+          <button id="calibrateBtn" class="scanner-secondary" type="button" aria-pressed="false">Calibrar robot</button>
+          <button id="closeCameraBtn" class="scanner-secondary" type="button">Cerrar cámara</button>
         </div>
       </div>
-      <button id="calibrateBtn" class="scanner-secondary" type="button" aria-pressed="false">Calibrar robot</button>
-      <button id="closeCameraBtn" class="scanner-secondary" type="button">Cerrar cámara</button>
     </div>
 
     <!-- Fallback for browsers without getUserMedia: a photo plus the size by hand. -->

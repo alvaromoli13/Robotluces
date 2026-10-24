@@ -473,6 +473,79 @@ vc.on('error', m => errs.push('console.error: ' + m));
   $('stopRunBtn').click();
   ok('closing after a stop restores the map', $('runPanel').hidden && !$('trayActions').hidden);
 
+  // ── Settings panel and the two half-cycle test buttons ──────────────────────
+  const settings = $('settingsPanel');
+  ok('settings panel starts closed', settings.hidden && $('settingsBtn').getAttribute('aria-expanded') === 'false');
+  ok('settings hold the scan status, calibration, close camera and the tests',
+    ['scanStatus', 'calPanel', 'calibrateBtn', 'closeCameraBtn', 'dropHeight', 'testGraspBtn', 'testPlaceBtn'].every(id => settings.contains($(id))));
+  $('settingsBtn').click();
+  ok('the gear opens the settings', !settings.hidden && $('settingsBtn').getAttribute('aria-expanded') === 'true');
+  $('settingsBtn').click();
+  ok('the gear closes the settings', settings.hidden && $('settingsBtn').getAttribute('aria-expanded') === 'false');
+  ok('drop height defaults to 6 cm', $('dropHeight').value === '6');
+  $('dropHeight').value = '8';
+  $('dropHeight').dispatchEvent(new window.Event('input'));
+  ok('drop height is persisted', window.localStorage.getItem('smartseed.dropHeightCm') === '8');
+
+  const seedList = window.smartseedApp.seeds();
+  seedTiles()[1].click();  // the colour of the selected seed is the one the pick asks for
+  const firstFilled = cellNodes().findIndex(c => klass(c, 'filled'));
+  ok('there is a planted cell to test with', firstFilled >= 0);
+  if (MODE === 'robot') {
+    window.__planned.length = 0;
+    $('testPlaceBtn').click();
+    await sleep(200);
+    const place = window.__planned[0];
+    ok('Probar dejar posts a place plan with one cell', place && place.mode === 'place' && place.cells.length === 1, JSON.stringify(place));
+    ok('Probar dejar uses the first planted cell', place && place.cells[0].cell_index === firstFilled, JSON.stringify(place));
+    ok('the drop height goes to the backend in metres', place && place.drop_z === 0.08, place && place.drop_z);
+    ok('the test run is labelled', $('runTitle').textContent === 'Prueba: dejar', $('runTitle').textContent);
+    window.__ws.push({ type: 'finished', message: '1 done, 0 failed' });
+    ok('a finished test says so', $('runTitle').textContent.includes('Prueba: dejar') && $('runTitle').textContent.includes('terminada'), $('runTitle').textContent);
+    $('stopRunBtn').click();
+
+    $('testGraspBtn').click();
+    await sleep(200);
+    const grasp = window.__planned[1];
+    ok('Probar coger posts a grasp plan', grasp && grasp.mode === 'grasp' && grasp.cells.length === 1, JSON.stringify(grasp));
+    ok('Probar coger asks for the selected seed colour', grasp && grasp.cells[0].color === seedList[1].color, JSON.stringify(grasp));
+    ok('Probar coger is labelled and paints no cell', $('runTitle').textContent === 'Prueba: coger' &&
+      !cellNodes().some(c => klass(c, 'planting')), $('runTitle').textContent);
+    window.__ws.push({ type: 'cell_started', cell_index: grasp.cells[0].cell_index, row: 0, col: 0, color: grasp.cells[0].color, total: 1 });
+    ok('a grasp test never marks a cell as planting', !cellNodes().some(c => klass(c, 'planting')));
+    window.__ws.push({ type: 'finished', message: '1 done, 0 failed' });
+    $('stopRunBtn').click();
+
+    $('mapPlantBtn').click();
+    await sleep(200);
+    const full = window.__planned[2];
+    ok('Sembrar keeps the full mode and sends the drop height', full && full.mode === 'full' && full.drop_z === 0.08, JSON.stringify(full && [full.mode, full.drop_z]));
+    $('stopRunBtn').click();
+    await sleep(100);
+    $('stopRunBtn').click();
+
+    $('dropHeight').value = '50';
+    window.__planned.length = 0;
+    $('testPlaceBtn').click();
+    await sleep(100);
+    ok('an out-of-range drop height is refused before talking to the robot',
+      window.__planned.length === 0 && $('runPanel').hidden && $('toast').textContent.includes('altura al soltar'), $('toast').textContent);
+    $('dropHeight').value = '8';
+  } else {
+    $('testGraspBtn').click();
+    await sleep(100);
+    ok('Probar coger runs as a labelled demo with no backend', $('runTitle').textContent.startsWith('Prueba: coger') && window.__planned.length === 0, $('runTitle').textContent);
+    ok('a demo grasp test finishes at once', $('runTitle').textContent.includes('terminada'), $('runTitle').textContent);
+    $('stopRunBtn').click();
+    $('testPlaceBtn').click();
+    await sleep(100);
+    ok('Probar dejar runs as a labelled demo', $('runTitle').textContent.startsWith('Prueba: dejar'), $('runTitle').textContent);
+    $('stopRunBtn').click();
+    await sleep(50);
+    $('stopRunBtn').click();
+  }
+  ok('the test runs leave the map editable', $('runPanel').hidden && !$('trayActions').hidden);
+
   // ── Robot calibration from the camera view ──────────────────────────────────
   if (MODE === 'robot') {
     const video = $('cameraPreview');
