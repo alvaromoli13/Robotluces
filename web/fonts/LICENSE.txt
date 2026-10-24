@@ -1,0 +1,9 @@
+Fonts vendored so the app works with no internet (see web/README.md).
+
+DM Sans   — SIL Open Font License 1.1 — https://fonts.google.com/specimen/DM+Sans
+Manrope   — SIL Open Font License 1.1 — https://fonts.google.com/specimen/Manrope
+
+Both files are the latin subset of the variable font as served by Google Fonts.
+Full licence text: https://openfontlicense.org/
+
+js-aruco2 in web/vendor/ is MIT; its copyright headers are kept inside the files.

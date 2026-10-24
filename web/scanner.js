@@ -1,10 +1,13 @@
 // Live tray scanner: camera picker, real-time grid overlay and tray localisation.
 // Sources, by priority: ArUco markers (ARUCO_MIP_36h12; id 0 top-left, 1 top-right,
-// 2 bottom-right, 3 bottom-left) > local vision backend (backend/, OWLv2 + OpenCV, gives
-// corners and rows x cols) > corners dragged by hand. Without backend the page still works.
+// 2 bottom-right, 3 bottom-left) > depth holes from the local vision backend (one cell
+// per hole, no corners) > the backend's tray grid > corners dragged by hand. The page
+// keeps working with the backend down, and js-aruco2 is vendored in web/vendor/ so the
+// marker path does not depend on the event wifi either.
 (() => {
   const q = id => document.getElementById(id);
-  const notify = msg => (typeof toast === 'function' ? toast(msg) : console.log(msg));
+  const notify = msg => (window.smartseedToast ? window.smartseedToast(msg) : console.log(msg));
+  const backend = window.smartseedBackend;
   const CAM_KEY = 'smartseed.cameraId';
   const CORNERS_KEY = 'smartseed.scanCorners';
   const DETECT_EVERY_MS = 100;
@@ -12,15 +15,14 @@
   const HANDLE_RADIUS = 14;
   const MODEL_EVERY_MS = 1000;
   const HEALTH_RETRY_MS = 5000;
-  const BACKEND_URL = (() => {
-    try { return localStorage.getItem('smartseed.backendUrl') || 'http://localhost:8000'; } catch (e) { return 'http://localhost:8000'; }
-  })();
 
   const video = q('cameraPreview');
   const overlay = q('scanOverlay');
   const ctx = overlay.getContext('2d');
   const work = document.createElement('canvas');
   const workCtx = work.getContext('2d', { willReadFrequently: true });
+  // Vendored js-aruco2. If the files ever fail to load, the status line says so instead
+  // of silently dropping the most reliable source.
   const detector = window.AR ? new AR.Detector({ dictionaryName: 'ARUCO_MIP_36h12' }) : null;
 
   let stream = null;
@@ -36,11 +38,11 @@
   let modelFound = false;
   let userSetSize = false;
   let mapMode = false;
-  // Holes found by the depth model, row-major, normalized x/y and area. They place the cells
-  // directly, no corners needed; ArUco markers or a size typed by hand take over from them.
+  // Holes found by the depth model, row-major, normalized x/y and area. They place the
+  // cells directly, no corners needed; markers or a size typed by hand take over.
   let holes = null;
-  // A new hole count must repeat this many times before the tray is resized, so one noisy
-  // depth frame does not wipe the seeds already assigned.
+  // A new hole count must repeat this many times before the tray is resized, so one
+  // noisy depth frame does not wipe the seeds already assigned.
   const HOLE_COUNT_CONFIRMATIONS = 2;
   let candidateCount = 0;
   let candidateSeen = 0;
@@ -52,6 +54,8 @@
   const homes = [cameraPanel, sizeFields, trayGrid].map(el => [el, el.parentNode, el.nextSibling]);
   // Normalized (0..1) corners: top-left, top-right, bottom-right, bottom-left.
   let corners = loadCorners();
+  // Snapshot handed to the robot backend when the camera is closed.
+  let lastLayout = null;
 
   function loadCorners() {
     try {
@@ -88,7 +92,8 @@
   const holeSize = (hole, W, H) =>
     Math.min(0.25 * Math.min(W, H), Math.max(24, 2 * Math.sqrt(hole.area * W * H / Math.PI)));
 
-  // Cell centers in video pixels, row by row. Exposed for the robot backend.
+  // Cell centers in video pixels, row by row. The robot backend turns them into table
+  // coordinates with the camera-robot homography.
   function cellCenters() {
     const w = video.videoWidth, h = video.videoHeight, r = rows(), c = cols();
     if (holesActive()) return holes.map(({ row, col, x, y }) => ({ row, col, x: Math.round(x * w), y: Math.round(y * h) }));
@@ -99,6 +104,8 @@
     }
     return out;
   }
+
+  const source = () => (locked ? 'aruco' : holesActive() ? 'depth' : backendOk && modelFound ? 'vision' : 'manual');
 
   // Places each seed map cell over its hole in the camera image.
   function layoutCells() {
@@ -123,30 +130,36 @@
     });
   }
 
-  // Skip the scanner step: build the seed map and show it on top of the camera.
+  // Build the seed map and show it on top of the live camera. The size fields follow the
+  // tray, and the layout already assigned (or restored from localStorage) is kept.
   function enterMapMode() {
+    if (mapMode) return;
     const panel = q('mapa-semillero');
-    window.smartseedApp.createTray(rows(), cols());
+    window.smartseedApp.openApp(rows(), cols());
     panel.classList.add('camera-mode');
     panel.insertBefore(cameraPanel, panel.querySelector('.tray-toolbar'));
     cameraPanel.insertBefore(sizeFields, q('scanStatus'));
     cameraPanel.querySelector('.scan-stage').appendChild(trayGrid);
     cameraPanel.hidden = false;
+    q('reopenCameraBtn').hidden = true;
     mapMode = true;
     layoutCells();
   }
 
   function exitMapMode() {
+    if (!mapMode) return;
     mapMode = false;
     q('mapa-semillero').classList.remove('camera-mode');
     homes.forEach(([el, parent, next]) => parent.insertBefore(el, next));
     trayGrid.querySelectorAll('[data-cell]').forEach(cell =>
       Object.assign(cell.style, { left: '', top: '', width: '', height: '' }));
     cameraPanel.hidden = true;
+    q('reopenCameraBtn').hidden = false;
   }
 
+  // The tray size must not change under the user while the robot is planting.
   function syncTraySize() {
-    if (mapMode) window.smartseedApp.resizeTray(rows(), cols());
+    if (mapMode && !window.smartseedApp.isRunning()) window.smartseedApp.resizeTray(rows(), cols());
   }
 
   function stopCamera() {
@@ -197,15 +210,9 @@
     if (locked && dragIndex < 0) { corners = [byId[0], byId[1], byId[2], byId[3]]; saveCorners(); }
   }
 
-  async function fetchWithTimeout(url, opts, ms) {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), ms);
-    try { return await fetch(url, { ...opts, signal: ctrl.signal }); } finally { clearTimeout(timer); }
-  }
-
   async function checkBackend() {
     try {
-      const res = await fetchWithTimeout(BACKEND_URL + '/health', {}, 1500);
+      const res = await backend.fetch('/health', {}, 1500);
       backendOk = res.ok;
     } catch (e) { backendOk = false; }
   }
@@ -218,7 +225,7 @@
       const blob = await new Promise(resolve => work.toBlob(resolve, 'image/jpeg', 0.85));
       const form = new FormData();
       form.append('image', blob, 'frame.jpg');
-      const res = await fetchWithTimeout(BACKEND_URL + '/vision/tray', { method: 'POST', body: form }, 8000);
+      const res = await backend.fetch('/vision/tray', { method: 'POST', body: form }, 8000);
       if (!res.ok) throw new Error('HTTP ' + res.status);
       const data = await res.json();
       modelFound = !!data.found;
@@ -257,7 +264,9 @@
     if (locked) return 'Bandeja localizada con los 4 marcadores · ' + r + ' × ' + c + ' huecos';
     if (holesActive()) return 'Huecos detectados por profundidad: ' + holes.length + ' · cada casilla está sobre su hueco · escribe filas y columnas para usar la rejilla';
     if (backendOk && modelFound) return 'Bandeja detectada por el modelo de visión · ' + r + ' × ' + c + ' huecos · puedes corregir filas, columnas o esquinas';
-    const markers = detector ? 'Marcadores detectados: ' + markersSeen + '/4 · ' : '';
+    const markers = detector
+      ? 'Marcadores detectados: ' + markersSeen + '/4 · '
+      : 'Detector de marcadores no cargado (falta web/vendor/aruco.js) · ';
     const model = backendOk ? 'Modelo de visión buscando la bandeja… · ' : 'Modelo de visión no disponible (arranca backend/) · ';
     return markers + model + 'Arrastra las esquinas amarillas hasta las esquinas de la bandeja';
   }
@@ -338,17 +347,27 @@
     });
     if (bestDist <= HANDLE_RADIUS * 2) { dragIndex = best; overlay.setPointerCapture(e.pointerId); e.preventDefault(); }
   });
+
   overlay.addEventListener('pointermove', e => {
     if (dragIndex < 0) return;
     const [x, y] = pointerPos(e);
     corners[dragIndex] = [Math.min(1, Math.max(0, x)), Math.min(1, Math.max(0, y))];
   });
+
   const endDrag = () => { if (dragIndex >= 0) { dragIndex = -1; saveCorners(); } };
   overlay.addEventListener('pointerup', endDrag);
   overlay.addEventListener('pointercancel', endDrag);
 
-  q('startScanBtn').addEventListener('click', async () => {
-    if (!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)) { q('cameraInput').click(); return; }
+  // Browsers with no live camera (or a denied permission) fall back to a photo plus the
+  // tray size typed by hand, which is the only way left to build the map.
+  function manualFallback() {
+    q('scanResult').hidden = false;
+    q('customTrayForm').hidden = false;
+    q('cameraInput').click();
+  }
+
+  async function startScan() {
+    if (!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)) { manualFallback(); return; }
     let saved = null;
     try { saved = localStorage.getItem(CAM_KEY); } catch (e) { /* ignore */ }
     try {
@@ -359,26 +378,48 @@
       enterMapMode();
     } catch (err) {
       notify('No se ha podido abrir la cámara: ' + (err.message || err.name));
-      q('cameraInput').click();
+      manualFallback();
     }
+  }
+
+  q('startScanBtn').addEventListener('click', startScan);
+  // Reopening the scanner from inside the app: the previous version left no way back.
+  q('reopenCameraBtn').addEventListener('click', () => {
+    if (window.smartseedApp.isRunning()) { notify('Para el robot antes de volver a escanear.'); return; }
+    startScan();
   });
+
   ['customRows', 'customCols'].forEach(id => q(id).addEventListener('input', () => { userSetSize = true; syncTraySize(); }));
+
   q('cameraSelect').addEventListener('change', e =>
     openCamera(e.target.value).catch(err => notify('No se ha podido abrir esa cámara: ' + (err.message || err.name))));
+
+  // Closing the camera confirms the map: the cell centers are kept for the robot backend.
   q('closeCameraBtn').addEventListener('click', () => {
+    // The robot plan needs the pixel centre of every cell, so keep the last reading
+    // (and the frame it was measured in) after the camera is gone.
+    if (stream) {
+      lastLayout = {
+        corners: corners.map(p => p.slice()),
+        cells: cellCenters(),
+        imageSize: [video.videoWidth, video.videoHeight],
+        source: source(),
+      };
+    }
     stopCamera();
-    if (mapMode) exitMapMode();
-    cameraPanel.hidden = true;
-    q('startScanBtn').hidden = false;
+    exitMapMode();
   });
-  q('createCustomTrayBtn').addEventListener('click', () => {
-    if (!stream) return;
-    window.smartseedScan.lastLayout = { corners: corners.map(p => p.slice()), cells: cellCenters(), locked };
-    stopCamera();
-    q('cameraPanel').hidden = true;
-    q('startScanBtn').hidden = false;
-  });
+
   window.addEventListener('pagehide', stopCamera);
 
-  window.smartseedScan = { cellCenters, layoutCells, get corners() { return corners; }, get locked() { return locked; }, lastLayout: null };
+  window.smartseedScan = {
+    cellCenters,
+    layoutCells,
+    source,
+    cameraActive: () => !!stream,
+    imageSize: () => [video.videoWidth, video.videoHeight],
+    get corners() { return corners; },
+    get locked() { return locked; },
+    get lastLayout() { return lastLayout; },
+  };
 })();
