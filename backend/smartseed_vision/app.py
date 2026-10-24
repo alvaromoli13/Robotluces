@@ -15,6 +15,7 @@ from .geometry import analyze_tray
 # ("failed assertion _status < MTLCommandBufferStatusCommitted").
 GPU_LOCK = threading.Lock()
 MIN_CONTOUR_CONFIDENCE = 0.35  # without a detector hit, require a clear cell pattern
+MIN_CONTOUR_HOLES = 2  # ...and, when depth is available, at least this many pits inside it
 
 
 def default_detector():
@@ -92,6 +93,10 @@ def create_app(detector="default", depth="default", robot="default"):
             depth_map = depth.estimate(img) if depth else None
         corners = [[min(max(x / w, 0), 1), min(max(y / h, 0), 1)] for x, y in corners_px] if geometry else None
         holes = find_holes(depth_map, tray=corners) if depth_map is not None else []
+        if geometry and bbox is None and depth_map is not None and len(holes) < MIN_CONTOUR_HOLES:
+            # contours alone also match printed text or tiles; a real tray has pits in the depth map
+            geometry = corners = None
+            holes = find_holes(depth_map)
         if holes and geometry:
             holes = grid_in_tray(holes, corners, geometry.rows, geometry.cols) or holes
         holes = mark_occupied(img, holes, corners)

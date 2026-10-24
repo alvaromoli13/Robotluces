@@ -893,3 +893,6 @@ select:focus-visible { outline: 3px solid var(--leaf); outline-offset: 2px; }
   .scanner-card { padding: 20px; }
   #mapa-semillero { padding-left: 10px; padding-right: 10px; }
 }
+
+/* No tray detected: no cells over the live image (see scanner.js gridDetected). */
+#mapa-semillero.camera-mode .scan-stage.no-grid .tray-cell { display: none; }

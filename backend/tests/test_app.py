@@ -181,3 +181,18 @@ def test_models_never_run_concurrently_across_requests(tray):
     for t in threads:
         t.join()
     assert probe.max_active == 1
+
+
+def test_contour_only_tray_needs_holes_in_the_depth_map_when_depth_is_available(tray):
+    img, _ = tray
+    flat = np.full((240, 320), 0.5, np.float32)  # e.g. printed letters: a cell-like pattern with no pits
+    body = post(TestClient(create_app(StubDetector(None), depth=StubDepth(flat))), img).json()
+    assert body["found"] is False and body["corners"] is None and body["holes"] == []
+
+
+def test_detector_hit_is_trusted_even_without_holes(tray):
+    img, _ = tray
+    flat = np.full((240, 320), 0.5, np.float32)
+    hit = ((0, 0, img.shape[1], img.shape[0]), 0.4)
+    body = post(TestClient(create_app(StubDetector(hit), depth=StubDepth(flat))), img).json()
+    assert body["found"] is True

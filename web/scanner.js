@@ -36,6 +36,7 @@
   let lastModel = 0;
   let modelBusy = false;
   let modelFound = false;
+  let lastFoundAt = -Infinity;
   let userSetSize = false;
   let mapMode = false;
   // Holes found by the depth model, row-major, normalized x/y and area. They place the
@@ -229,6 +230,7 @@
       if (!res.ok) throw new Error('HTTP ' + res.status);
       const data = await res.json();
       modelFound = !!data.found;
+      if (data.found || (Array.isArray(data.holes) && data.holes.length)) lastFoundAt = performance.now();
       const found = Array.isArray(data.holes) && data.holes.length ? holesLayout(data.holes) : null;
       const count = found ? found.cells.length : 0;
       candidateSeen = count === candidateCount ? candidateSeen + 1 : 1;
@@ -260,6 +262,11 @@
     }
   }
 
+  // No grid is drawn until something actually finds a tray; it is kept for a short while after the
+  // last detection so a single missed frame does not make it flicker.
+  const GRID_GRACE_MS = 3000;
+  const gridDetected = () => locked || holesActive() || (backendOk && performance.now() - lastFoundAt < GRID_GRACE_MS);
+
   function statusText(r, c) {
     if (locked) return 'Bandeja localizada con los 4 marcadores · ' + r + ' × ' + c + ' huecos';
     if (holesActive()) {
@@ -286,6 +293,14 @@
     const px = ([x, y]) => [x * W, y * H];
     ctx.clearRect(0, 0, W, H);
     ctx.lineWidth = 2 * dpr;
+    const stage = cameraPanel.querySelector('.scan-stage');
+    if (!gridDetected()) {
+      stage.classList.add('no-grid');
+      q('scanStatus').textContent = 'No se detecta ninguna cuadrícula · enfoca la bandeja con la cámara' +
+        (backendOk ? '' : ' · modelo de visión no disponible (arranca backend/)');
+      return;
+    }
+    stage.classList.remove('no-grid');
     if (holesActive()) {
       // Visual hint only: an occupied hole is drawn amber and dashed, selection is unaffected.
       holes.forEach(hole => {
