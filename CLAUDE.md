@@ -5,7 +5,7 @@ Guidance for agents and contributors working in this repository.
 ## Project
 
 SmartSeed: an SO-101 arm (LeRobot) plants seeds into a cell tray following a layout the
-customer designs in a cinema-seat-style web UI. 4 seed types, one colored box each.
+customer designs in a cinema-seat-style web UI. Seeds are user-defined in the UI (name + emoji + bowl colour; 4 by default), one coloured box each.
 Full idea, flow and roadmap: see `guide.md`. Resolved criteria and the steps to
 reproduce the result: see `README.md`.
 
@@ -36,7 +36,9 @@ Implications for any work here:
   CDN**: `web/fonts/` has DM Sans and Manrope and `web/vendor/` has js-aruco2, so the
   demo survives the event wifi going down. Keep it that way.
 - `web/app.js` — palette, tray layout, saved templates (`smartseed.templates`,
-  `smartseed.lastLayout`) and the planting run. On **Sembrar** it posts the
+  `smartseed.lastLayout`), user-defined seeds (`smartseed.seeds`: `{id,name,emoji,color}`; the
+  "+" tile opens the modal; `color` is a bowl-colour id, the one `/plan` sends and the robot
+  looks for; `Cell.color` accepts any `^[a-z][a-z_-]{0,19}$`, a colour without taught poses is 409) and the planting run. On **Sembrar** it posts the
   `smartseed_robot` plan (`image_size` + one `{cell_index,row,col,color,u,v}` per filled
   hole) and follows `WS /robot/progress`, painting each cell as it is planted, done or
   failed. A plan the backend refuses (`unreachable`, `torque_off`, a plan already

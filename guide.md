@@ -11,7 +11,8 @@ Entrega: **domingo 13:00**. Presentaciones: 14:15.
 Un brazo robótico **SO-101** (LeRobot) siembra un semillero alveolado siguiendo el
 diseño que el cliente elige en una interfaz gráfica.
 
-- Hay **4 tipos de semilla**, cada uno en una **caja de un color**.
+- Las semillas las define el usuario en la web (botón «+»: nombre, emoji y **color de su caja**);
+  vienen 4 por defecto, cada una en una **caja de un color distinto**.
 - El semillero es una bandeja de alveolos en rejilla (filas × columnas).
 - La interfaz funciona como el **selector de asientos de un cine o de un estadio**: cada
   alveolo es una casilla y se pinta del color de la semilla que llevará.
@@ -258,7 +259,8 @@ desactivado: `POST /robot/torque-off`):
 
 1. **Comprobar la cinemática directa**: `GET /robot/joints` devuelve ángulos y `tool` (x, y, z
    en metros respecto a la base). Mide con una regla la punta de la pinza y compara.
-2. **Enseñar poses** (`home`, `above_box_red|yellow|green|purple`, y opcional `grasp_<color>`
+2. **Enseñar poses** (`home`, `above_box_<color>` —por defecto `red|yellow|green|purple`, y cualquier
+   otro color que añadas en la web— y opcional `grasp_<color>`
    que baja a coger): coloca el brazo y `POST /robot/poses/{nombre}`.
    `POST /robot/goto/{nombre}` comprueba que vuelve a ella, **después** de volver a activar
    el par con `POST /robot/torque-on` (fija destino = posición actual, sin saltos). Con el
@@ -310,8 +312,11 @@ homografía:
 }
 ```
 
-`color` es el color de la **caja** de la que hay que coger, no el nombre de la variedad:
-tomate → `red`, pimiento → `green`, limón → `yellow`, berenjena → `purple`. `cell_index`
+`color` es el id del color de la **caja** de la que hay que coger, no el nombre de la variedad.
+Lo elige el usuario al crear la semilla (`red`, `orange`, `yellow`, `green`, `blue`, `purple`,
+`pink`, `white`; el backend acepta cualquier id `^[a-z][a-z_-]{0,19}$`). Por defecto:
+tomate → `red`, pimiento → `green`, limón → `yellow`, berenjena → `purple`. Un color sin
+pose enseñada responde `409 missing_pose`. `cell_index`
 es el índice de la casilla en el mapa (`fila * columnas + columna`) y vuelve tal cual en
 los eventos de progreso, así que la web sabe qué casilla pintar.
 
@@ -356,7 +361,7 @@ píxeles no hay posición a la que llevar el brazo.
 
 ### 2. Interfaz (viernes-sábado)
 - [x] Rejilla de alveolos tipo cine, con tamaño configurable.
-- [x] Selector de las 4 semillas/colores y botón de "rellenar todo de un color".
+- [x] Semillas propias (nombre + emoji + color de caja, en `localStorage`) y botón de "rellenar todo de un color".
 - [x] Guardar y cargar plantillas, y cargar automáticamente la última fórmula usada.
 - [x] Botón **Sembrar** que envía el plan al backend, con vista de progreso y **Parar**.
 - [x] Imagen de la cámara cenital con la rejilla **detectada** superpuesta.

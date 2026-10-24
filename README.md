@@ -25,7 +25,7 @@ tipo butacas de cine y el robot siembra cada alveolo con la semilla elegida.
 
 | Parte | Estado |
 |---|---|
-| Interfaz web (rejilla, 4 semillas, plantillas, última fórmula) | ✅ funcionando, publicada en GitHub Pages en modo demo |
+| Interfaz web (rejilla, semillas propias, plantillas, última fórmula) | ✅ funcionando, publicada en GitHub Pages en modo demo |
 | Botón **Sembrar** conectado a `POST /plan` con progreso en directo y **Parar** | 🔜 en desarrollo; hoy solo simula |
 | Visión: localizar el semillero y contar alveolos (ArUco · profundidad · OWLv2) | ✅ backend local con tests |
 | Leader y follower montados y calibrados | ✅ viernes 23 |
@@ -98,7 +98,8 @@ Con el backend arrancado en modo `real`, todo lo demás se hace por HTTP contra
 4. **Comprobar la cinemática directa**: `GET /robot/joints` devuelve los ángulos y `tool`
    (x, y, z en metros desde la base). Medir la punta con una regla y comparar.
 5. **Enseñar poses**: colocar el brazo y `POST /robot/poses/{nombre}` para `home`,
-   `above_box_red|yellow|green|purple` y `grasp_<color>` (la pose bajada para coger; sin
+   `above_box_<color>` (por defecto `red|yellow|green|purple`; cualquier id de color que
+   uses en la web, p. ej. `above_box_blue`) y `grasp_<color>` (la pose bajada para coger; sin
    ella la pinza se cierra sin bajar).
 6. **Volver a activar el par**: `POST /robot/torque-on`. Antes de activarlo fija como
    destino la posición actual, así que el brazo no salta. Mientras el par está quitado,
