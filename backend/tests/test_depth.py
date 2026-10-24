@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from smartseed_vision.depth import assign_rows, find_holes
+from smartseed_vision.depth import assign_rows, find_holes, grid_in_tray
 from synth import make_box_depth
 
 
@@ -57,3 +57,28 @@ def test_side_by_side_holes_offset_by_a_tilted_box_share_a_row():
 def test_grid_holes_split_into_rows():
     grid = [hole(x, y) for y in (0.3, 0.6) for x in (0.3, 0.5, 0.7)]
     assert [(h["row"], h["col"]) for h in assign_rows(grid)] == [(r, c) for r in range(2) for c in range(3)]
+
+
+def test_holes_outside_the_tray_region_are_dropped():
+    depth, centers = make_box_depth(1, 2)
+    (lx, ly), (rx, ry) = centers
+    mid = (lx + rx) / 2
+    left_half = [[0.0, 0.0], [mid, 0.0], [mid, 1.0], [0.0, 1.0]]
+    holes = find_holes(depth, tray=left_half)
+    assert [(h["row"], h["col"]) for h in holes] == [(0, 0)]
+    assert abs(holes[0]["x"] - lx) < 0.06
+
+
+def test_grid_in_tray_numbers_holes_in_tray_coordinates_even_when_rotated():
+    rows, cols, angle = 3, 4, np.deg2rad(14)
+    centre, half = np.array([0.6, 0.5]), np.array([0.2, 0.12])
+    rot = np.array([[np.cos(angle), -np.sin(angle)], [np.sin(angle), np.cos(angle)]])
+    to_img = lambda u, v: centre + rot @ ((np.array([u, v]) * 2 - 1) * half)
+    corners = [to_img(0, 0).tolist(), to_img(1, 0).tolist(), to_img(1, 1).tolist(), to_img(0, 1).tolist()]
+    truth = {(r, c): to_img((c + 0.5) / cols, (r + 0.5) / rows) for r in range(rows) for c in range(cols)}
+    shuffled = [truth[k] for k in [(2, 3), (0, 0), (1, 2), (0, 3), (2, 0), (1, 0), (0, 1), (2, 2), (1, 3), (0, 2),
+                                   (2, 1), (1, 1)]]
+    holes = grid_in_tray([{"x": x, "y": y, "area": 0.01, "depth": 0.2} for x, y in shuffled], corners, rows, cols)
+    assert [(h["row"], h["col"]) for h in holes] == [(r, c) for r in range(rows) for c in range(cols)]
+    for h in holes:
+        assert np.allclose([h["x"], h["y"]], truth[(h["row"], h["col"])])

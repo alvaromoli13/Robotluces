@@ -64,8 +64,22 @@ def assign_rows(holes):
     return ordered
 
 
-def find_holes(depth):
-    """Holes in a relative depth map, row-major: dicts with normalized x, y, area, depth, row, col."""
+REGION_MARGIN = 0.1  # grow the tray quad by 10% around its centre before testing hole centres
+
+
+def _inside(region, x, y):
+    quad = np.asarray(region, np.float32)
+    centre = quad.mean(axis=0)
+    grown = centre + (quad - centre) * (1 + REGION_MARGIN)
+    return cv2.pointPolygonTest(grown.reshape(-1, 1, 2), (float(x), float(y)), False) >= 0
+
+
+def find_holes(depth, tray=None):
+    """Holes in a relative depth map, row-major: dicts with normalized x, y, area, depth, row, col.
+
+    `tray` (normalized quad, e.g. the detected tray corners) drops basins outside the tray, such
+    as the robot gripper or a cup at the edge of the frame.
+    """
     depth = np.asarray(depth, np.float32)
     span = float(np.ptp(depth))
     if span < 1e-6:
@@ -87,6 +101,8 @@ def find_holes(depth):
         if area < MIN_HOLE_AREA_FRAC:
             continue
         ys, xs = np.nonzero(core)
+        if tray is not None and not _inside(tray, (xs.mean() + 0.5) / w, (ys.mean() + 0.5) / h):
+            continue
         holes.append({"x": (xs.mean() + 0.5) / w, "y": (ys.mean() + 0.5) / h, "area": float(area),
                       "depth": peak, "_h": (ys.max() - ys.min() + 1) / h})
     return assign_rows(holes)
@@ -123,3 +139,25 @@ class DepthEstimator:
             with self._torch.no_grad():
                 depth = self._model(**inputs).predicted_depth
             return depth.squeeze().float().cpu().numpy()
+
+
+def grid_in_tray(holes, tray, rows, cols):
+    """Renumber holes by their position inside the tray quad (TL, TR, BR, BL, normalized).
+
+    Grouping by image y splits a row in two once the tray is rotated; mapping the centres into the
+    tray's own square fixes that. Returns None if two holes land in the same cell, so the caller can
+    keep the image-space numbering.
+    """
+    quad = np.asarray(tray, np.float32)
+    square = np.float32([[0, 0], [1, 0], [1, 1], [0, 1]])
+    warp = cv2.getPerspectiveTransform(quad, square)
+    pts = np.float32([[h["x"], h["y"]] for h in holes]).reshape(-1, 1, 2)
+    uv = cv2.perspectiveTransform(pts, warp).reshape(-1, 2)
+    out, seen = [], set()
+    for hole, (u, v) in zip(holes, uv):
+        cell = (min(max(int(v * rows), 0), rows - 1), min(max(int(u * cols), 0), cols - 1))
+        if cell in seen:
+            return None
+        seen.add(cell)
+        out.append({**hole, "row": cell[0], "col": cell[1]})
+    return sorted(out, key=lambda h: (h["row"], h["col"]))

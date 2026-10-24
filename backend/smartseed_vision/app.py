@@ -7,7 +7,7 @@ import numpy as np
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
-from .depth import find_holes
+from .depth import find_holes, grid_in_tray
 from .geometry import analyze_tray
 
 # One model at a time on the GPU: two threads driving MPS at once abort the whole process
@@ -89,10 +89,13 @@ def create_app(detector="default", depth="default", robot="default"):
         corners_px = geometry.corners_px if geometry else None
         with GPU_LOCK:
             depth_map = depth.estimate(img) if depth else None
-        holes = find_holes(depth_map) if depth_map is not None else []
+        corners = [[min(max(x / w, 0), 1), min(max(y / h, 0), 1)] for x, y in corners_px] if geometry else None
+        holes = find_holes(depth_map, tray=corners) if depth_map is not None else []
+        if holes and geometry:
+            holes = grid_in_tray(holes, corners, geometry.rows, geometry.cols) or holes
         return {
             "found": geometry is not None,
-            "corners": [[min(max(x / w, 0), 1), min(max(y / h, 0), 1)] for x, y in corners_px] if geometry else None,
+            "corners": corners,
             "corners_px": corners_px,
             "rows": geometry.rows if geometry else None,
             "cols": geometry.cols if geometry else None,
