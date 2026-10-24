@@ -153,7 +153,7 @@ sin policy siguen con las poses enseñadas.
 
 Con el brazo conectado y las policies publicadas:
 
-1. Desde **Terminal.app** (permiso de cámara): `SMARTSEED_ACT_POLICIES='{"<color>":"RafaelJaime/act-smartseed-grasp"}' scripts/stack.sh`.
+1. Desde **Terminal.app** (permiso de cámara): `scripts/stack.sh`. Por defecto usa la policy `RafaelJaime/act-smartseed-grasp` para el cuenco negro (`black`); para otra configuración, `SMARTSEED_ACT_POLICIES='{"<color>":"<repo>"}' scripts/stack.sh`.
    Arranca el backend en modo real (solo `127.0.0.1:8000`) y la web en `http://localhost:8080/`;
    `Ctrl-C` cierra los dos. Se niega a arrancar si el puerto 8000 ya está ocupado.
 2. Abre la web y pulsa **Escanear** → **Calibrar robot**: «Soltar brazo», lleva la punta de la

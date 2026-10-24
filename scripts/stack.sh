@@ -11,22 +11,14 @@ WEB_PORT="${SMARTSEED_WEB_PORT:-8080}"
 export SMARTSEED_ROBOT="${SMARTSEED_ROBOT:-real}"
 export SMARTSEED_ROBOT_PORT="${SMARTSEED_ROBOT_PORT:-/dev/tty.usbmodem5B8E1124861}"
 
-usage() {
-  cat >&2 <<'EOF'
-SMARTSEED_ACT_POLICIES is required: a JSON map from the bowl colour id used in the web
-to the policy repo (or local path). The colour must match the seed's bowl colour, e.g.:
-
-  SMARTSEED_ACT_POLICIES='{"red":"RafaelJaime/act-smartseed-grasp"}' scripts/stack.sh
-
-Optional: SMARTSEED_ROBOT (real|fake, default real), SMARTSEED_ROBOT_PORT,
-SMARTSEED_CAM_TOP, SMARTSEED_CAM_WRIST, SMARTSEED_WEB_PORT (default 8080).
-EOF
-  exit 2
-}
-
-# The ACT policies are what makes a real run useful; with the fake robot they are optional.
-if [ -z "${SMARTSEED_ACT_POLICIES:-}" ] && [ "$SMARTSEED_ROBOT" = real ]; then usage; fi
-[ -n "${SMARTSEED_ACT_POLICIES:-}" ] && export SMARTSEED_ACT_POLICIES
+# Bowl colour id used in the web -> policy repo (or local path). The trained policy grasps
+# from the black bowl; override to add colours, e.g. '{"black":"...","red":"..."}'.
+DEFAULT_POLICIES='{"black":"RafaelJaime/act-smartseed-grasp"}'
+if [ "$SMARTSEED_ROBOT" = real ]; then
+  export SMARTSEED_ACT_POLICIES="${SMARTSEED_ACT_POLICIES:-$DEFAULT_POLICIES}"
+elif [ -n "${SMARTSEED_ACT_POLICIES:-}" ]; then
+  export SMARTSEED_ACT_POLICIES
+fi
 
 for port in "$BACKEND_PORT" "$WEB_PORT"; do
   if pids="$(lsof -nP -iTCP:"$port" -sTCP:LISTEN -t 2>/dev/null)" && [ -n "$pids" ]; then

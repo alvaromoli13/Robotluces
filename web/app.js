@@ -42,6 +42,7 @@
     { id: 'purple', label: 'Morado',   boxLabel: 'morada',   base: '#7440b0' },
     { id: 'pink',   label: 'Rosa',     boxLabel: 'rosa',     base: '#d9467f' },
     { id: 'white',  label: 'Blanco',   boxLabel: 'blanca',   base: '#ffffff' },
+    { id: 'black',  label: 'Negro',    boxLabel: 'negra',    base: '#24272b' },
   ];
   const COLOR_ID = /^[a-z][a-z_-]{0,19}$/;
   const SEED_ID = /^[A-Z0-9_-]{1,40}$/;

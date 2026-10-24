@@ -208,7 +208,7 @@ vc.on('error', m => errs.push('console.error: ' + m));
     !!doc.getElementById($('seedForm').getAttribute('aria-labelledby')));
   ok('name field is focused and labelled', doc.activeElement === $('seedName') && doc.querySelector('label[for="seedName"]'));
   ok('emoji grid offers 24 emojis', $('seedEmojiGrid').querySelectorAll('[data-emoji]').length === 24);
-  ok('colour grid offers 8 swatches', $('seedColorGrid').querySelectorAll('[data-color]').length === 8);
+  ok('colour grid offers 9 swatches', $('seedColorGrid').querySelectorAll('[data-color]').length === 9);
   ok('colours already used are disabled with the seed that owns them',
     ['red', 'green', 'yellow', 'purple'].every(c => colorOpt(c).getAttribute('aria-disabled') === 'true') &&
     colorOpt('red').getAttribute('aria-label').includes('Tomate') && !!colorOpt('red').title);
