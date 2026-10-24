@@ -502,6 +502,12 @@ vc.on('error', m => errs.push('console.error: ' + m));
     ok('the test run is labelled', $('runTitle').textContent === 'Prueba: dejar', $('runTitle').textContent);
     window.__ws.push({ type: 'finished', message: '1 done, 0 failed' });
     ok('a finished test says so', $('runTitle').textContent.includes('Prueba: dejar') && $('runTitle').textContent.includes('terminada'), $('runTitle').textContent);
+    window.__planned.length = 0;
+    $('testPlaceBtn').click();  // straight away, without closing the finished panel
+    await sleep(200);
+    ok('a finished test does not block the next one', window.__planned.length === 1 && window.__planned[0].mode === 'place',
+      JSON.stringify(window.__planned));
+    window.__ws.push({ type: 'finished', message: '1 done, 0 failed' });
     $('stopRunBtn').click();
 
     $('testGraspBtn').click();

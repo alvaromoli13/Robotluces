@@ -620,7 +620,9 @@
 
   // `test` is null for a normal planting, or "grasp" / "place" to run one half of the cycle for debugging.
   async function startRun(test) {
-    if (run) return;
+    if (run && !run.finished) { toast('El robot sigue con la ejecución anterior: espera o párala.'); return; }
+    if (run) closeRun();  // a finished run only waits for "Cerrar"; repeating a test should not need it
+
     test = test === 'grasp' || test === 'place' ? test : null;
     const filled = order();
     if (!filled.length && test !== 'grasp') { toast('Asigna al menos una semilla a una casilla.'); return; }
