@@ -300,3 +300,82 @@ def test_colour_with_neither_policy_nor_pose_is_a_conflict(tmp_path, kin):
 def test_status_lists_policy_colours(tmp_path, kin):
     _, _, ex = make_act_executor(tmp_path, kin, colors=("red", "green"))
     assert ex.status()["policies"] == ["green", "red"]
+
+
+# -- split test modes and drop height ----------------------------------------------------------------------
+def test_grasp_mode_runs_only_the_policy_and_holds_the_seed(tmp_path, kin):
+    robot, policy, ex = make_act_executor(tmp_path, kin, steps=5)
+    ex.poses.set("act_start", ACT_START)
+    ex.calibration = Calibration()  # grasp needs no calibration
+    ex.run([cell(0, "red")], SIZE, mode="grasp")
+    assert ex.events[0]["mode"] == "grasp"
+    assert types(ex) == ["plan_started", "cell_started", "cell_done", "finished"]
+    assert policy.calls == 5 and len(policy_commands(robot)) == 5
+    assert robot.commands[-1].get("wrist_roll") == POLICY_ROLL  # stopped where the policy left the arm
+    assert max(s["gripper"] for s in robot.history) < CONFIG.gripper_open  # never opened
+
+
+def test_grasp_mode_without_policy_or_taught_pose_is_a_conflict(tmp_path, kin):
+    robot, _, ex = make_act_executor(tmp_path, kin)
+    with pytest.raises(PlanError) as err:
+        ex.run([cell(0, "blue")], SIZE, mode="grasp")
+    assert err.value.status == 409 and err.value.code == "missing_pose" and robot.commands == []
+
+
+def test_grasp_mode_with_taught_poses_stops_after_the_lift(parts, kin):
+    robot, ex = parts
+    ex.run([cell(0, "green")], SIZE, mode="grasp")
+    box = ex.poses.get("above_box_green")
+    assert types(ex)[-1] == "finished"
+    assert robot.read_joints()["shoulder_pan"] == pytest.approx(box["shoulder_pan"])  # lifted at the box, no cell
+    assert not any(kin.tool_xyz(arm_of(s)) == pytest.approx((*robot_xy(320, 240), CONFIG.drop_z), abs=0.003)
+                   for s in robot.history)
+
+
+def test_place_mode_goes_over_the_cell_opens_and_returns_without_policy_or_box_poses(tmp_path, kin):
+    robot, policy, ex = make_act_executor(tmp_path, kin, robot=FakeRobot(initial={**HOME, "gripper": 25.0}))
+    ex.run([cell(0, "blue")], SIZE, mode="place")  # no policy and no above_box_blue: still fine
+    assert ex.events[0]["mode"] == "place" and types(ex)[-1] == "finished"
+    assert policy.calls == 0 and policy_commands(robot) == []
+    target = (*robot_xy(320, 240), CONFIG.drop_z)
+    at_drop = [s for s in robot.history if kin.tool_xyz(arm_of(s)) == pytest.approx(target, abs=0.003)]
+    assert at_drop and min(s["gripper"] for s in at_drop) == pytest.approx(25.0)  # arrives with the gripper as it was
+    assert max(s["gripper"] for s in at_drop) == CONFIG.gripper_open
+    assert arm_of(robot.read_joints()) == pytest.approx(arm_of(ACT_START))
+
+
+def test_place_mode_still_needs_calibration_and_reachability(tmp_path, kin):
+    robot, _, ex = make_act_executor(tmp_path, kin)
+    ex.calibration = Calibration()
+    with pytest.raises(PlanError) as err:
+        ex.run([cell(0)], SIZE, mode="place")
+    assert err.value.code == "no_calibration"
+    ex.calibration = make_calibration()
+    with pytest.raises(PlanError) as err:
+        ex.run([cell(0, u=5000, v=5000)], SIZE, mode="place")
+    assert err.value.status == 422 and err.value.code == "unreachable" and robot.commands == []
+
+
+def test_unknown_mode_is_invalid(tmp_path, kin):
+    _, _, ex = make_act_executor(tmp_path, kin)
+    with pytest.raises(PlanError) as err:
+        ex.run([cell(0)], SIZE, mode="dance")
+    assert err.value.status == 422 and err.value.code == "invalid"
+
+
+def test_drop_z_overrides_the_config_for_one_run(tmp_path, kin):
+    robot, _, ex = make_act_executor(tmp_path, kin)
+    ex.run([cell(0)], SIZE, drop_z=0.12)
+    high = (*robot_xy(320, 240), 0.12)
+    assert any(kin.tool_xyz(arm_of(s)) == pytest.approx(high, abs=0.003) for s in robot.history)
+    robot.history.clear()
+    ex.run([cell(0)], SIZE)  # the override does not stick
+    assert not any(kin.tool_xyz(arm_of(s)) == pytest.approx(high, abs=0.003) for s in robot.history)
+
+
+@pytest.mark.parametrize("drop_z", [0.0, 0.01, 0.3, -1])
+def test_drop_z_out_of_range_is_invalid(tmp_path, kin, drop_z):
+    robot, _, ex = make_act_executor(tmp_path, kin)
+    with pytest.raises(PlanError) as err:
+        ex.run([cell(0)], SIZE, drop_z=drop_z)
+    assert err.value.status == 422 and err.value.code == "invalid" and robot.commands == []

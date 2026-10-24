@@ -24,6 +24,10 @@ class PlanBusy(PlanError):
         super().__init__(409, "busy", "a plan is already running")
 
 
+MODES = ("full", "grasp", "place")  # full = grasp + place; the others are the two halves, for debugging
+DROP_Z_RANGE = (0.02, 0.25)  # m; accepted per-run override of ExecutorConfig.drop_z
+
+
 class Stopped(Exception):
     pass
 
@@ -78,6 +82,7 @@ class Executor:
         self._lock = threading.Lock()
         self._thread: threading.Thread | None = None
         self._state, self._plan_id, self._current = "idle", None, None
+        self._mode, self._drop_z = "full", self.cfg.drop_z
         self._done: list[int] = []
         self._failed: list[int] = []
 
@@ -104,22 +109,27 @@ class Executor:
             return not self._thread.is_alive()
         return True
 
-    def start(self, plan: list[dict], image_size) -> str:
-        plan_id = self._begin(plan, image_size)
+    def start(self, plan: list[dict], image_size, mode: str = "full", drop_z: float | None = None) -> str:
+        plan_id = self._begin(plan, image_size, mode, drop_z)
         self._thread = threading.Thread(target=self._execute, args=(plan, image_size, plan_id), daemon=True)
         self._thread.start()
         return plan_id
 
-    def run(self, plan: list[dict], image_size) -> str:
-        plan_id = self._begin(plan, image_size)
+    def run(self, plan: list[dict], image_size, mode: str = "full", drop_z: float | None = None) -> str:
+        plan_id = self._begin(plan, image_size, mode, drop_z)
         self._execute(plan, image_size, plan_id)
         return plan_id
 
     # -- validation -------------------------------------------------------------------------------------
-    def _begin(self, plan, image_size) -> str:
+    def _begin(self, plan, image_size, mode="full", drop_z=None) -> str:
         with self._lock:
             if self.running:
                 raise PlanBusy
+            if mode not in MODES:
+                raise PlanError(422, "invalid", f"mode must be one of {', '.join(MODES)}")
+            if drop_z is not None and not DROP_Z_RANGE[0] <= drop_z <= DROP_Z_RANGE[1]:
+                raise PlanError(422, "invalid", f"drop_z must be between {DROP_Z_RANGE[0]} and {DROP_Z_RANGE[1]} m")
+            self._mode, self._drop_z = mode, self.cfg.drop_z if drop_z is None else drop_z
             self._validate(plan, image_size)
             self._stop.clear()
             self._state, self._plan_id, self._current = "running", uuid.uuid4().hex[:8], None
@@ -133,16 +143,19 @@ class Executor:
         bad = sorted({str(c["color"]) for c in plan if not COLOR_ID.fullmatch(str(c["color"]))})
         if bad:
             raise PlanError(422, "invalid", f"invalid colour id {bad}; expected lowercase letters, _ or -, up to 20")
-        if not self.calibration.fitted:
+        if self._mode != "grasp" and not self.calibration.fitted:  # grasping never goes to a cell
             raise PlanError(409, "no_calibration", "no calibration fitted: add >= 4 points and fit first")
-        missing = self.poses.missing(sorted({c["color"] for c in plan if not self._acts(c["color"])}))
-        if missing:
-            raise PlanError(409, "missing_pose", f"missing taught poses: {', '.join(missing)}")
-        seed = self.poses.get("home")
+        if self._mode != "place":  # releasing needs neither a policy nor a taught box
+            missing = self.poses.missing(sorted({c["color"] for c in plan if not self._acts(c["color"])}))
+            if missing:
+                raise PlanError(409, "missing_pose", f"missing taught poses: {', '.join(missing)}")
+        if self._mode == "grasp":
+            return
+        seed = self.poses.get("home") or self.robot.read_joints()
         unreachable = []
         for c in plan:
             try:
-                self.kin.solve(*self.calibration.pixel_to_robot(c["u"], c["v"], image_size), self.cfg.drop_z,
+                self.kin.solve(*self.calibration.pixel_to_robot(c["u"], c["v"], image_size), self._drop_z,
                                seed={j: seed[j] for j in ARM_JOINTS})
             except (IKError, CalibrationError):
                 unreachable.append(c["cell_index"])
@@ -160,7 +173,7 @@ class Executor:
 
     def _execute(self, plan, image_size, plan_id) -> None:
         self.plan_start_index = len(self.events)
-        self._emit("plan_started", message=f"{len(plan)} cells", total=len(plan))
+        self._emit("plan_started", message=f"{len(plan)} cells", total=len(plan), mode=self._mode)
         try:
             for c in plan:
                 self._current = c["cell_index"]
@@ -192,25 +205,24 @@ class Executor:
             raise Stopped
         return self.robot.read_joints()["gripper"] > self.cfg.empty_below
 
-    def _plant_with_policy(self, c, image_size) -> bool:
+    def _release(self, c, image_size, back: dict[str, float]) -> None:
+        """IK over the cell with the gripper as it is, open, then back to `back`."""
         cfg = self.cfg
-        start = self.poses.get("act_start") or ACT_START_FALLBACK
-        self._move(start)
-        if not self.act.run(c["color"], self.robot, self._stop, cfg.hz):
-            raise Stopped
-        now = self.robot.read_joints()  # the policy leaves the seed in the closed gripper
+        now = self.robot.read_joints()
         x, y = self.calibration.pixel_to_robot(c["u"], c["v"], image_size)
-        target = self.kin.solve(x, y, cfg.drop_z, seed={j: now[j] for j in ARM_JOINTS})
+        target = self.kin.solve(x, y, self._drop_z, seed={j: now[j] for j in ARM_JOINTS})
         self._move({**target, "gripper": now["gripper"]})
         self._move({"gripper": cfg.gripper_open})
-        self._move(start)
-        return True
+        self._move(back)
 
-    def _plant(self, c, image_size) -> bool:
-        """Always carries on to the cell and opens there; returns whether the gripper looked loaded."""
+    def _grasp_with_policy(self, c, start) -> None:
+        self._move(start)
+        if not self.act.run(c["color"], self.robot, self._stop, self.cfg.hz):
+            raise Stopped  # otherwise the policy leaves the seed in the closed gripper
+
+    def _grasp_taught(self, c) -> bool:
+        """home -> above the box -> grasp (with retries) -> lift; returns whether the gripper looked loaded."""
         cfg, color = self.cfg, c["color"]
-        if self._acts(color):
-            return self._plant_with_policy(c, image_size)
         home, box = self.poses.get("home"), self.poses.get(f"above_box_{color}")
         opened = {"gripper": cfg.gripper_open}
         self._move({**home, **opened})
@@ -224,10 +236,19 @@ class Executor:
             if attempt < cfg.retries:
                 self.retries.append(c["cell_index"])
         self._move({**box, "gripper": self.robot.read_joints()["gripper"]})  # lift with the seed
-        now = self.robot.read_joints()
-        x, y = self.calibration.pixel_to_robot(c["u"], c["v"], image_size)
-        target = self.kin.solve(x, y, cfg.drop_z, seed={j: now[j] for j in ARM_JOINTS})
-        self._move({**target, "gripper": now["gripper"]})
-        self._move(opened)
-        self._move({**home, **opened})
+        return holding
+
+    def _plant(self, c, image_size) -> bool:
+        """Runs the plan's mode for one cell; returns whether the gripper looked loaded (true when not judged)."""
+        act_start = self.poses.get("act_start") or ACT_START_FALLBACK
+        if self._mode == "place":  # half-test: no grasp, release with the gripper as it is, return to the grasp start
+            self._release(c, image_size, act_start)
+            return True
+        if self._acts(c["color"]):
+            self._grasp_with_policy(c, act_start)
+            holding, back = True, act_start
+        else:
+            holding, back = self._grasp_taught(c), {**self.poses.get("home"), "gripper": self.cfg.gripper_open}
+        if self._mode == "full":
+            self._release(c, image_size, back)
         return holding

@@ -5,7 +5,7 @@ import os
 import threading
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Literal
 
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
@@ -73,6 +73,8 @@ class Cell(BaseModel):
 class PlanBody(BaseModel):
     image_size: tuple[int, int]
     cells: list[Cell] = Field(min_length=1)
+    mode: Literal["full", "grasp", "place"] = "full"  # grasp / place run one half of the cycle, for debugging
+    drop_z: float | None = Field(default=None, ge=0.02, le=0.25)  # tool height (m) over the cell when releasing
 
 
 class PointBody(BaseModel):
@@ -173,7 +175,7 @@ def create_router(rt: Runtime) -> APIRouter:
         if refusal := torque_off_refusal():
             return refusal
         try:
-            plan_id = ex.start([c.model_dump() for c in body.cells], body.image_size)
+            plan_id = ex.start([c.model_dump() for c in body.cells], body.image_size, body.mode, body.drop_z)
         except PlanError as exc:
             return JSONResponse({"detail": exc.detail, "code": exc.code}, status_code=exc.status)
         return {"plan_id": plan_id, "cells": len(body.cells)}

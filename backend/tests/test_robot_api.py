@@ -246,3 +246,33 @@ def test_env_configures_policies_in_fake_mode(tmp_path, monkeypatch):
     monkeypatch.setenv("SMARTSEED_ACT_POLICIES", '{"purple": "user/act-purple"}')
     runtime = build_runtime(mode="fake", data_dir=tmp_path)
     assert runtime.executor.status()["policies"] == ["purple"]
+
+
+def test_plan_mode_and_drop_z_reach_the_executor(tmp_path, kin):
+    client, runtime = make_client(tmp_path, kin)
+    calibrate(client)
+    with client.websocket_connect("/robot/progress") as ws:
+        r = client.post("/plan", json={"image_size": SIZE, "cells": cells(1, "blue"), "mode": "place", "drop_z": 0.1})
+        assert r.status_code == 202
+        first = ws.receive_json()
+    assert first["type"] == "plan_started" and first["mode"] == "place"
+    wait_idle(client)
+    assert client.get("/robot/status").json()["done"] == [0]
+
+
+def test_plan_mode_defaults_to_full(client):
+    teach_all(client)
+    calibrate(client)
+    assert client.post("/plan", json={"image_size": SIZE, "cells": cells(1)}).status_code == 202
+    wait_idle(client)
+    assert client.app.state.robot_runtime.executor.events[0]["mode"] == "full"
+
+
+@pytest.mark.parametrize("extra", [{"mode": "dance"}, {"drop_z": 0.01}, {"drop_z": 0.3}])
+def test_invalid_mode_or_drop_z_is_422(client, extra):
+    assert client.post("/plan", json={"image_size": SIZE, "cells": cells(1), **extra}).status_code == 422
+
+
+def test_grasp_mode_without_policy_is_a_409_with_code(client):
+    r = client.post("/plan", json={"image_size": SIZE, "cells": cells(1), "mode": "grasp"})
+    assert r.status_code == 409 and r.json()["code"] == "missing_pose"
