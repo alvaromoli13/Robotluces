@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 from .robot import RobotPort
 
+# Bowl colours are user-defined in the web UI: any id of this shape is a colour. The four
+# defaults only decide which poses are required by default.
+COLOR_ID = re.compile(r"[a-z][a-z_-]{0,19}")
+POSE_NAME = re.compile(r"(?:above_box|grasp)_" + COLOR_ID.pattern)
 COLORS = ("red", "yellow", "green", "purple")
 REQUIRED_POSES = ("home", *(f"above_box_{c}" for c in COLORS))
 
@@ -14,7 +19,7 @@ class PoseError(ValueError):
 
 
 def valid_name(name: str) -> bool:
-    return name == "home" or any(name in (f"above_box_{c}", f"grasp_{c}") for c in COLORS)
+    return name == "home" or bool(POSE_NAME.fullmatch(name))
 
 
 class PoseStore:

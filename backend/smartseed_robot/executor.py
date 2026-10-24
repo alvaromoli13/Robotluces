@@ -8,7 +8,7 @@ from typing import Callable, Protocol
 from .calibration import Calibration, CalibrationError
 from .kinematics import IKError, Kinematics
 from .motion import MotionConfig, move_to
-from .poses import COLORS, PoseStore
+from .poses import COLOR_ID, PoseStore
 from .robot import ARM_JOINTS, RobotPort
 
 
@@ -128,9 +128,9 @@ class Executor:
         keys = {"cell_index", "row", "col", "color", "u", "v"}
         if not plan or any(not keys <= set(c) for c in plan) or len(image_size) != 2:
             raise PlanError(422, "invalid", "plan needs image_size [w, h] and cells with " + ", ".join(sorted(keys)))
-        bad = sorted({c["color"] for c in plan} - set(COLORS))
+        bad = sorted({str(c["color"]) for c in plan if not COLOR_ID.fullmatch(str(c["color"]))})
         if bad:
-            raise PlanError(422, "invalid", f"unknown colour {bad}; expected one of {list(COLORS)}")
+            raise PlanError(422, "invalid", f"invalid colour id {bad}; expected lowercase letters, _ or -, up to 20")
         if not self.calibration.fitted:
             raise PlanError(409, "no_calibration", "no calibration fitted: add >= 4 points and fit first")
         missing = self.poses.missing(sorted({c["color"] for c in plan}))

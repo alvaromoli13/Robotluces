@@ -21,7 +21,7 @@ def test_missing_lists_required_poses_not_taught(tmp_path):
     assert set(REQUIRED_POSES) >= {"home", "above_box_purple"}
 
 
-@pytest.mark.parametrize("name", ["", "nowhere", "above_box_blue", "grasp_", "../x"])
+@pytest.mark.parametrize("name", ["", "nowhere", "above_box_", "above_box_Blue", "grasp_", "grasp_../x", "../x"])
 def test_unknown_names_are_rejected(tmp_path, name):
     with pytest.raises(PoseError):
         PoseStore(tmp_path / "poses.json").teach(name, FakeRobot())
@@ -39,3 +39,10 @@ def test_corrupt_file_is_an_error_not_a_silent_reset(tmp_path):
     path.write_text("{not json")
     with pytest.raises(PoseError):
         PoseStore(path)
+
+
+def test_poses_for_user_defined_colours_are_allowed(tmp_path):
+    store = PoseStore(tmp_path / "poses.json")
+    store.teach("above_box_blue", FakeRobot())
+    store.teach("grasp_light-blue", FakeRobot())
+    assert store.get("above_box_blue") is not None and store.get("grasp_light-blue") is not None

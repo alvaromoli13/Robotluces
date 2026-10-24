@@ -161,6 +161,21 @@ def test_missing_pose_is_a_conflict(tmp_path, kin):
     assert err.value.status == 409 and err.value.code == "missing_pose" and "above_box_green" in err.value.detail
 
 
+def test_user_defined_colour_without_taught_pose_is_a_conflict(parts):
+    _, ex = parts
+    with pytest.raises(PlanError) as err:
+        ex.run([cell(0, "blue")], SIZE)
+    assert err.value.status == 409 and err.value.code == "missing_pose" and "above_box_blue" in err.value.detail
+
+
+def test_user_defined_colour_with_taught_pose_is_planted(tmp_path, kin):
+    poses = make_poses(tmp_path, colors=("red", "orange"))
+    robot = FakeRobot(initial=HOME)
+    ex = Executor(robot, poses, make_calibration(), kin, config=CONFIG)
+    ex.run([cell(0, "orange")], SIZE)
+    assert types(ex)[-1] == "finished" and "cell_done" in types(ex)
+
+
 def test_missing_calibration_is_a_conflict(tmp_path, kin):
     ex = Executor(FakeRobot(initial=HOME), make_poses(tmp_path), Calibration(), kin, config=CONFIG)
     with pytest.raises(PlanError) as err:
@@ -168,7 +183,7 @@ def test_missing_calibration_is_a_conflict(tmp_path, kin):
     assert err.value.status == 409 and err.value.code == "no_calibration"
 
 
-@pytest.mark.parametrize("bad", [[], [cell(0, "blue")], [{"cell_index": 0, "color": "red"}]])
+@pytest.mark.parametrize("bad", [[], [cell(0, "Blue!")], [cell(0, "")], [{"cell_index": 0, "color": "red"}]])
 def test_invalid_plans_are_unprocessable(parts, bad):
     _, ex = parts
     with pytest.raises(PlanError) as err:

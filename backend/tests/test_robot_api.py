@@ -94,9 +94,19 @@ def test_plan_without_calibration_or_poses_is_a_409_with_code(client):
     assert r.status_code == 409 and r.json()["code"] == "missing_pose" and "home" in r.json()["detail"]
 
 
+def test_unknown_colour_is_a_409_missing_pose(client):
+    teach_all(client)
+    calibrate(client)
+    r = client.post("/plan", json={"image_size": SIZE, "cells": cells(1, "blue")})
+    assert r.status_code == 409 and r.json()["code"] == "missing_pose" and "above_box_blue" in r.json()["detail"]
+
+
 @pytest.mark.parametrize("body", [
     {"image_size": SIZE, "cells": []},
-    {"image_size": SIZE, "cells": [{**cells(1)[0], "color": "blue"}]},
+    {"image_size": SIZE, "cells": [{**cells(1)[0], "color": "Blue"}]},
+    {"image_size": SIZE, "cells": [{**cells(1)[0], "color": "1red"}]},
+    {"image_size": SIZE, "cells": [{**cells(1)[0], "color": "a" * 21}]},
+    {"image_size": SIZE, "cells": [{**cells(1)[0], "color": ""}]},
     {"image_size": SIZE, "cells": [{"cell_index": 0}]},
     {"cells": cells(1)},
 ])

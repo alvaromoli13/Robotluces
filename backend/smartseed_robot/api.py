@@ -5,7 +5,6 @@ import os
 import threading
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
 
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
@@ -60,7 +59,7 @@ class Cell(BaseModel):
     cell_index: int
     row: int
     col: int
-    color: Literal["red", "yellow", "green", "purple"]
+    color: str = Field(pattern=r"^[a-z][a-z_-]{0,19}$")  # bowl colour id; the UI lets users define their own
     u: float
     v: float
 
