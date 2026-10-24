@@ -262,7 +262,11 @@
 
   function statusText(r, c) {
     if (locked) return 'Bandeja localizada con los 4 marcadores · ' + r + ' × ' + c + ' huecos';
-    if (holesActive()) return 'Huecos detectados por profundidad: ' + holes.length + ' · cada casilla está sobre su hueco · escribe filas y columnas para usar la rejilla';
+    if (holesActive()) {
+      const full = holes.filter(h => h.occupied).length;
+      return 'Huecos detectados por profundidad: ' + holes.length + (full ? ' · ' + full + ' con algo dentro (aro ámbar)' : '') +
+        ' · cada casilla está sobre su hueco · escribe filas y columnas para usar la rejilla';
+    }
     if (backendOk && modelFound) return 'Bandeja detectada por el modelo de visión · ' + r + ' × ' + c + ' huecos · puedes corregir filas, columnas o esquinas';
     const markers = detector
       ? 'Marcadores detectados: ' + markersSeen + '/4 · '
@@ -283,11 +287,14 @@
     ctx.clearRect(0, 0, W, H);
     ctx.lineWidth = 2 * dpr;
     if (holesActive()) {
-      ctx.strokeStyle = '#5ac8f0';
+      // Visual hint only: an occupied hole is drawn amber and dashed, selection is unaffected.
       holes.forEach(hole => {
         const [x, y] = px([hole.x, hole.y]);
+        ctx.strokeStyle = hole.occupied ? '#ffb02e' : '#5ac8f0';
+        ctx.setLineDash(hole.occupied ? [5 * dpr, 4 * dpr] : []);
         ctx.beginPath(); ctx.arc(x, y, holeSize(hole, W, H) / 2 + 3 * dpr, 0, Math.PI * 2); ctx.stroke();
       });
+      ctx.setLineDash([]);
       q('scanStatus').textContent = statusText(r, c);
       layoutCells();
       return;

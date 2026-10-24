@@ -59,14 +59,26 @@ def test_grid_holes_split_into_rows():
     assert [(h["row"], h["col"]) for h in assign_rows(grid)] == [(r, c) for r in range(2) for c in range(3)]
 
 
-def test_holes_outside_the_tray_region_are_dropped():
-    depth, centers = make_box_depth(1, 2)
-    (lx, ly), (rx, ry) = centers
-    mid = (lx + rx) / 2
-    left_half = [[0.0, 0.0], [mid, 0.0], [mid, 1.0], [0.0, 1.0]]
-    holes = find_holes(depth, tray=left_half)
-    assert [(h["row"], h["col"]) for h in holes] == [(0, 0)]
-    assert abs(holes[0]["x"] - lx) < 0.06
+def on_a_table(depth, pad):
+    """The synthetic tray fills its frame; put it in the middle of a wider flat table like the real scene."""
+    return np.pad(depth, pad, mode="edge")
+
+
+def pit(depth, x, y, r=0.02):
+    depth = depth.copy()
+    h, w = depth.shape
+    ys, xs = np.mgrid[0:h, 0:w]
+    depth[((xs - x * w) ** 2 + (ys - y * h) ** 2) < (r * w) ** 2] = depth.min()
+    return depth
+
+
+def test_a_basin_just_outside_a_correct_tray_quad_is_dropped():
+    depth = on_a_table(make_box_depth(3, 4)[0], 120)
+    h, w = depth.shape
+    x0, y0, x1, y1 = 120 / w, 120 / h, (w - 120) / w, (h - 120) / h
+    holes = find_holes(pit(depth, x1 + 0.04, (y0 + y1) / 2), tray=[[x0, y0], [x1, y0], [x1, y1], [x0, y1]])
+    assert len(holes) == 12
+    assert all(x0 <= h["x"] <= x1 for h in holes)
 
 
 def test_grid_in_tray_numbers_holes_in_tray_coordinates_even_when_rotated():
@@ -82,3 +94,18 @@ def test_grid_in_tray_numbers_holes_in_tray_coordinates_even_when_rotated():
     assert [(h["row"], h["col"]) for h in holes] == [(r, c) for r in range(rows) for c in range(cols)]
     for h in holes:
         assert np.allclose([h["x"], h["y"]], truth[(h["row"], h["col"])])
+
+
+def test_a_wrong_tray_quad_does_not_drop_a_whole_row_of_holes():
+    depth, centers = make_box_depth(3, 4)
+    ys = sorted({round(y, 3) for _, y in centers})
+    two_rows_only = [[0.0, 0.0], [1.0, 0.0], [1.0, (ys[1] + ys[2]) / 2], [0.0, (ys[1] + ys[2]) / 2]]
+    assert len(find_holes(depth, tray=two_rows_only)) == 12
+
+
+def test_an_isolated_basin_far_from_the_grid_is_dropped_without_a_tray():
+    # a deep pit in the far corner, like the gripper seen from above
+    depth = pit(on_a_table(make_box_depth(3, 4)[0], ((120, 480), (120, 120))), 0.5, 0.95)
+    holes = find_holes(depth)
+    assert len(holes) == 12
+    assert all(h["x"] < 0.9 or h["y"] < 0.9 for h in holes)

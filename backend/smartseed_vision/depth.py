@@ -65,6 +65,19 @@ def assign_rows(holes):
 
 
 REGION_MARGIN = 0.1  # grow the tray quad by 10% around its centre before testing hole centres
+MIN_KEPT_BY_TRAY = 0.75  # a tray quad that would drop more holes than this is itself wrong
+ISOLATION = 3.0  # a basin farther than this many median spacings from any other is not a cell
+
+
+def _drop_isolated(holes):
+    if len(holes) < 3:
+        return holes
+    pts = np.array([[h["x"], h["y"]] for h in holes])
+    dist = np.linalg.norm(pts[:, None] - pts[None], axis=2)
+    np.fill_diagonal(dist, np.inf)
+    nearest = dist.min(axis=1)
+    limit = ISOLATION * float(np.median(nearest))
+    return [h for h, d in zip(holes, nearest) if d <= limit]
 
 
 def _inside(region, x, y):
@@ -77,8 +90,9 @@ def _inside(region, x, y):
 def find_holes(depth, tray=None):
     """Holes in a relative depth map, row-major: dicts with normalized x, y, area, depth, row, col.
 
-    `tray` (normalized quad, e.g. the detected tray corners) drops basins outside the tray, such
-    as the robot gripper or a cup at the edge of the frame.
+    Basins far from every other one (the robot gripper, a cup at the edge) are dropped. `tray`
+    (normalized quad, e.g. the detected tray corners) also drops basins outside the tray, unless it
+    would drop a large share of them: then the quad is the wrong one and is ignored.
     """
     depth = np.asarray(depth, np.float32)
     span = float(np.ptp(depth))
@@ -101,10 +115,13 @@ def find_holes(depth, tray=None):
         if area < MIN_HOLE_AREA_FRAC:
             continue
         ys, xs = np.nonzero(core)
-        if tray is not None and not _inside(tray, (xs.mean() + 0.5) / w, (ys.mean() + 0.5) / h):
-            continue
         holes.append({"x": (xs.mean() + 0.5) / w, "y": (ys.mean() + 0.5) / h, "area": float(area),
                       "depth": peak, "_h": (ys.max() - ys.min() + 1) / h})
+    holes = _drop_isolated(holes)
+    if tray is not None:
+        inside = [hole for hole in holes if _inside(tray, hole["x"], hole["y"])]
+        if len(inside) >= MIN_KEPT_BY_TRAY * len(holes):
+            holes = inside
     return assign_rows(holes)
 
 
