@@ -16,7 +16,7 @@ diseño que el cliente elige en una interfaz gráfica.
 - El semillero es una bandeja de alveolos en rejilla (filas × columnas).
 - La interfaz funciona como el **selector de asientos de un cine o de un estadio**: cada
   alveolo es una casilla y se pinta del color de la semilla que llevará.
-- Cuando el cliente pulsa **Listo**, el robot coge las semillas de las cajas de colores y
+- Cuando el cliente pulsa **Sembrar**, el robot coge las semillas de las cajas de colores y
   va sembrando cada alveolo según el plan.
 
 ## Entregables y evaluación
@@ -48,22 +48,22 @@ diseño que el cliente elige en una interfaz gráfica.
   entero con fallos. El semillero completo puede salir en el vídeo.
 - **Datos (20)**: muchas demostraciones y consistentes, variando un poco la posición de
   las semillas y la luz. Hay que apuntar los fallos de cada iteración y cómo se
-  arreglaron (ver `docs/iteraciones.md` cuando exista), porque es lo que se cuenta al
-  jurado.
+  arreglaron (en los documentos de tarea de `odd/tasks/`, sección *Progress / evidence*),
+  porque es lo que se cuenta al jurado.
 - **Dificultad (15)**: la tarea es de varios pasos (elegir caja → coger → llevar →
   soltar en el alveolo correcto), lo que ya es ambicioso. Hay que demostrar que aguanta
   cambios de posición o de luz.
 - **Utilidad (15)**: siembra a medida para viveros y huertos; el cliente diseña su
   semillero sin trabajo manual repetitivo.
-- **Innovación (10)**: la interfaz tipo butacas de cine con la cámara en directo y las
-  plantillas reutilizables.
+- **Innovación (10)**: la interfaz tipo butacas de cine con la cámara en directo, las
+  plantillas reutilizables y la detección del semillero **sin marcadores**.
 - **Bonus (+5)**: subir los datasets al Hub en cuanto se graben y dejar en el repo los
   comandos exactos para grabar, entrenar y ejecutar.
 
 ## Flujo de uso
 
 0. **Colocar el semillero**: el agricultor deja la bandeja **en cualquier sitio de la zona
-   de trabajo** de la mesa. La cámara cenital la detecta y la web muestra la rejilla real
+   de trabajo** de la mesa, sin pegarle nada ni alinearla. La cámara cenital la detecta y la web muestra la rejilla real
    (número de alveolos y su posición) sobre la imagen en directo.
 1. **Elegir plantilla**: al abrir la app se carga la **última fórmula usada**. También se
    puede escoger una **plantilla guardada**.
@@ -71,7 +71,7 @@ diseño que el cliente elige en una interfaz gráfica.
    una semilla distinta), o usa los botones de
    **rellenar todo de un color**. Los alveolos vacíos se quedan sin sembrar.
 3. **Guardar (opcional)**: el diseño se puede guardar como plantilla con nombre.
-4. **Listo**: se envía el plan al robot. La interfaz muestra en directo qué alveolo se
+4. **Sembrar**: se envía el plan al robot. La interfaz muestra en directo qué alveolo se
    está sembrando y cuáles ya están hechos.
 5. **Terminado**: la fórmula queda guardada como "última usada" para la próxima vez.
 
@@ -96,108 +96,179 @@ el semillero real con el plan superpuesto, y el progreso se puede comprobar a si
   que habla con el hardware.
 - **Ejecución en el robot**: enfoque híbrido, ver la sección siguiente.
 
+El plan que cruza de la web al backend **no lleva coordenadas del robot: lleva píxeles**.
+La conversión a metros y a ángulos la hace el backend, que es quien conoce la calibración.
+
 ## Enfoque del robot: híbrido
 
 Cada alveolo del plan se siembra en dos fases:
 
 | Fase | Cómo se hace | Qué se mueve en la escena |
 |---|---|---|
-| 1. **Coger** la "semilla" de la caja del color X | Movimiento programado hasta encima de la caja X y después **policy aprendida** (ACT) que hace el agarre final con la cámara de la muñeca | Las **cajas pueden moverse** unos centímetros dentro de su zona: la policy corrige la diferencia |
+| 1. **Coger** la "semilla" del cuenco del color X | **Policy aprendida** (ACT) del color X: desde la pose de inicio va al cuenco, coge y vuelve, guiándose por las cámaras | Los **cuencos pueden moverse**: la policy busca el suyo por color, no por posición |
 | 2. **Soltarla** en el alveolo (fila, columna) | **Visión + cinemática inversa**: la cámara localiza el alveolo y el brazo calcula cómo llegar encima | El **semillero va donde lo deje el agricultor**, dentro de la zona de trabajo |
 
-- **Policy: una sola ACT de agarre, igual para todos los colores.** El brazo llega por
-  movimiento programado a una posición enseñada encima de la caja que toca, y desde ahí la
-  ACT hace solo "coge la semilla que tienes debajo", guiándose sobre todo por la cámara de
-  la muñeca. Es la misma habilidad para las 4 cajas, así que basta **un modelo y unos
-  60-80 episodios** mezclando los 4 colores, y se entrena en una noche.
-- **Por qué no 4 ACT, una por color**: en el Mac cada entrenamiento de 20 000 pasos tarda
-  unas 4 horas (medido antes del evento), unas 17 horas para las 4. No cabe en el tiempo
-  del hackathon.
+- **Policy: una ACT por color de cuenco.** Desde la pose de inicio (`act_start`), la policy
+  del color que toca hace el ciclo entero de recogida: ir al cuenco, coger y volver. Los
+  episodios se graban con **los dos cuencos en la mesa y cambiados de sitio**, así que la
+  policy aprende a buscar el suyo **por color** y no por posición. Un color sin policy cae
+  en la ruta de poses enseñadas, que sigue funcionando.
+- **Por qué una por color y no una sola para todos**: una única policy con los dos cuencos
+  delante no tiene forma de saber a cuál ir, porque la ACT no recibe el color como entrada.
+  Separarlas es lo que convierte "coge algo" en "coge del cuenco rojo".
+- **Lo que cuesta**: unos 50 episodios de 20 s por color y un entrenamiento por color
+  (alrededor de 1 h en la nube con Hugging Face Jobs, unas 4 h en el Mac).
 - Alternativa descartada por tiempo: una SmolVLA que reciba el color como texto.
 - **Por qué no se aprende todo**: ACT no recibe "a qué alveolo voy". Aprender
   "caja X → alveolo (fila, columna)" exigiría demostraciones para 4 colores × 40 alveolos,
   cientos de combinaciones, y no cabe en 48 horas. La parte geométrica (dónde está cada
   alveolo) es un cálculo exacto; la parte difícil de percepción (coger de una caja que se
   ha movido) es la que se aprende.
-- **Lo que suma puntos**: la variación de las cajas en las demostraciones es lo que
-  demuestra el criterio de dificultad ("aguanta cambios de posición o de luz") y el de
-  datos y entrenamiento.
-- **Plan B de la recogida**: si la policy no es fiable a tiempo, las cajas también se fijan
-  y la recogida se hace con posiciones enseñadas. La demo sale igual y la policy queda
-  como mejora.
+- **Lo que suma puntos**: mover los cuencos entre episodios es lo que demuestra el criterio
+  de dificultad ("aguanta cambios de posición o de luz") y el de datos y entrenamiento.
+- **Dónde encaja en el código**: el ejecutor mira primero si ese color tiene policy
+  (`ActGrasp` en `act.py`, declaradas en `SMARTSEED_ACT_POLICIES`). Si la tiene, corre la
+  policy en lazo cerrado a 30 Hz durante `SMARTSEED_ACT_DURATION_S`; si no, cae en el
+  `Grasper` de poses enseñadas (`TaughtGrasp`: baja a `grasp_<color>` o aplica unos deltas
+  y cierra). Las dos rutas desembocan en el mismo soltado.
+- **Plan B de la recogida**: si una policy no es fiable a tiempo, ese cuenco se fija y su
+  recogida se hace con posiciones enseñadas. La demo sale igual y la policy queda como
+  mejora.
 
 ## Secuencia de siembra
 
-El ejecutor del backend recorre el plan celda a celda. Cada siembra es una secuencia fija:
+El ejecutor del backend recorre el plan celda a celda. La recogida tiene dos rutas según
+haya policy para ese color o no; el soltado es el mismo en las dos:
 
 ```
-inicio → encima de la caja X (posición enseñada) → ACT coge la semilla
-→ subir → encima de la celda (cinemática inversa) → abrir pinza → inicio
+con policy:  act_start → la ACT va al cuenco, coge y vuelve
+             → encima de la celda (cinemática inversa) → abrir pinza → act_start
+
+sin policy:  inicio → encima del cuenco (pose enseñada) → coger → ¿lleva algo?
+             → subir → encima de la celda → abrir pinza → inicio
 ```
 
-1. **Encima de la caja X**: una posición articular enseñada con el leader para cada zona
-   de caja, guardada una vez.
-2. **Agarre**: se ejecuta la ACT durante unos segundos, como máximo, hasta que cierra la
-   pinza.
-3. **¿Ha cogido algo?** Se mira la posición de la pinza (`gripper.pos`, de 0 a 100): si se
-   ha cerrado del todo, no hay nada dentro. Si falla, se reintenta una vez y, si vuelve a
-   fallar, se marca la celda como fallida y se pasa a la siguiente.
-4. **Subir** unos centímetros en vertical para no arrastrar la caja.
-5. **Encima de la celda**: el centro de la celda en píxeles pasa a (x, y) del robot con la
-   homografía, se le suma una altura fija de unos 5 cm sobre la bandeja y la cinemática
-   inversa da los ángulos (ver la sección siguiente).
-6. **Abrir pinza**, volver a inicio y avisar a la web del progreso.
+1. **Recogida con policy**: el brazo va a `act_start` (la pose en la que empiezan los
+   episodios) y la ACT de ese color manda acciones a 30 Hz durante los segundos
+   configurados. En esta ruta no se juzga el agarre: la policy deja la pinza casi cerrada
+   sobre la semilla y eso es indistinguible de una pinza vacía.
+2. **Recogida con poses enseñadas**: `home` → `above_box_<color>` → el `Grasper` baja y
+   cierra. Tras 0,3 s de reposo se mira la posición de la pinza (`gripper.pos`, de 0 a
+   100): si se ha cerrado del todo (≤ 8), no hay nada dentro, y se **reintenta una vez**.
+   Después sube a la pose de encima del cuenco con lo que tenga.
+3. **Soltado**, igual en las dos rutas: el centro de la celda en píxeles pasa a (x, y) del
+   robot con la homografía, el brazo se coloca primero **8 cm por encima** de la altura de
+   soltado y baja desde ahí, para no rozar la bandeja al llegar.
+4. **Corrección en lazo cerrado**: con el brazo estirado los servos ceden por gravedad, así
+   que después de mover el ejecutor lee las articulaciones, calcula con cinemática directa
+   dónde ha quedado la punta y, si falla más de **5 mm**, vuelve a apuntar más allá por lo
+   que le faltaba y repite, hasta **2 correcciones**. El error final sale en el evento
+   `drop_pose` y la web lo enseña como "Soltado a N mm del hueco".
+5. **Abrir pinza**, subir otra vez a la pose de aproximación y volver al inicio de la ruta.
+
+**Si la pinza parece vacía, la celda se completa igual**: el brazo va a la celda, abre y
+sigue. El evento `cell_done` llega con `empty: true` y la web lo avisa. Es deliberado: en
+una demo de 5 intentos seguidos es mejor completar la pasada y que se vea qué celda salió
+vacía, que abortar.
+
+**Medias pruebas.** El plan acepta un `mode` para depurar sin hacer el ciclo entero:
+`"grasp"` solo recoge y se queda con la semilla (no necesita calibración), `"place"` solo
+suelta sobre la celda con la pinza como esté (no necesita policy ni cuencos enseñados).
+Son los botones **Probar coger** y **Probar dejar** del panel de Ajustes. También acepta
+`drop_z` (0,02-0,25 m) para cambiar la altura de soltado solo en ese plan.
 
 **Cómo se mueve el brazo.** El SO-101 recibe ángulos de articulación en grados:
 `robot.send_action({"shoulder_pan.pos": …, "shoulder_lift.pos": …, "elbow_flex.pos": …,
 "wrist_flex.pos": …, "wrist_roll.pos": …, "gripper.pos": 0-100})`. El destino no se manda
-de golpe: se interpola entre la posición actual y la final a unos 30 Hz, y
-`max_relative_target` en la configuración del follower limita cuánto puede moverse en
-cada paso, por seguridad.
+de golpe: se interpola entre la posición actual y la final a 30 Hz con un límite de
+45 °/s en la articulación que más recorrido tiene, y `max_relative_target` (8) en la
+configuración del follower limita además cuánto puede moverse en cada paso.
 
-**Stop**: corta la secuencia y desactiva el par de los motores. Tiene que funcionar desde
-la web y desde el teclado del portátil.
+**Antes de mover un solo motor** el ejecutor valida el plan entero: campos y colores, que
+haya calibración, que estén enseñadas las poses de los colores sin policy y que la
+cinemática inversa resuelva **todas** las celdas. Si algo falla, el plan se rechaza con su
+código y el brazo no se mueve.
+
+**Stop**: `POST /stop` corta la secuencia y el brazo **se queda donde está, con par**; no
+se desactivan los motores, para no soltar la pieza en el aire ni dejar caer el brazo.
+Quitar el par es una acción aparte y explícita (`POST /robot/torque-off`), solo cuando el
+brazo esté en un sitio seguro.
+
+**Parámetros reales del ejecutor** (`ExecutorConfig`), los que conviene saberse:
+
+| Parámetro | Valor | Qué es |
+|---|---|---|
+| `drop_z` | 0,06 m | altura de la punta sobre la bandeja al soltar (ajustable por plan) |
+| `approach_clearance` | 0,08 m | cuánto por encima se coloca antes de bajar |
+| `place_tolerance_m` | 5 mm | error aceptado sobre el hueco al soltar |
+| `place_corrections` | 2 | reintentos de puntería por celda |
+| `hz` | 30 | frecuencia de control (y de la policy) |
+| `max_speed` | 45 °/s | límite en la articulación que más gira |
+| `max_relative_target` | 8 | tope por paso en el follower |
+| `gripper_open` / `gripper_closed` | 60 / 0 | pinza abierta y cerrada |
+| `empty_below` | 8 | por debajo de esto, la pinza va vacía (solo ruta enseñada) |
+| `settle_s` | 0,3 s | reposo antes de juzgar el agarre y antes de medir la punta |
+| `retries` | 1 | reintentos de agarre (solo ruta enseñada) |
+| Tolerancia IK | 3 mm | con hasta 6 rondas de solver por inclinación |
 
 ## Semillero libre: detección y cinemática inversa
 
 ### 1. Detectar el semillero
-- Se pegan **4 marcadores ArUco** del diccionario `ARUCO_MIP_36h12` en las esquinas de la
-  bandeja: id 0 arriba a la izquierda, 1 arriba a la derecha, 2 abajo a la derecha y 3 abajo
-  a la izquierda ([generador para imprimirlos](https://damianofalcioni.github.io/js-aruco2/samples/marker-creator/marker-creator.html?dictionary=ARUCO_MIP_36h12)).
-  La web (`web/scanner.js`) los detecta en directo con `js-aruco2`. OpenCV (`cv2.aruco`, ya
-  instalado) los encuentra con cualquier luz, mucho mejor que intentar detectar una
-  bandeja negra con alveolos negros.
-- Con las 4 esquinas y el número de filas × columnas se calcula el centro de cada alveolo
-  en píxeles, aunque la bandeja esté girada. Eso es lo que la web pinta sobre la imagen.
-- **Sin marcadores: modelo de visión local** (`backend/`). Funciona sin internet una vez
-  descargado el modelo:
-  - **OWLv2** (`google/owlv2-base-patch16-ensemble`), un detector abierto que busca
-    objetos a partir de texto ("a black plastic seed tray"), localiza la bandeja en la
-    imagen.
-  - **OpenCV** saca dentro de esa zona las 4 esquinas exactas, endereza la bandeja y
-    **cuenta filas y columnas** por la repetición de los bordes de los alveolos.
-  - La web le manda un fotograma por segundo y pinta el resultado en directo, con la
-    rejilla en azul. En el Mac (MPS) tarda unos 0,7 s por fotograma; la primera vez,
-    unos 12 s más mientras carga el modelo.
-- **Huecos por profundidad, sin esquinas.** **Depth Anything V2 Small**
-  (`depth-anything/Depth-Anything-V2-Small-hf`) estima la profundidad relativa de cada
-  píxel (unos 130 ms por fotograma en MPS). La mesa alrededor de la caja está tan baja
-  como el fondo de un compartimento, así que «hondo» no basta: un hueco es una **cuenca
-  rodeada de paredes**, una zona de la que el agua no podría salir hasta el borde de la
-  imagen sin pasar por encima de una pared. Cada cuenca da el centro de un hueco y la web
-  pone una casilla encima, sea cual sea la forma de la bandeja. Con la caja de cartón de
-  2 compartimentos detecta los 2 huecos con la cámara real.
-- **Prioridad** en la web: ArUco (rejilla verde) > huecos por profundidad (círculos azules)
-  > rejilla del modelo de visión (azul) > esquinas arrastradas a mano (amarilla). Si el
-  usuario escribe filas o columnas a mano, se vuelve a la rejilla y el modelo ya no las
-  sobrescribe.
-- Sin backend la web funciona igual, con marcadores o esquinas a mano.
+
+La bandeja se localiza **sin pegarle nada encima**, lo que evita preparar el material y
+hace que funcione con la bandeja que traiga el cliente. Hay tres vías y manda la primera
+que esté disponible; el color de lo que se dibuja sobre el vídeo indica cuál está activa.
+Mientras no haya bandeja detectada no se dibuja ninguna rejilla: una rejilla inventada
+sobre la mesa es peor que ninguna.
+
+1. **Huecos por profundidad** (círculos azules, backend). **Depth Anything V2 Small**
+   (`depth-anything/Depth-Anything-V2-Small-hf`) estima la profundidad relativa de cada
+   píxel (unos 130 ms por fotograma en MPS). La mesa alrededor de la caja está tan baja
+   como el fondo de un compartimento, así que «hondo» no basta: un hueco es una **cuenca
+   rodeada de paredes**, una zona de la que el agua no podría salir hasta el borde de la
+   imagen sin pasar por encima de una pared (relleno morfológico desde el borde del
+   fotograma). Cada cuenca da el centro de un hueco; se descartan las cuencas sueltas y las
+   que caen fuera de la bandeja, y las que quedan se numeran en coordenadas de la bandeja,
+   no de la imagen, así que las filas y columnas salen bien aunque esté girada.
+2. **Rejilla del modelo de visión** (azul, backend). **OWLv2**
+   (`google/owlv2-base-patch16-ensemble`), un detector abierto que busca objetos a partir
+   de texto ("a black plastic seed tray"), localiza la bandeja en la imagen; **OpenCV**
+   saca dentro de esa zona las 4 esquinas exactas (probando manchas oscuras, claras y
+   saturadas, para que también valgan las cajas de cartón), endereza la bandeja y **cuenta
+   filas y columnas** por la periodicidad de los bordes de los alveolos. Un contorno sin
+   hoyos en el mapa de profundidad **no** cuenta como bandeja: los contornos solos también
+   encajan con texto impreso o con baldosas. En el Mac (MPS) tarda unos 0,7 s por
+   fotograma; la primera vez, unos 12 s más mientras carga el modelo.
+3. **Esquinas a mano** (amarillo, siempre disponible). El usuario arrastra las 4 esquinas
+   sobre el vídeo y escribe filas y columnas. Funciona **sin backend**, así que es la red
+   de seguridad de la demo. Si el usuario escribe filas o columnas a mano, se vuelve a la
+   rejilla y el modelo ya no las sobrescribe.
+
+Con las 4 esquinas y el número de filas × columnas se calcula el centro de cada alveolo en
+píxeles por interpolación bilineal, aunque la bandeja esté girada; con los huecos por
+profundidad el centro sale directamente de cada cuenca. Un recuento nuevo de huecos tiene
+que repetirse dos veces seguidas antes de redimensionar la bandeja, para que un fotograma
+ruidoso no borre las semillas ya asignadas.
+
+**Huecos ya ocupados.** Cada hueco se compara con el material de la propia bandeja,
+muestreado en el borde **entre** los huecos y no contra los demás huecos, así que sigue
+funcionando con casi todo el semillero lleno. Un hueco cuenta como ocupado si su color se
+aleja del borde (cromaticidad en Lab, para que las sombras no cuenten) o si su brillo se
+vuelve irregular (piedras, semillas y sus sombras). La web los pinta en **ámbar**. Medido
+sobre la bandeja de cartón real: vacíos ≤ 4,5 de croma y ≤ 16 de desviación; con piedras,
+17 y 30.
+
+**Marcadores ArUco: soportados, pero no los usamos.** `web/scanner.js` sabe detectar 4
+marcadores `ARUCO_MIP_36h12` en las esquinas con `js-aruco2` (vendorizado en `web/vendor/`,
+sin CDN) y tendrían prioridad sobre todo lo demás si estuvieran pegados. No los usamos: la
+gracia es que el agricultor deje la bandeja y ya está. Queda como opción si la detección
+sin marcadores se tuerce con la bandeja real.
 
 Arrancar el backend (en el portátil del robot):
 
 ```bash
 cd backend
-uv sync          # la primera vez; instala torch, transformers y OpenCV en backend/.venv
+uv sync          # la primera vez; instala torch, transformers, OpenCV y lerobot en backend/.venv
 ./run.sh         # http://localhost:8000 · GET /health · POST /vision/tray
 ```
 
@@ -205,40 +276,63 @@ Después abre la web (publicada o `web/index.html`) y pulsa **Escanear con cáma
 el backend está en otra dirección, ejecuta esto en la consola del navegador:
 `localStorage.setItem('smartseed.backendUrl', 'http://IP:8000')`.
 
-Limitaciones conocidas: está ajustado con imágenes sintéticas. Con la bandeja real hay
-que comprobar los brillos sobre el plástico negro, una mesa oscura que se confunda con la
-bandeja y si cuenta bien los huecos (puede contar la mitad o el doble si las sombras
-marcan otro patrón). Tests: `cd backend && uv run pytest`.
+Los umbrales están ajustados con imágenes sintéticas y con dos fotos de la bandeja de
+cartón real (vacía y con piedras), que viven en `backend/tests/fixtures/` y se usan en los
+tests. Con otra bandeja hay que volver a comprobar los brillos sobre el plástico negro, una
+mesa oscura que se confunda con la bandeja y si cuenta bien los huecos. Tests:
+`cd backend && uv run pytest`.
 
 ### 2. Calibrar la cámara con el robot (una vez)
 - Se lleva la punta de la pinza a 4-6 marcas de la mesa. En cada una se guarda el píxel
   donde la ve la cámara y la posición de la punta que da la cinemática directa.
 - `cv2.findHomography` convierte esas parejas en una transformación **píxel de la mesa →
-  coordenadas (x, y) del robot**. Como esas posiciones salen del mismo modelo del brazo que
-  luego usa la cinemática inversa, buena parte de los errores del modelo se compensan.
+  coordenadas (x, y) del robot**, y devuelve el error medio y máximo en mm. Como esas
+  posiciones salen del mismo modelo del brazo que luego usa la cinemática inversa, buena
+  parte de los errores del modelo se compensan.
+- **Desde el navegador**: **Escanear** → **Calibrar robot** hace todo el ciclo sin tocar la
+  consola: «Soltar brazo», llevar la punta a un punto de la bandeja, hacer clic en ese
+  punto de la imagen, y con 4 puntos repartidos, **Ajustar** (enseña el error en mm).
+  También se puede hacer a mano con `POST /robot/calibration/points` y `/fit`.
+- La calibración se guarda en `backend/data/calibration.json` y se recarga al arrancar; si
+  el fotograma llega con otro tamaño, los píxeles se reescalan solos.
 - Unos 15 minutos. Solo se repite si se mueve la cámara cenital o el robot.
 
 ### 3. Soltar en el alveolo
-- Para cada alveolo: píxel → (x, y) del robot → **cinemática inversa** a una altura fija
-  unos centímetros por encima del alveolo → abrir la pinza.
+- Para cada alveolo: píxel → (x, y) del robot → **cinemática inversa** a 6 cm por encima
+  del alveolo → abrir la pinza.
+- **La pinza apunta lo más hacia abajo que el brazo permita**: el solver prueba primero
+  vertical y, si no llega, la va inclinando hacia fuera en pasos de 15° (15, 30 … 90) y se
+  queda con la primera inclinación que alcanza; solo si ninguna llega deja de importar la
+  orientación y cuenta únicamente la posición. Así se gana alcance en las celdas lejanas
+  sin renunciar a entrar recto en las cercanas.
+- La aproximación es desde arriba (8 cm por encima) y con **corrección en lazo cerrado**:
+  ver [Secuencia de siembra](#secuencia-de-siembra).
 - LeRobot trae la cinemática: `lerobot.model.kinematics.RobotKinematics`
-  (`forward_kinematics` / `inverse_kinematics`). Requisitos:
-  - `uv pip install -e "vendor/lerobot[kinematics]"`, que instala `placo`.
-  - El URDF del SO-101, `so101_new_calib.urdf`, del repositorio
-    [SO-ARM100](https://github.com/TheRobotStudio/SO-ARM100/tree/main/Simulation/SO101).
+  (`forward_kinematics` / `inverse_kinematics`), que usa `placo`. Lo instala `uv sync` con
+  el extra `kinematics`; el URDF del SO-101 (`so101_new_calib.urdf`) y sus mallas están
+  vendorizados en `backend/assets/so101/` (procedencia y commit en `SOURCE.md`), así que no
+  hay que descargar nada.
 
 ### Riesgos y cómo mitigarlos
 - **El URDF tiene que coincidir con nuestra calibración**: `so101_new_calib` está pensado
   para la calibración de LeRobot, pero hay que comprobarlo en 10 minutos. Se mueve el brazo
-  a mano y se mira que la posición que da `forward_kinematics` coincida con la real.
-- **Precisión**: entre la calibración y la cinemática se puede acumular alrededor de 1 cm
-  de error (estimación, **hay que medirlo**). Con alveolos de 4 cm y pelotas de 2,5 cm el
-  margen es justo. Mitigación: soltar desde un poco más arriba, pelotas algo más pequeñas o
-  una bandeja con alveolos más grandes, y medir el error real con una prueba de
-  10 alveolos.
+  a mano y se mira que la posición que da `forward_kinematics` coincida con la real
+  (`GET /robot/joints` devuelve `tool`).
+- **Precisión**: entre la calibración y la cinemática se acumula error. La corrección en
+  lazo cerrado al soltar lo absorbe en buena parte (deja la punta a menos de 5 mm cuando
+  llega a tiempo), pero hay que **medirlo** con una prueba de 10 alveolos; el error de cada
+  soltado sale en el evento `drop_pose` y en la propia web. Con alveolos de 4 cm y pelotas
+  de 2,5 cm el margen es justo: mitigación, soltar desde un poco más arriba (el panel de
+  Ajustes cambia la altura sin tocar código), pelotas algo más pequeñas o una bandeja con
+  alveolos más grandes.
+- **Detección ajustada con pocas fotos reales**: es el riesgo nuevo desde que no usamos
+  marcadores. Mitigación inmediata: las esquinas a mano, que no dependen de ningún modelo.
+- **La policy no juzga el agarre**: en la ruta con ACT la pinza queda casi cerrada sobre la
+  semilla, indistinguible de vacía, así que no hay reintento. Mitigación: el brazo suelta
+  igualmente sobre la celda y la web avisa de que parecía vacía.
 - **Zona de trabajo**: "cualquier sitio" significa dentro de la zona donde llega el brazo
-  y que ve la cámara cenital. Se marca en la mesa. Si la bandeja queda fuera, la web avisa
-  y no arranca.
+  y que ve la cámara cenital. Se marca en la mesa. Si la bandeja queda fuera, el backend
+  rechaza el plan con `code: "unreachable"` y la lista de alveolos, y la web lo explica.
 - **Tiempo**: instalar, calibrar y ajustar cuesta medio sábado. Es el mayor riesgo técnico
   del proyecto.
 
@@ -254,6 +348,19 @@ Por defecto el robot es **falso** (`SMARTSEED_ROBOT=fake`): no abre ningún puer
 el brazo real: `SMARTSEED_ROBOT=real SMARTSEED_ROBOT_PORT=/dev/tty.usbmodem5B8E1124861 ./run.sh`
 (follower `follower_01`, grados, `max_relative_target` 8). Los datos enseñados se guardan en
 `backend/data/` (`poses.json`, `calibration.json`, fuera de git; `SMARTSEED_DATA_DIR` lo cambia).
+
+Módulos:
+
+| Fichero | De qué responde |
+|---|---|
+| `robot.py` | `RobotPort` (leer y mandar articulaciones, par, observación), `FakeRobot` y el adaptador `LeRobotFollower` |
+| `kinematics.py` | cinemática directa e inversa sobre el URDF del SO-101 (placo), con la inclinación preferida hacia abajo |
+| `calibration.py` | homografía píxel → mesa, su error en mm y su persistencia |
+| `poses.py` | poses enseñadas con nombre (`home`, `act_start`, `above_box_<color>`, `grasp_<color>`) |
+| `motion.py` | interpolación del movimiento, cancelable |
+| `act.py` | policies ACT por color, cargadas en el primer uso, y su lazo cerrado |
+| `executor.py` | validación del plan, modos, secuencia de cada celda y soltado corregido |
+| `api.py` | endpoints HTTP y el WebSocket de progreso |
 
 Puesta a punto con el brazo (todo en `http://127.0.0.1:8000`, mueve el brazo a mano con el par
 desactivado: `POST /robot/torque-off`):
@@ -277,9 +384,11 @@ desactivado: `POST /robot/torque-off`):
 5. **Parar**: `POST /stop` (el brazo se queda en su sitio con par). `POST /robot/torque-off`
    solo cuando el brazo esté en un lugar seguro; `POST /robot/torque-on` para recuperarlo.
 
-Un agarre vacío (pinza cerrada del todo) se reintenta una vez; si falla otra vez la celda
-se marca como fallida y se sigue. Con la aproximación en vertical el alcance a altura de
-bandeja es de unos 28 cm desde la base.
+En la ruta de poses enseñadas, un agarre vacío (pinza cerrada del todo) se reintenta una
+vez; con policy no se juzga. En los dos casos el brazo **suelta igualmente sobre la celda**
+y la celda se cuenta como hecha, con el aviso de que la pinza parecía vacía. Con la pinza
+vertical el alcance a altura de bandeja es de unos 28 cm desde la base; inclinándola hacia
+fuera se llega algo más lejos.
 
 ## Escena y objetos
 
@@ -330,10 +439,19 @@ la pinza como esté, abre y vuelve a `act_start`, sin policy ni cajas) y `drop_z
 0.02–0.25, sustituye la altura por defecto de 6 cm solo en ese plan). `grasp` no necesita
 calibración; `place` sí. `plan_started` repite el `mode` en el evento.
 
-Respuestas: `202 {"plan_id", "cells"}` si lo acepta; `4xx {"detail", "code"}` si no
-(`busy`, calibración sin ajustar, `unreachable` con la lista de alveolos fuera de
-alcance). La web enseña ese `detail` y **no** arranca ninguna animación: un plan
-rechazado nunca debe parecer una siembra correcta.
+Respuesta: `202 {"plan_id", "cells"}` si lo acepta. Si no, `4xx {"detail", "code"}`:
+
+| `code` | Cuándo |
+|---|---|
+| `invalid` (422) | faltan campos, el id de color no vale, o `mode`/`drop_z` fuera de rango |
+| `no_calibration` (409) | la homografía no está ajustada (no aplica en `mode: "grasp"`) |
+| `missing_pose` (409) | falta `home` o la pose de algún color sin policy (no aplica en `mode: "place"`) |
+| `unreachable` (422) | la cinemática inversa no llega a una o varias celdas, que van en el `detail` |
+| `torque_off` (409) | el par está quitado |
+| `busy` (409) | ya hay un plan corriendo |
+
+La web enseña ese `detail` y **no** arranca ninguna animación: un plan rechazado nunca debe
+parecer una siembra correcta.
 
 Progreso por `WS /robot/progress`, un JSON por evento:
 
@@ -343,7 +461,7 @@ Progreso por `WS /robot/progress`, un JSON por evento:
 | `cell_started` | `cell_index`, `row`, `col`, `color` | La casilla parpadea |
 | `drop_pose` | `cell_index`, `target`, `reached`, `error_mm`, `corrections` | Antes de abrir la pinza: enseña "Soltado a N mm del hueco" (la web ignora los tipos que no conoce) |
 | `cell_done` | `cell_index`, `message`, `empty` | Marca ✓ y avanza la barra; con `empty` avisa de que la pinza parecía vacía |
-| `cell_failed` | `cell_index`, `message` | Marca ✕ en rojo y lo cuenta aparte |
+| `cell_failed` | `cell_index`, `message` | Marca ✕ en rojo y lo cuenta aparte. El ejecutor ya no lo emite (una celda con la pinza vacía se completa igual); la web lo sigue entendiendo |
 | `finished` | `message` | Cierra la siembra como terminada |
 | `stopped` | `message` | Cierra la siembra como detenida |
 | `error` | `cell_index`, `message` | Enseña el error del robot |
@@ -361,10 +479,9 @@ píxeles no hay posición a la que llevar el brazo.
 ### 1. Hardware y escena (viernes)
 - [x] Montar el leader y el follower y calibrarlos (hecho el viernes 23).
 - [ ] Comprobar que la teleoperación va bien, pinza incluida.
-- [ ] Conseguir las pelotas y las 4 cajas de colores (ver [Escena y objetos](#escena-y-objetos)).
-- [ ] Marcar en la mesa la **zona de trabajo** del semillero y la zona de cada caja: se
+- [ ] Conseguir las pelotas y un cuenco por color de semilla que vayas a usar (ver [Escena y objetos](#escena-y-objetos)).
+- [ ] Marcar en la mesa la **zona de trabajo** del semillero y la zona de cada cuenco: se
       pueden mover dentro de su zona.
-- [ ] Pegar los 4 marcadores ArUco en las esquinas de la bandeja.
 - [ ] Colocar la cámara cenital (`top`), que vea toda la zona de trabajo y las zonas de
       las cajas, y la del brazo (`wrist`). **Las cámaras y el robot no se mueven más.**
 - [ ] Probar con la teleoperación que se coge una pelota de cada caja y se suelta en un
@@ -376,36 +493,45 @@ píxeles no hay posición a la que llevar el brazo.
 - [x] Guardar y cargar plantillas, y cargar automáticamente la última fórmula usada.
 - [x] Botón **Sembrar** que envía el plan al backend, con vista de progreso y **Parar**.
 - [x] Imagen de la cámara cenital con la rejilla **detectada** superpuesta.
+- [x] Un plan rechazado enseña el motivo y no anima nada; sin backend, modo demo marcado.
+- [x] Calibración cámara-robot desde el navegador y panel de **Ajustes** con altura de
+      soltado y medias pruebas (**Probar coger** / **Probar dejar**).
 - [x] Sin internet: tipografías y `js-aruco2` servidos desde `web/`, no desde un CDN.
+- [x] Smoke test de la interfaz en jsdom, captura en Chromium y recorrido con cámara falsa.
 - [ ] Aviso si la bandeja queda fuera de la zona de trabajo del brazo (hoy lo detecta el
       backend al recibir el plan, con `code: "unreachable"`, y la web enseña el motivo).
 
 ### 3. Backend y conexión con el robot (sábado)
-- [x] Servidor local (FastAPI + WebSocket) con los endpoints `POST /plan`, `POST /stop`
-      y `WS /robot/progress`.
-- [ ] Detección del semillero con ArUco → centros de los alveolos en píxeles.
-- [ ] Instalar `lerobot[kinematics]` y descargar el URDF del SO-101. Comprobar que la
-      cinemática directa coincide con la posición real del brazo.
-- [ ] Enseñar con el leader la posición encima de cada zona de caja y la posición de
-      inicio.
+- [x] Servidor local (FastAPI + WebSocket) con los endpoints `POST /plan`, `POST /stop`,
+      `WS /robot/progress`, poses, calibración, par y estado.
+- [x] Detección del semillero sin marcadores → centros de los alveolos en píxeles, con los
+      huecos ya ocupados marcados.
+- [x] Cinemática con `lerobot[kinematics]` y el URDF del SO-101 vendorizado en el repo.
+- [x] Ejecutor de la [secuencia de siembra](#secuencia-de-siembra): recogida con policy o
+      con poses enseñadas, soltado corregido en lazo cerrado, movimiento interpolado,
+      validación del plan completo antes de moverse y parada segura (**Stop** mantiene el
+      par).
+- [x] Modos `grasp` / `place` y `drop_z` por plan para depurar media secuencia.
+- [ ] Comprobar que la cinemática directa coincide con la posición real del brazo.
+- [ ] Enseñar con el leader `act_start`, `home` y la posición encima de cada cuenco sin
+      policy.
 - [ ] Calibración cámara-robot (homografía píxel → x, y del robot).
 - [ ] Soltar por cinemática inversa y **medir el error** con una prueba de 10 alveolos.
+- [ ] Ajustar la detección con más fotogramas de la bandeja real.
 - [ ] Sábado a mediodía: decidir entre semillero libre o plan B (esquinas enseñadas).
-- [ ] Ejecutor de la [secuencia de siembra](#secuencia-de-siembra): agarre con la ACT,
-      comprobación de la pinza con un reintento, movimiento interpolado y parada segura
-      (**Stop** desactiva el par de los motores).
 
 ### 4. Datos y policy (viernes noche-sábado)
-- [ ] Tanda de prueba: unos 10 episodios, entrenar pocos pasos y comprobar que aprende
+- [x] Tanda de prueba: unos 10 episodios, entrenar pocos pasos y comprobar que aprende
       antes de grabar todo.
-- [ ] Grabar **60-80 episodios de agarre** con `lerobot-record` (tarea: *"grasp the seed
-      below the gripper"*). Cada episodio empieza en la posición enseñada encima de una
-      caja y acaba con la semilla cogida y levantada. Mezclar los 4 colores, **mover un
-      poco la caja dentro de su zona** y cambiar algo la luz entre episodios.
-- [ ] Subir los datasets al Hub de Hugging Face.
-- [ ] Entrenar **una ACT** en el Mac durante la noche (unas 4 h para 20 000 pasos), o en
-      GPU cloud, y probar con rollout.
-- [ ] Apuntar los fallos de cada iteración y cómo se arreglaron.
+- [x] Policy del primer cuenco entrenada y publicada en el Hub, enchufada en el ejecutor
+      (`SMARTSEED_ACT_POLICIES`).
+- [ ] Grabar **~50 episodios de 20 s por color** con `lerobot-record`: cada episodio va de
+      `home` al cuenco de ese color, coge una semilla y vuelve. **Los dos cuencos en la
+      mesa y cambiados de sitio** entre episodios, y algo de variación de luz.
+- [ ] Subir los datasets al Hub de Hugging Face con las etiquetas del equipo.
+- [ ] Entrenar la ACT del segundo color (≈ 1 h en la nube, ~4 h en el Mac) y probarla.
+- [ ] Enseñar `act_start` con el brazo real y comprobar el ciclo entero celda a celda.
+- [ ] Apuntar los fallos de cada iteración y cómo se arreglaron en `odd/tasks/`.
 
 ### 5. Demo y entrega (domingo antes de las 13:00)
 - [ ] Fijar la **tarea de la demo** y ensayarla hasta que salga 5 veces seguidas sin tocar
@@ -422,28 +548,69 @@ píxeles no hay posición a la que llevar el brazo.
 
 ```
 web/                        interfaz (la raíz del sitio de Pages redirige aquí)
-  index.html                marcado: pantalla de escaneo, mapa y panel de siembra
+  index.html                marcado: pantalla de escaneo, mapa, panel de siembra y ajustes
   app.css                   todos los estilos
-  app.js                    paleta, mapa, plantillas y siembra contra el backend
-  scanner.js                cámara en directo, rejilla, ArUco y modelo de visión
+  app.js                    semillas propias, mapa, plantillas y siembra contra el backend
+  scanner.js                cámara en directo, rejilla y localización de la bandeja
+  calibrate.js              calibración cámara-robot desde el navegador
   vendor/                   js-aruco2 (cv.js, aruco.js) servido desde el repo
   fonts/                    DM Sans y Manrope en local, sin Google Fonts
   README.md                 notas de la interfaz
-tests/web/                  smoke test de la interfaz (jsdom) y captura en navegador
+tests/web/                  smoke test de la interfaz (jsdom), captura y cámara en Chromium
 backend/                    servicio local (FastAPI): visión y control del robot
-  smartseed_vision/         geometry.py, detector.py, depth.py, app.py
+  smartseed_vision/         geometry.py, detector.py, depth.py, occupancy.py, app.py
   smartseed_robot/          robot.py, kinematics.py, calibration.py, poses.py,
-                            motion.py, executor.py, api.py
-  assets/so101/             URDF y mallas del SO-101 para la cinemática
-  tests/                    pytest con bandejas sintéticas y robot falso
+                            motion.py, act.py, executor.py, api.py
+  assets/so101/             URDF y mallas del SO-101 para la cinemática (+ SOURCE.md)
+  tests/                    pytest con bandejas y profundidad sintéticas, fotos de la bandeja
+                            real en fixtures/ y robot falso
   run.sh                    arranca en http://localhost:8000
-odd/tasks/                  documentos de tareas por funcionalidad
+  pyproject.toml            dependencias (lerobot fijado al commit e595b79)
+scripts/stack.sh            backend real + web en una orden, para la demo
+odd/tasks/                  documentos de tareas por funcionalidad, con la evidencia de cada iteración
 .github/workflows/pages.yml despliegue antiguo de web/ (ver CLAUDE.md, «GitHub Pages»)
 index.html                  redirección de la raíz de Pages a web/
 README.md                   criterios resueltos y pasos para reproducir el resultado
 guide.md                    este documento: idea, arquitectura y plan
 CLAUDE.md                   guía para agentes y colaboradores
 ```
+
+## Pruebas automáticas
+
+Todo corre **sin brazo y sin cámaras**: el robot falso, las imágenes sintéticas y las
+policies simuladas sustituyen al hardware, así que cualquiera puede clonar el repo y
+comprobar que funciona.
+
+**Backend** (`cd backend && uv run pytest`): 147 funciones de test en 13 ficheros.
+
+| Fichero | Qué comprueba |
+|---|---|
+| `test_geometry.py` | esquinas y recuento de filas × columnas en bandejas sintéticas, giradas, oscuras, claras y de cartón |
+| `test_depth.py` | huecos como cuencas: una por compartimento, orden por filas, huecos fuera de la bandeja descartados, una depresión abierta al borde no es un hueco |
+| `test_occupancy.py` | huecos ocupados contra el borde de la bandeja, con las fotos reales (vacía y con piedras) |
+| `test_detector.py` | selección de la mejor caja de OWLv2 y recorte al tamaño de la imagen |
+| `test_app.py` | `/health`, `/vision/tray`, CORS y Private Network, y que los modelos nunca corran a la vez en la GPU |
+| `test_robot.py` | `FakeRobot`: par, comandos parciales, historial, agarre lleno o vacío |
+| `test_kinematics.py` | cinemática directa contra el URDF, ida y vuelta IK, y que la pinza apunta lo más abajo posible |
+| `test_calibration.py` | ajuste de la homografía, error, reescalado de píxeles y persistencia |
+| `test_poses.py` | nombres válidos (colores propios incluidos), poses que faltan, persistencia y fichero corrupto |
+| `test_motion.py` | interpolación con límite de velocidad y parada dentro de un paso de control |
+| `test_act.py` | configuración desde el entorno, carga perezosa por color y lazo cerrado cancelable |
+| `test_executor.py` | las dos rutas de recogida, modos `grasp`/`place`, soltado con corrección, celda vacía que se completa igual, `busy` y `stop` |
+| `test_robot_api.py` | contrato de la API: estado, poses, calibración, planes rechazados con su `code`, eventos del WebSocket |
+
+**Interfaz** (`cd tests/web && npm test`): el smoke carga `web/index.html` de verdad en
+jsdom y la maneja, en dos pasadas:
+
+- **sin backend**: la siembra se simula y se marca **MODO DEMO**, y no se envía nada.
+- **con el robot simulado**: el plan que sale tiene exactamente la forma de
+  `smartseed_robot`, el progreso llega por WebSocket y pinta cada casilla, y un plan
+  rechazado (`unreachable`, `torque_off`, `busy`) enseña el motivo sin animar nada.
+
+Además: `npm run render` abre la página en un Chromium real a tamaño escritorio y móvil,
+guarda capturas en `tests/web/shots/` y falla si hay errores de consola o desbordamiento
+horizontal; `npm run camera` recorre el escaneo entero con la cámara sintética de Chromium.
+Los dos necesitan `CHROME_PATH` apuntando a un Chromium instalado.
 
 ## Probar la web
 
