@@ -42,6 +42,8 @@ Strict TDD (user config). Runner: `~/.claude/bin/testsem -- 'cd backend && uv ru
 - [x] T2 ActGrasp + executor sequence + env wiring + cameras, fake policy tests.
       Route: delegated writer (2+ non-trivial files).
 - [ ] T3 Full loop with the user: real server, web Sembrar, one cell, then a full tray.
+- [x] T5 Full local loop: drop always, web calibration, scripts/stack.sh
+      (route: delegated writer).
 - [ ] T4 Second policy (clean dataset 2, train, add to `SMARTSEED_ACT_POLICIES`).
 
 ## Acceptance criteria
@@ -63,3 +65,14 @@ Strict TDD (user config). Runner: `~/.claude/bin/testsem -- 'cd backend && uv ru
 
 ## Next step
 T1/T3 on the real arm with the user: run the server from Terminal.app (README "Sembrar con policy ACT").
+
+- T5 done. Route: delegated writer (4+ files). Taught-grasp path no longer aborts on an empty
+  gripper: after the last retry it still goes to the cell, opens and returns home; the cell is
+  counted done and `cell_done` carries `empty: true` plus a message (web toasts it). Web:
+  `web/calibrate.js` + panel in the camera view ("Calibrar robot": torque off/on, click points
+  in video pixels, fit with error in mm, clear, save `act_start`/`home`, status line);
+  REFUSALS point to the button. `DELETE /robot/calibration/points` already existed.
+  `scripts/stack.sh` starts backend (127.0.0.1:8000) + web (8080), traps Ctrl-C, refuses if
+  port 8000 is busy, requires `SMARTSEED_ACT_POLICIES` in real mode (the policy colour is not
+  recorded anywhere in the repo, so no default). Strict TDD: RED = executor test expected
+  `cell_done`, got `cell_failed`; GREEN = full backend suite passes. Not run on hardware.

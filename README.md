@@ -149,6 +149,23 @@ sin policy siguen con las poses enseñadas.
    Si el color de la política no coincide con el de la web, ese color se rechaza con `409`
    (`missing_pose`) salvo que tenga `above_box_<color>`.
 
+### Proceso completo (local)
+
+Con el brazo conectado y las policies publicadas:
+
+1. Desde **Terminal.app** (permiso de cámara): `SMARTSEED_ACT_POLICIES='{"<color>":"RafaelJaime/act-smartseed-grasp"}' scripts/stack.sh`.
+   Arranca el backend en modo real (solo `127.0.0.1:8000`) y la web en `http://localhost:8080/`;
+   `Ctrl-C` cierra los dos. Se niega a arrancar si el puerto 8000 ya está ocupado.
+2. Abre la web y pulsa **Escanear** → **Calibrar robot**: «Soltar brazo», lleva la punta de la
+   pinza a un punto de la bandeja y haz clic en ese punto de la imagen. Con al menos 4 puntos
+   repartidos, **Ajustar** (muestra el error en mm).
+3. **Guardar pose de inicio** (el brazo donde empiezan los episodios de la policy) y, si
+   hace falta, **Guardar home**. Después **Bloquear brazo**.
+4. Escanea la bandeja, asigna las semillas a las casillas y pulsa **Sembrar**.
+
+Si el agarre falla (la pinza se queda vacía), el brazo va igualmente a la casilla, abre la pinza
+y vuelve; la casilla cuenta como hecha y la web avisa de que la pinza parecía vacía.
+
 ### 4. Datos
 
 Dos policies ACT, **una por color de cuenco**, cada una con su dataset. Un episodio va de
