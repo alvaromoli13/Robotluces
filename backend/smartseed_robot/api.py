@@ -86,9 +86,15 @@ def create_router(rt: Runtime) -> APIRouter:
         if ex.running:
             raise HTTPException(409, "a plan is running; stop it first")
 
+    def torque_off_refusal() -> JSONResponse | None:
+        if rt.robot.torque_enabled:
+            return None
+        return JSONResponse({"detail": "torque is off; POST /robot/torque-on first", "code": "torque_off"},
+                            status_code=409)
+
     @router.get("/robot/status")
     def status():
-        return ex.status()
+        return ex.status() | {"torque": rt.robot.torque_enabled}
 
     @router.get("/robot/joints")
     def joints():
@@ -114,6 +120,8 @@ def create_router(rt: Runtime) -> APIRouter:
     @router.post("/robot/goto/{name}")
     def goto(name: str):
         idle_only()
+        if refusal := torque_off_refusal():
+            return refusal
         pose = rt.poses.get(name)
         if pose is None:
             raise HTTPException(404, f"pose '{name}' is not taught")
@@ -157,6 +165,8 @@ def create_router(rt: Runtime) -> APIRouter:
 
     @router.post("/plan", status_code=202)
     def plan(body: PlanBody):
+        if refusal := torque_off_refusal():
+            return refusal
         try:
             plan_id = ex.start([c.model_dump() for c in body.cells], body.image_size)
         except PlanError as exc:
@@ -166,6 +176,12 @@ def create_router(rt: Runtime) -> APIRouter:
     @router.post("/stop")
     def stop():
         return {"stopped": ex.stop()}
+
+    @router.post("/robot/torque-on")
+    def torque_on():
+        idle_only()
+        rt.robot.torque_on()
+        return {"torque": True}
 
     @router.post("/robot/torque-off")
     def torque_off():

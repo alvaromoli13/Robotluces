@@ -59,7 +59,7 @@ def client(tmp_path, kin):
 def test_status_contract_when_idle(client):
     assert client.get("/robot/status").json() == {
         "state": "idle", "robot": "fake", "plan_id": None, "current_cell": None, "done": [], "failed": [],
-        "calibrated": False, "poses": []}
+        "calibrated": False, "poses": [], "torque": True}
 
 
 def test_joints_endpoint_returns_joints_and_tool_position(client):
@@ -184,3 +184,19 @@ def test_default_app_never_opens_hardware(monkeypatch, tmp_path):
 def test_real_mode_without_port_fails_fast(tmp_path):
     with pytest.raises(ValueError, match="SMARTSEED_ROBOT_PORT"):
         build_runtime(mode="real", port=None, data_dir=tmp_path)
+
+
+def test_torque_on_endpoint_and_motion_refused_while_torque_is_off(tmp_path, kin):
+    client, runtime = make_client(tmp_path, kin)
+    client.post("/robot/poses/home")
+    client.post("/robot/torque-off")
+    assert client.get("/robot/status").json()["torque"] is False
+    refused = client.post("/robot/goto/home")
+    assert refused.status_code == 409 and refused.json()["code"] == "torque_off"
+    teach_all(client)
+    calibrate(client)
+    plan = client.post("/plan", json={"image_size": SIZE, "cells": cells(1)})
+    assert plan.status_code == 409 and plan.json()["code"] == "torque_off"
+    assert client.post("/robot/torque-on").json() == {"torque": True}
+    assert client.get("/robot/status").json()["torque"] is True
+    assert client.post("/robot/goto/home").status_code == 200

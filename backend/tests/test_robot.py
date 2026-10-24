@@ -55,3 +55,14 @@ def test_history_keeps_full_state_after_each_command():
     robot.send_joints({"elbow_flex": 9.0})
     assert [h["shoulder_pan"] for h in robot.history] == [5.0, 5.0]
     assert robot.history[-1]["elbow_flex"] == 9.0
+
+
+def test_fake_robot_ignores_commands_without_torque_and_torque_on_restores_them():
+    robot = FakeRobot(initial={"shoulder_pan": 10.0})
+    robot.torque_off()
+    robot.send_joints({"shoulder_pan": 50.0})
+    assert robot.read_joints()["shoulder_pan"] == 10.0
+    robot.torque_on()
+    assert robot.torque_enabled
+    robot.send_joints({"shoulder_pan": 50.0})
+    assert robot.read_joints()["shoulder_pan"] == 50.0

@@ -10,6 +10,9 @@ class RobotPort(Protocol):
     def read_joints(self) -> dict[str, float]: ...
     def send_joints(self, target: dict[str, float]) -> None: ...
     def torque_off(self) -> None: ...
+    def torque_on(self) -> None: ...
+    @property
+    def torque_enabled(self) -> bool: ...
     def close(self) -> None: ...
 
 
@@ -39,6 +42,8 @@ class FakeRobot:
 
     def send_joints(self, target: dict[str, float]) -> None:
         self.commands.append(dict(target))
+        if not self.torque_enabled:  # a limp arm does not follow goal positions
+            return
         state = self._state | target
         if "gripper" in target:
             state["gripper"] = self._gripper(target["gripper"])
@@ -57,6 +62,9 @@ class FakeRobot:
     def torque_off(self) -> None:
         self.torque_enabled = False
 
+    def torque_on(self) -> None:
+        self.torque_enabled = True
+
     def close(self) -> None:
         self.closed = True
 
@@ -72,6 +80,7 @@ class LeRobotFollower:
                                      disable_torque_on_disconnect=False)
         self._robot = SO101Follower(config)
         self._robot.connect(calibrate=False)
+        self._torque = True
 
     def read_joints(self) -> dict[str, float]:
         obs = self._robot.get_observation()
@@ -82,6 +91,18 @@ class LeRobotFollower:
 
     def torque_off(self) -> None:
         self._robot.bus.disable_torque()
+        self._torque = False
+
+    def torque_on(self) -> None:
+        # Hold where the arm is now: goal = present before enabling, so it does not jump to a stale goal.
+        bus = self._robot.bus
+        bus.sync_write("Goal_Position", bus.sync_read("Present_Position", normalize=False), normalize=False)
+        bus.enable_torque()
+        self._torque = True
+
+    @property
+    def torque_enabled(self) -> bool:
+        return self._torque
 
     def close(self) -> None:
         self._robot.disconnect()
