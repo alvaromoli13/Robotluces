@@ -176,7 +176,7 @@ sin policy siguen con las poses enseñadas.
    ```bash
    cd backend
    SMARTSEED_ROBOT=real SMARTSEED_ROBOT_PORT=/dev/tty.usbmodem5B8E1124861 \
-   SMARTSEED_ACT_POLICIES='{"<color>":"RafaelJaime/act-smartseed-grasp"}' ./run.sh
+   SMARTSEED_ACT_DURATION_S=15 SMARTSEED_ACT_POLICIES='{"<color>":"RafaelJaime/act-smartseed-grasp-merged"}' ./run.sh
    ```
 
    Si el color de la política no coincide con el de la web, ese color se rechaza con `409`
