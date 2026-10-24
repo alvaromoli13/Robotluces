@@ -303,6 +303,14 @@ select:focus-visible { outline: 3px solid var(--leaf); outline-offset: 2px; }
   cursor: crosshair;
 }
 
+#calOverlay { pointer-events: none; }
+.scan-stage.calibrating #calOverlay { pointer-events: auto; }
+.scan-stage.calibrating .tray-grid { display: none; }
+
+.cal-panel { margin-top: 12px; padding: 12px; border: 1px solid var(--line); border-radius: 14px; background: var(--mint); }
+.cal-help, .cal-count { font-size: 13px; color: var(--muted); line-height: 1.5; margin: 0 0 8px; }
+.cal-row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+
 .scan-status { font-size: 13px; color: var(--muted); line-height: 1.5; margin: 8px 0 0; }
 
 /* ── App shell ─────────────────────────────────────────────────────────────── */

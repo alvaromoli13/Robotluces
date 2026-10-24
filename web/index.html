@@ -47,8 +47,28 @@
       <div class="scan-stage">
         <video id="cameraPreview" autoplay playsinline muted></video>
         <canvas id="scanOverlay" aria-label="Rejilla del semillero sobre la cámara"></canvas>
+        <canvas id="calOverlay" aria-label="Puntos de calibración del robot"></canvas>
       </div>
       <p id="scanStatus" class="scan-status" aria-live="polite"></p>
+      <div id="calPanel" class="cal-panel" hidden>
+        <p class="cal-help"><strong>Calibrar robot.</strong> Pulsa «Soltar brazo», lleva la punta de la pinza a un punto de la bandeja y haz clic en ese punto de la imagen. Repite con al menos 4 puntos repartidos por la bandeja, ajusta, guarda la pose de inicio y bloquea el brazo.</p>
+        <p id="calStatus" class="scan-status" aria-live="polite"></p>
+        <div class="cal-row">
+          <button type="button" class="secondary-btn" id="calTorqueOffBtn">Soltar brazo</button>
+          <button type="button" class="secondary-btn" id="calTorqueOnBtn">Bloquear brazo</button>
+        </div>
+        <p class="cal-count"><span id="calCount"></span> · <span id="calResult"></span></p>
+        <div class="cal-row">
+          <button type="button" class="primary" id="calFitBtn" disabled>Ajustar</button>
+          <button type="button" class="secondary-btn" id="calClearBtn">Borrar puntos</button>
+        </div>
+        <div class="cal-row">
+          <button type="button" class="secondary-btn" id="calSaveStartBtn">Guardar pose de inicio</button>
+          <button type="button" class="secondary-btn" id="calSaveHomeBtn">Guardar home</button>
+          <button type="button" class="secondary-btn" id="calCloseBtn">Terminar</button>
+        </div>
+      </div>
+      <button id="calibrateBtn" class="scanner-secondary" type="button" aria-pressed="false">Calibrar robot</button>
       <button id="closeCameraBtn" class="scanner-secondary" type="button">Cerrar cámara</button>
     </div>
 
@@ -215,5 +235,6 @@
 <script src="./vendor/aruco.js"></script>
 <script src="./app.js"></script>
 <script src="./scanner.js"></script>
+<script src="./calibrate.js"></script>
 </body>
 </html>

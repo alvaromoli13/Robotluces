@@ -59,6 +59,7 @@ vc.on('error', m => errs.push('console.error: ' + m));
       window.addEventListener('unhandledrejection', e => errs.push('rejection: ' + e.reason));
       const planned = [];
       window.__planned = planned;
+      window.__calls = [];
       window.__refusePlan = null;  // set to {detail, code} to make /plan answer 422
       window.fetch = async (url, opts) => {
         if (MODE !== 'robot') throw new Error('connection refused');
@@ -72,6 +73,13 @@ vc.on('error', m => errs.push('console.error: ' + m));
           }
           planned.push(JSON.parse(opts.body));
           return { ok: true, status: 202, json: async () => ({ plan_id: 'p1', cells: 3 }) };
+        }
+        if (String(url).includes('/robot/calibration') || String(url).includes('/robot/torque-') || String(url).includes('/robot/poses/')) {
+          const path = String(url).replace(/^https?:\/\/[^/]+/, '');
+          window.__calls.push({ method: (opts && opts.method) || 'GET', path, body: opts && opts.body ? JSON.parse(opts.body) : null });
+          const reply = path === '/robot/calibration' ? { fitted: false, n: 0, image_size: null, points: [] }
+            : path.endsWith('/fit') ? { n: 4, mean_error_mm: 1.234, max_error_mm: 2.5 } : {};
+          return { ok: true, status: 200, json: async () => reply };
         }
         if (String(url).endsWith('/stop')) { window.__stopped = true; return { ok: true, json: async () => ({ stopped: true }) }; }
         throw new Error('connection refused');
@@ -464,6 +472,44 @@ vc.on('error', m => errs.push('console.error: ' + m));
   if (MODE === 'robot') ok('stop asked the backend to stop', window.__stopped === true);
   $('stopRunBtn').click();
   ok('closing after a stop restores the map', $('runPanel').hidden && !$('trayActions').hidden);
+
+  // ── Robot calibration from the camera view ──────────────────────────────────
+  if (MODE === 'robot') {
+    const video = $('cameraPreview');
+    Object.defineProperty(video, 'videoWidth', { configurable: true, value: 1280 });
+    Object.defineProperty(video, 'videoHeight', { configurable: true, value: 720 });
+    $('calOverlay').getBoundingClientRect = () => ({ left: 10, top: 20, width: 640, height: 360 });
+    const calls = () => window.__calls.map(c => c.method + ' ' + c.path);
+    window.__calls.length = 0;
+    $('calibrateBtn').click();
+    await sleep(100);
+    ok('calibrate opens its panel', !$('calPanel').hidden && $('calibrateBtn').getAttribute('aria-pressed') === 'true');
+    ok('calibrate status line comes from /robot/status', $('calStatus').textContent.includes('Robot simulado') && $('calStatus').textContent.includes('calibrado'), $('calStatus').textContent);
+    ok('ajustar needs 4 points', $('calFitBtn').disabled);
+    $('calTorqueOffBtn').click();
+    await sleep(50);
+    ok('soltar brazo posts torque-off', calls().includes('POST /robot/torque-off'), calls());
+    window.__calls.length = 0;
+    const click = (x, y) => $('calOverlay').dispatchEvent(Object.assign(new window.Event('pointerdown'), { clientX: x, clientY: y }));
+    click(10 + 320, 20 + 90);  // the middle of the width, a quarter down
+    await sleep(50);
+    const pt = window.__calls.find(c => c.path === '/robot/calibration/points');
+    ok('a click posts the point in video pixels', pt && pt.method === 'POST' && pt.body.u === 640 && pt.body.v === 180 &&
+      pt.body.image_size.join() === '1280,720', JSON.stringify(pt));
+    ok('the point counter follows', $('calCount').textContent.startsWith('1 punto'), $('calCount').textContent);
+    click(30, 40); click(100, 200); click(300, 300);
+    await sleep(100);
+    ok('four points enable ajustar', !$('calFitBtn').disabled, $('calCount').textContent);
+    $('calFitBtn').click();
+    await sleep(50);
+    ok('ajustar posts the fit and shows the error in mm', calls().includes('POST /robot/calibration/fit') && $('calResult').textContent.includes('1.2 mm'), $('calResult').textContent);
+    $('calSaveStartBtn').click(); $('calSaveHomeBtn').click(); $('calTorqueOnBtn').click(); $('calClearBtn').click();
+    await sleep(100);
+    ok('pose, home, torque-on and clear hit the API', ['POST /robot/poses/act_start', 'POST /robot/poses/home', 'POST /robot/torque-on', 'DELETE /robot/calibration/points'].every(c => calls().includes(c)), calls());
+    ok('clearing empties the counter', $('calCount').textContent.startsWith('0 puntos'), $('calCount').textContent);
+    $('calCloseBtn').click();
+    ok('terminar closes the panel', $('calPanel').hidden);
+  }
 
   ok('no page errors', errs.length === 0, JSON.stringify(errs));
 

@@ -569,8 +569,8 @@
   // The backend answers in English with a `code`; say it in Spanish, and keep its detail
   // when there is no better wording (it carries the list of cells, the missing poses...).
   const REFUSALS = {
-    torque_off: 'el par de los motores está desactivado. Actívalo (POST /robot/torque-on) antes de sembrar.',
-    no_calibration: 'la cámara no está calibrada con el robot: añade al menos 4 puntos y ajusta la homografía.',
+    torque_off: 'el par de los motores está desactivado. Pulsa «Bloquear brazo» en Escanear → Calibrar robot antes de sembrar.',
+    no_calibration: 'la cámara no está calibrada con el robot: pulsa Escanear → Calibrar robot, marca al menos 4 puntos y pulsa Ajustar.',
     busy: 'ya hay una siembra en curso. Párala antes de empezar otra.',
   };
 
