@@ -33,7 +33,7 @@ tipo butacas de cine y el robot siembra cada alveolo con la semilla elegida.
 | Puesta a punto con el brazo real: poses enseñadas y calibración cámara-robot | 🔜 |
 | Escena: pelotas, 4 cajas de colores, zonas marcadas, cámaras fijas | 🔜 |
 | Dataset de agarre y policy ACT | 🔜 |
-| Demo ensayada 5 veces seguidas, vídeo y dataset en el Hub | 🔜 |
+| Demo ensayada 5 veces seguidas, vídeo (a [la carpeta de Drive](https://drive.google.com/drive/folders/1uDB6e2SAj96LFbZUaVXhP8_1dHKJPw7n)) y dataset en el Hub | 🔜 |
 
 Checklist detallada por día: [guide.md](guide.md).
 
@@ -115,36 +115,44 @@ Con el backend arrancado en modo `real`, todo lo demás se hace por HTTP contra
 
 ### 4. Datos
 
+Dos policies ACT, **una por color de cuenco**, cada una con su dataset. Un episodio va de
+`home` al cuenco de ese color, coge una semilla y vuelve a `home`; los dos cuencos están en
+la mesa y se cambian de sitio entre episodios, para que la policy aprenda a buscar el color.
+
 ```bash
 lerobot-record \
   --robot.type=so101_follower \
   --teleop.type=so101_leader \
-  --dataset.repo_id=<usuario>/smartseed-grasp \
-  --dataset.single_task="grasp the seed below the gripper" \
-  --dataset.num_episodes=70
+  --dataset.repo_id=<usuario>/smartseed-pick-<color> \
+  --dataset.single_task="pick the seed from the <color> bowl and return home" \
+  --dataset.num_episodes=50 --dataset.episode_time_s=20 \
+  --dataset.tags='["BraboRobots","smartseed","robotekin-hackathon","lerobot","so101"]'
 ```
 
-Con el entorno del hackathon (`LeRobot competition/`) es lo mismo con `./scripts/11_record.sh`,
-que lee puertos, cámaras y tarea del `.env` (`TASK_NAME=smartseed-grasp`,
-`TASK_PROMPT="grasp the seed below the gripper"`, 70 episodios de 12 s con 10 s de pausa);
-`RESUME=1 ./scripts/11_record.sh` continúa una grabación cortada.
+Con el entorno del hackathon (`LeRobot competition/`) es `./scripts/11_record.sh`, que lee
+puertos, cámaras, tarea y etiquetas del `.env` (`TASK_NAME=smartseed-pick-<color>`,
+`TASK_PROMPT`, `NUM_EPISODES=50`, `EPISODE_TIME_S=20`, `HF_TAGS`);
+`RESUME=1 ./scripts/11_record.sh` continúa una grabación cortada. Antes de grabar hay que
+parar el backend en modo `real`: los dos usan el puerto del follower.
 
-Cada episodio empieza en la posición enseñada encima de una caja y acaba con la semilla
-cogida y levantada. Mezclar los 4 colores, mover un poco la caja dentro de su zona y
-variar la luz entre episodios. Tanda de prueba de ~10 episodios antes de grabar las 70.
+**Etiquetas en Hugging Face**: todos los datasets y modelos se publican con las etiquetas
+`BraboRobots`, `smartseed`, `robotekin-hackathon`, `lerobot` y `so101` (`--dataset.tags`
+al grabar, `--policy.tags` al entrenar). En el Hub no existe la cuenta `@BraboRobots`, así
+que va como etiqueta, no como mención.
 
 ### 5. Entrenamiento
 
 ```bash
 lerobot-train \
   --policy.type=act \
-  --dataset.repo_id=<usuario>/smartseed-grasp \
+  --dataset.repo_id=<usuario>/smartseed-pick-<color> \
   --steps=20000 \
-  --output_dir=outputs/act-grasp
+  --policy.repo_id=<usuario>/act-smartseed-pick-<color> \
+  --policy.tags='["BraboRobots","smartseed","robotekin-hackathon","lerobot","so101"]'
 ```
 
-En el Mac son unas 4 h para 20 000 pasos: se lanza por la noche. Una sola ACT para los
-4 colores, porque el agarre es la misma habilidad.
+Una ejecución por color. En la nube (`./scripts/21_train_cloud.sh`, Hugging Face Jobs)
+es alrededor de 1 h cada una; en el Mac (`./scripts/20_train_local.sh`) unas 4 h cada una.
 
 ### 6. Ejecución
 
@@ -166,8 +174,10 @@ par; `POST /robot/torque-off` solo cuando el brazo esté en un lugar seguro, y
 
 ### Datasets y modelos
 
-- Dataset de agarre: _pendiente de publicar en el Hub_.
-- Policy ACT entrenada: _pendiente de publicar en el Hub_.
+- Datasets `smartseed-pick-<color>` (uno por color): _pendiente de publicar en el Hub_.
+- Policies `act-smartseed-pick-<color>`: _pendiente de publicar en el Hub_.
+- **Vídeo final (1 minuto como máximo)**: se sube a la carpeta de Drive del equipo,
+  <https://drive.google.com/drive/folders/1uDB6e2SAj96LFbZUaVXhP8_1dHKJPw7n>, en cuanto esté terminado.
 
 ## Seguridad
 

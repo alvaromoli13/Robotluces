@@ -23,7 +23,8 @@ diseño que el cliente elige en una interfaz gráfica.
 
 **Entregables** (antes del domingo a las 13:00):
 1. **Demo en vivo** ante el jurado.
-2. **Vídeo de 1 minuto como máximo.**
+2. **Vídeo de 1 minuto como máximo.** Cuando esté terminado se deja en la carpeta de Drive
+   del equipo: <https://drive.google.com/drive/folders/1uDB6e2SAj96LFbZUaVXhP8_1dHKJPw7n>.
 3. **Dataset publicado en Hugging Face** (bonus +3).
 4. **Repositorio reproducible**, este (bonus +2).
 5. **Presentación** del proyecto y turno de preguntas del jurado.
@@ -400,8 +401,8 @@ píxeles no hay posición a la que llevar el brazo.
 - [ ] Fijar la **tarea de la demo** y ensayarla hasta que salga 5 veces seguidas sin tocar
       el robot.
 - [ ] Grabar el **vídeo de 1 minuto como máximo**: problema → interfaz → robot sembrando →
-      resultado.
-- [ ] Publicar los datasets en Hugging Face (+3) y enlazarlos aquí.
+      resultado, y subirlo a la [carpeta de Drive](https://drive.google.com/drive/folders/1uDB6e2SAj96LFbZUaVXhP8_1dHKJPw7n).
+- [ ] Publicar los datasets en Hugging Face (+3) con la etiqueta `BraboRobots` y enlazarlos aquí.
 - [ ] Dejar el repositorio reproducible (+2): comandos de grabación, entrenamiento y
       rollout, y la configuración usada.
 - [ ] Preparar la presentación y las respuestas a las preguntas más probables del jurado
