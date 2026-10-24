@@ -2,6 +2,7 @@ import threading
 
 import pytest
 
+from smartseed_robot.act import ACT_START_FALLBACK, ActConfig, ActGrasp
 from smartseed_robot.calibration import Calibration
 from smartseed_robot.executor import Executor, ExecutorConfig, PlanBusy, PlanError
 from smartseed_robot.poses import PoseStore
@@ -197,3 +198,99 @@ def test_unreachable_cell_is_rejected_before_any_motion(parts):
         ex.run([cell(0), cell(1, u=5000, v=240)], SIZE)  # far outside the arm's reach
     assert err.value.status == 422 and "1" in err.value.detail
     assert robot.commands == []
+
+
+# -- ACT grasp ---------------------------------------------------------------------------------------------
+POLICY_ROLL = 77.0
+ACT_START = {"shoulder_pan": 1.0, "shoulder_lift": -100.0, "elbow_flex": 95.0, "wrist_flex": 45.0, "wrist_roll": -5.0,
+             "gripper": 6.0}
+
+
+class FakePolicy:
+    def __init__(self):
+        self.calls = 0
+
+    def reset(self):
+        pass
+
+    def step(self, observation):
+        self.calls += 1
+        return {**ACT_START, "wrist_roll": POLICY_ROLL, "gripper": 7.0}
+
+
+def make_act_executor(tmp_path, kin, robot=None, steps=5, policy=None, taught_start=True, colors=("red",)):
+    poses = make_poses(tmp_path, colors=())
+    if taught_start:
+        poses.set("act_start", ACT_START)
+    policy = policy or FakePolicy()
+    act = ActGrasp(ActConfig(policies=dict.fromkeys(colors, "fake"), duration_s=steps / CONFIG.hz), lambda spec: policy)
+    robot = robot or FakeRobot(initial=HOME)
+    return robot, policy, Executor(robot, poses, make_calibration(), kin, config=CONFIG, act=act)
+
+
+def arm_of(state):
+    return {k: v for k, v in state.items() if k != "gripper"}
+
+
+def policy_commands(robot):
+    return [i for i, c in enumerate(robot.commands) if c.get("wrist_roll") == POLICY_ROLL]
+
+
+def test_act_cell_goes_start_policy_cell_open_start(tmp_path, kin):
+    robot, policy, ex = make_act_executor(tmp_path, kin, steps=5)
+    ex.run([cell(0, "red")], SIZE)
+    assert types(ex) == ["plan_started", "cell_started", "cell_done", "finished"]
+    assert policy.calls == 5 and len(policy_commands(robot)) == 5
+    first = policy_commands(robot)[0]
+    assert arm_of(robot.history[first - 1]) == pytest.approx(arm_of(ACT_START))  # act_start reached before the policy
+    target = (*robot_xy(320, 240), CONFIG.drop_z)
+    after = robot.history[policy_commands(robot)[-1] + 1:]
+    at_drop = [s for s in after if kin.tool_xyz(arm_of(s)) == pytest.approx(target, abs=0.003)]
+    assert at_drop and CONFIG.empty_below < at_drop[0]["gripper"] < CONFIG.gripper_open  # closed on the seed
+    assert max(s["gripper"] for s in at_drop) == CONFIG.gripper_open  # released above the cell
+    assert arm_of(robot.read_joints()) == pytest.approx(arm_of(ACT_START))  # back at act_start
+    assert not any(h == pytest.approx(ex.poses.get("above_box_red") or {}) for h in robot.history)
+
+
+def test_act_falls_back_to_the_mean_start_pose_when_untaught(tmp_path, kin):
+    robot, _, ex = make_act_executor(tmp_path, kin, taught_start=False)
+    ex.run([cell(0)], SIZE)
+    assert arm_of(robot.history[policy_commands(robot)[0] - 1]) == pytest.approx(arm_of(ACT_START_FALLBACK))
+    assert arm_of(robot.read_joints()) == pytest.approx(arm_of(ACT_START_FALLBACK))
+
+
+def test_stop_during_the_policy_loop_ends_within_one_step(tmp_path, kin):
+    class Stopping(FakeRobot):
+        def send_joints(self, target):
+            super().send_joints(target)
+            if len(policy_commands(self)) == 3:
+                ex.stop()
+
+    robot, policy, ex = make_act_executor(tmp_path, kin, robot=Stopping(initial=HOME), steps=50)
+    ex.run([cell(0), cell(1)], SIZE)
+    assert len(policy_commands(robot)) == 3 and policy.calls == 3
+    assert types(ex)[-1] == "stopped" and "finished" not in types(ex)
+    assert robot.commands[-1].get("wrist_roll") == POLICY_ROLL and robot.torque_enabled
+
+
+def test_colour_without_policy_still_uses_the_taught_box_path(tmp_path, kin):
+    poses = make_poses(tmp_path, colors=("green",))
+    act = ActGrasp(ActConfig(policies={"red": "fake"}), lambda spec: FakePolicy())
+    robot = FakeRobot(initial=HOME)
+    ex = Executor(robot, poses, make_calibration(), kin, config=CONFIG, act=act)
+    ex.run([cell(0, "green")], SIZE)
+    assert types(ex)[-1] == "finished" and policy_commands(robot) == []
+    assert any(s["shoulder_pan"] == pytest.approx(40.0) for s in robot.history)
+
+
+def test_colour_with_neither_policy_nor_pose_is_a_conflict(tmp_path, kin):
+    robot, _, ex = make_act_executor(tmp_path, kin)
+    with pytest.raises(PlanError) as err:
+        ex.run([cell(0, "red"), cell(1, "blue")], SIZE)
+    assert err.value.status == 409 and err.value.code == "missing_pose" and "above_box_blue" in err.value.detail
+    assert "above_box_red" not in err.value.detail and robot.commands == []
+
+
+def test_status_lists_policy_colours(tmp_path, kin):
+    _, _, ex = make_act_executor(tmp_path, kin, colors=("red", "green"))
+    assert ex.status()["policies"] == ["green", "red"]

@@ -2,12 +2,18 @@ from __future__ import annotations
 
 from typing import Protocol
 
+import numpy as np
+
 ARM_JOINTS = ("shoulder_pan", "shoulder_lift", "elbow_flex", "wrist_flex", "wrist_roll")
 JOINTS = (*ARM_JOINTS, "gripper")  # degrees, gripper 0-100
+CAMERAS = ("top", "wrist")
+IMAGE_SHAPE = (480, 640, 3)  # H, W, RGB
 
 
 class RobotPort(Protocol):
     def read_joints(self) -> dict[str, float]: ...
+    def read_observation(self) -> dict[str, np.ndarray]:
+        """Policy frame: `observation.state` (float32, JOINTS order) and `observation.images.<cam>` (HWC uint8)."""
     def send_joints(self, target: dict[str, float]) -> None: ...
     def torque_off(self) -> None: ...
     def torque_on(self) -> None: ...
@@ -39,6 +45,10 @@ class FakeRobot:
 
     def read_joints(self) -> dict[str, float]:
         return dict(self._state)
+
+    def read_observation(self) -> dict[str, np.ndarray]:
+        frame = {"observation.state": np.array([self._state[j] for j in JOINTS], dtype=np.float32)}
+        return frame | {f"observation.images.{cam}": np.zeros(IMAGE_SHAPE, dtype=np.uint8) for cam in CAMERAS}
 
     def send_joints(self, target: dict[str, float]) -> None:
         self.commands.append(dict(target))
@@ -72,15 +82,29 @@ class FakeRobot:
 class LeRobotFollower:
     """Adapter over lerobot's SO101Follower. Imports lerobot lazily so tests never need hardware."""
 
-    def __init__(self, port: str, robot_id: str = "follower_01", max_relative_target: float = 8.0):
+    def __init__(self, port: str, cameras: dict[str, int | str] | None = None, robot_id: str = "follower_01",
+                 max_relative_target: float = 8.0):
+        """`cameras` maps a camera name (`top`, `wrist`) to an OpenCV index or path, opened at 640x480@30."""
+        from lerobot.cameras.opencv import OpenCVCameraConfig
         from lerobot.robots.so_follower import SO101Follower, SO101FollowerConfig
+        from lerobot.utils.feature_utils import hw_to_dataset_features
 
         config = SO101FollowerConfig(port=port, id=robot_id, use_degrees=True,
                                      max_relative_target=max_relative_target,
-                                     disable_torque_on_disconnect=False)
+                                     disable_torque_on_disconnect=False,
+                                     cameras={name: OpenCVCameraConfig(index_or_path=index, fps=30, width=640,
+                                                                       height=480)
+                                              for name, index in (cameras or {}).items()})
         self._robot = SO101Follower(config)
         self._robot.connect(calibrate=False)
+        self._features = hw_to_dataset_features(self._robot.observation_features, "observation")
         self._torque = True
+
+    def read_observation(self) -> dict[str, np.ndarray]:
+        from lerobot.utils.constants import OBS_STR
+        from lerobot.utils.feature_utils import build_dataset_frame
+
+        return build_dataset_frame(self._features, self._robot.get_observation(), prefix=OBS_STR)
 
     def read_joints(self) -> dict[str, float]:
         obs = self._robot.get_observation()

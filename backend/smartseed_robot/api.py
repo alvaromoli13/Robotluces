@@ -5,11 +5,13 @@ import os
 import threading
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable
 
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
+from .act import ActConfig, ActGrasp, PolicyRunner
 from .calibration import Calibration, CalibrationError
 from .executor import Executor, ExecutorConfig, PlanError
 from .kinematics import IKError, LazyKinematics
@@ -32,9 +34,12 @@ class Runtime:
 
 
 def build_runtime(mode: str | None = None, port: str | None = None, data_dir=None, robot: RobotPort | None = None,
-                  kin=None, config: ExecutorConfig | None = None) -> Runtime:
-    """`fake` (default) never opens a serial port; `real` needs SMARTSEED_ROBOT_PORT."""
+                  kin=None, config: ExecutorConfig | None = None, act: ActConfig | None = None,
+                  policy_factory: Callable[[str], PolicyRunner] | None = None) -> Runtime:
+    """`fake` (default) never opens a serial port; `real` needs SMARTSEED_ROBOT_PORT. With ACT policies configured
+    the real follower also opens the top/wrist cameras (fake mode never does)."""
     mode = mode or os.environ.get("SMARTSEED_ROBOT", "fake")
+    act = act or ActConfig.from_env()
     data = Path(data_dir or os.environ.get("SMARTSEED_DATA_DIR") or DEFAULT_DATA_DIR)
     if robot is None:
         if mode == "real":
@@ -43,7 +48,7 @@ def build_runtime(mode: str | None = None, port: str | None = None, data_dir=Non
                 raise ValueError("SMARTSEED_ROBOT=real needs SMARTSEED_ROBOT_PORT (e.g. /dev/tty.usbmodem...)")
             from .robot import LeRobotFollower
 
-            robot = LeRobotFollower(port)
+            robot = LeRobotFollower(port, {"top": act.cam_top, "wrist": act.cam_wrist} if act.enabled else None)
         elif mode == "fake":
             robot = FakeRobot()
         else:
@@ -52,7 +57,8 @@ def build_runtime(mode: str | None = None, port: str | None = None, data_dir=Non
     poses, cal_path = PoseStore(data / "poses.json"), data / "calibration.json"
     calibration = Calibration.load(cal_path)
     return Runtime(mode, robot, poses, calibration, cal_path, kin,
-                   Executor(robot, poses, calibration, kin, config=config, mode=mode))
+                   Executor(robot, poses, calibration, kin, config=config, mode=mode,
+                            act=ActGrasp(act, policy_factory) if act.enabled else None))
 
 
 class Cell(BaseModel):

@@ -19,7 +19,7 @@ class PoseError(ValueError):
 
 
 def valid_name(name: str) -> bool:
-    return name == "home" or bool(POSE_NAME.fullmatch(name))
+    return name in ("home", "act_start") or bool(POSE_NAME.fullmatch(name))
 
 
 class PoseStore:

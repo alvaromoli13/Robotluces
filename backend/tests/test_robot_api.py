@@ -59,7 +59,7 @@ def client(tmp_path, kin):
 def test_status_contract_when_idle(client):
     assert client.get("/robot/status").json() == {
         "state": "idle", "robot": "fake", "plan_id": None, "current_cell": None, "done": [], "failed": [],
-        "calibrated": False, "poses": [], "torque": True}
+        "calibrated": False, "poses": [], "policies": [], "torque": True}
 
 
 def test_joints_endpoint_returns_joints_and_tool_position(client):
@@ -210,3 +210,39 @@ def test_torque_on_endpoint_and_motion_refused_while_torque_is_off(tmp_path, kin
     assert client.post("/robot/torque-on").json() == {"torque": True}
     assert client.get("/robot/status").json()["torque"] is True
     assert client.post("/robot/goto/home").status_code == 200
+
+
+def test_act_start_can_be_taught_and_policies_are_listed_in_status(tmp_path, kin):
+    from smartseed_robot.act import ActConfig
+
+    runtime = build_runtime(mode="fake", data_dir=tmp_path, robot=FakeRobot(initial=SEED), kin=kin, config=FAST,
+                            act=ActConfig(policies={"red": "fake/red"}), policy_factory=lambda spec: None)
+    client = TestClient(create_app(detector=None, depth=None, robot=runtime))
+    assert client.post("/robot/poses/act_start").status_code == 200
+    status = client.get("/robot/status").json()
+    assert status["policies"] == ["red"] and "act_start" in status["poses"]
+
+
+def test_real_mode_opens_cameras_only_when_policies_are_configured(tmp_path, monkeypatch):
+    from smartseed_robot import robot as robot_module
+    from smartseed_robot.act import ActConfig
+
+    made = []
+
+    class Recorder(FakeRobot):
+        def __init__(self, port, cameras=None):
+            super().__init__()
+            made.append((port, cameras))
+
+    monkeypatch.setattr(robot_module, "LeRobotFollower", Recorder)
+    build_runtime(mode="real", port="/dev/x", data_dir=tmp_path, act=ActConfig())
+    build_runtime(mode="real", port="/dev/x", data_dir=tmp_path,
+                  act=ActConfig(policies={"red": "r"}, cam_top=2, cam_wrist="/dev/video4"))
+    assert made[0] == ("/dev/x", None)
+    assert made[1] == ("/dev/x", {"top": 2, "wrist": "/dev/video4"})
+
+
+def test_env_configures_policies_in_fake_mode(tmp_path, monkeypatch):
+    monkeypatch.setenv("SMARTSEED_ACT_POLICIES", '{"purple": "user/act-purple"}')
+    runtime = build_runtime(mode="fake", data_dir=tmp_path)
+    assert runtime.executor.status()["policies"] == ["purple"]

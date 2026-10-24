@@ -101,6 +101,8 @@ Con el backend arrancado en modo `real`, todo lo demás se hace por HTTP contra
    `above_box_<color>` (por defecto `red|yellow|green|purple`; cualquier id de color que
    uses en la web, p. ej. `above_box_blue`) y `grasp_<color>` (la pose bajada para coger; sin
    ella la pinza se cierra sin bajar).
+   **Con policy ACT** (ver "Sembrar con policy ACT" abajo) basta `home` y `act_start`: no
+   hacen falta `above_box_<color>` para los colores que tienen policy.
 6. **Volver a activar el par**: `POST /robot/torque-on`. Antes de activarlo fija como
    destino la posición actual, así que el brazo no salta. Mientras el par está quitado,
    `POST /robot/goto/{nombre}` y `POST /plan` responden `409` con `code: "torque_off"`;
@@ -112,6 +114,40 @@ Con el backend arrancado en modo `real`, todo lo demás se hace por HTTP contra
    el brazo movido a mano). Al menos 4 puntos repartidos y `POST /robot/calibration/fit`,
    que devuelve el error en mm.
 9. **Medir el error** con una prueba de 10 alveolos antes de seguir.
+
+#### Sembrar con policy ACT
+
+Un color con policy ACT no usa `above_box_<color>`: por celda el ejecutor va a `act_start`,
+corre la policy a 30 Hz durante `SMARTSEED_ACT_DURATION_S` (va al cuenco, coge la semilla y
+vuelve con ella), sube con IK a la celda, abre la pinza y vuelve a `act_start`. Los colores
+sin policy siguen con las poses enseñadas.
+
+1. **Enseñar `act_start`**: con el par quitado, colocar el brazo como al empezar los
+   episodios (cerca de reposo) y `POST /robot/poses/act_start`. Sin enseñar se usa la media
+   de los episodios grabados `[1.1, -102.7, 96.8, 47.7, -6.0, 6.3]`.
+2. **Variables de entorno**:
+
+   | Variable | Por defecto | Qué hace |
+   |---|---|---|
+   | `SMARTSEED_ACT_POLICIES` | vacío | JSON `{"<color>": "<repo HF o ruta>"}`; sin ella no hay ACT |
+   | `SMARTSEED_ACT_DURATION_S` | `10` | segundos de policy por celda |
+   | `SMARTSEED_CAM_TOP` / `SMARTSEED_CAM_WRIST` | `0` / `1` | índice (o ruta) OpenCV de cada cámara, 640x480@30 |
+   | `SMARTSEED_POLICY_DEVICE` | `mps` si hay, si no `cpu` | dispositivo de inferencia |
+
+   Las policies se cargan en la primera celda de ese color (la primera vez descarga ~200 MB).
+   `GET /robot/status` lista los colores con policy en `policies`. En modo `fake` no se abren
+   puertos ni cámaras (las imágenes son negras).
+3. **Arrancar el servidor real desde Terminal.app** (o VS Code): macOS da el permiso de
+   cámara a la app que lanza el proceso, y Unpeel no lo tiene.
+
+   ```bash
+   cd backend
+   SMARTSEED_ROBOT=real SMARTSEED_ROBOT_PORT=/dev/tty.usbmodem5B8E1124861 \
+   SMARTSEED_ACT_POLICIES='{"<color>":"RafaelJaime/act-smartseed-grasp"}' ./run.sh
+   ```
+
+   Si el color de la política no coincide con el de la web, ese color se rechaza con `409`
+   (`missing_pose`) salvo que tenga `above_box_<color>`.
 
 ### 4. Datos
 
