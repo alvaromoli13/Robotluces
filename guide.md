@@ -260,7 +260,9 @@ desactivado: `POST /robot/torque-off`):
    en metros respecto a la base). Mide con una regla la punta de la pinza y compara.
 2. **Enseñar poses** (`home`, `above_box_red|yellow|green|purple`, y opcional `grasp_<color>`
    que baja a coger): coloca el brazo y `POST /robot/poses/{nombre}`.
-   `POST /robot/goto/{nombre}` comprueba que vuelve a ella.
+   `POST /robot/goto/{nombre}` comprueba que vuelve a ella, **después** de volver a activar
+   el par con `POST /robot/torque-on` (fija destino = posición actual, sin saltos). Con el
+   par quitado, `goto` y `/plan` responden `409 torque_off`.
 3. **Calibrar cámara-robot**: con la punta sobre un punto visible de la bandeja,
    `POST /robot/calibration/points {"u":..,"v":..,"image_size":[w,h]}` (x, y salen de la
    cinemática directa). Al menos 4 puntos repartidos y `POST /robot/calibration/fit`
@@ -268,7 +270,7 @@ desactivado: `POST /robot/torque-off`):
 4. **Sembrar**: `POST /plan {"image_size":[w,h],"cells":[{"cell_index","row","col","color","u","v"}]}`
    y seguir el progreso por `WS /robot/progress`.
 5. **Parar**: `POST /stop` (el brazo se queda en su sitio con par). `POST /robot/torque-off`
-   solo cuando el brazo esté en un lugar seguro.
+   solo cuando el brazo esté en un lugar seguro; `POST /robot/torque-on` para recuperarlo.
 
 Un agarre vacío (pinza cerrada del todo) se reintenta una vez; si falla otra vez la celda
 se marca como fallida y se sigue. Con la aproximación en vertical el alcance a altura de
@@ -370,7 +372,7 @@ con la pinza del SO-101 fallaría demasiado para aguantar 5 demos seguidas.
 ## Estructura del repositorio
 
 ```
-web/                        interfaz (se publica en GitHub Pages)
+web/                        interfaz (la raíz del sitio de Pages redirige aquí)
   index.html
   scanner.js                cámara en directo, rejilla, ArUco y llamada al backend
   README.md                 notas del prototipo de la interfaz
@@ -382,7 +384,8 @@ backend/                    servicio local (FastAPI): visión y control del robo
   tests/                    pytest con bandejas sintéticas y robot falso
   run.sh                    arranca en http://localhost:8000
 odd/tasks/                  documentos de tareas por funcionalidad
-.github/workflows/pages.yml despliega web/ en GitHub Pages
+.github/workflows/pages.yml despliegue antiguo de web/ (ver CLAUDE.md, «GitHub Pages»)
+index.html                  redirección de la raíz de Pages a web/
 README.md                   criterios resueltos y pasos para reproducir el resultado
 guide.md                    este documento: idea, arquitectura y plan
 CLAUDE.md                   guía para agentes y colaboradores
@@ -391,7 +394,9 @@ CLAUDE.md                   guía para agentes y colaboradores
 ## Probar la web
 
 Abre `web/index.html` en el navegador. No necesita compilación.
-También se publica en GitHub Pages cada vez que hay un push a `main` que cambia `web/`.
+Se publica en GitHub Pages: <https://alvaromoli13.github.io/Robotluces/> (la raíz redirige a
+`web/`). Pages está en modo *deploy from branch* (`main`, carpeta raíz), así que **cada push a
+`main` publica todo el repositorio**, no solo `web/`: no subas nada privado.
 
 ## Seguridad
 

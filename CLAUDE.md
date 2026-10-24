@@ -29,8 +29,8 @@ Implications for any work here:
 
 ## Layout
 
-- `web/` — the web UI. Plain HTML/CSS/JS, no build step, no framework. This folder is the
-  **GitHub Pages site root**.
+- `web/` — the web UI. Plain HTML/CSS/JS, no build step, no framework. Served at
+  `https://alvaromoli13.github.io/Robotluces/web/`; the root `index.html` redirects there.
 - `web/scanner.js` — live camera, grid overlay, tray localisation. Source priority:
   ArUco markers (ARUCO_MIP_36h12, ids 0-3 TL/TR/BR/BL) > depth holes from the backend (one
   cell per hole, no corners) > backend tray grid > manually dragged corners. A size typed
@@ -56,20 +56,25 @@ Implications for any work here:
   lerobot is pinned to commit `e595b79` (same as `vendor/lerobot`). Setup steps: `guide.md` "Ejecutor del robot"
   and `README.md` step 3.
 - `odd/tasks/` — per-feature task documents.
-- `.github/workflows/pages.yml` — deploys `web/` to GitHub Pages.
+- `.github/workflows/pages.yml` — older Actions deployment of `web/` (see below).
 - Root `README.md` — resolved criteria and reproduction steps. `guide.md` — project
   idea, architecture and plan. `web/README.md` — notes on the UI prototype.
 
 ## GitHub Pages deployment
 
-- The workflow uploads **only `web/`** (`upload-pages-artifact` with `path: "web"`).
-  Anything outside `web/` is not published.
-- It runs on push to `main` when `web/**` or the workflow itself changes, and manually via
-  `workflow_dispatch`.
+Current state (checked 2026-10-24):
+- Settings → Pages → Source is **Deploy from a branch** (`main`, `/`), build type `legacy`.
+  Every push to `main` publishes the **whole repository** (README, `backend/`, `odd/`…), not
+  only `web/`. Never commit secrets or private data.
+- The root `index.html` redirects to `web/`, so the public URL
+  `https://alvaromoli13.github.io/Robotluces/` opens the app.
+- `.github/workflows/pages.yml` still exists and deploys only `web/` as the site root when
+  `web/**` changes. With the branch source it competes with the branch build (whichever
+  deploys last wins, and `/web/` may stop existing until the next branch build). The team
+  has to pick one: remove the workflow and keep the branch source, or switch the source
+  back to **GitHub Actions** (then the root `index.html` redirect must go).
 - Keep asset paths **relative** (`./app.js`, not `/app.js`): the site is served under
   `https://<user>.github.io/Robotluces/`.
-- Repo setting required once: Settings → Pages → Source = **GitHub Actions**.
-- If the site folder is renamed, update `path:` and `paths:` in the workflow and this file.
 
 ## Conventions
 

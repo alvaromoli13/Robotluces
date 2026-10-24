@@ -25,7 +25,8 @@ tipo butacas de cine y el robot siembra cada alveolo con la semilla elegida.
 
 | Parte | Estado |
 |---|---|
-| Interfaz web (rejilla, 4 semillas, plantillas, última fórmula, progreso) | ✅ funcionando, publicada en GitHub Pages en modo demo |
+| Interfaz web (rejilla, 4 semillas, plantillas, última fórmula) | ✅ funcionando, publicada en GitHub Pages en modo demo |
+| Botón **Sembrar** conectado a `POST /plan` con progreso en directo y **Parar** | 🔜 en desarrollo; hoy solo simula |
 | Visión: localizar el semillero y contar alveolos (ArUco · profundidad · OWLv2) | ✅ backend local con tests |
 | Leader y follower montados y calibrados | ✅ viernes 23 |
 | Ejecutor del robot: cinemática, homografía, poses, cola de siembra y Stop | ✅ en código, con robot falso y tests |
@@ -52,7 +53,9 @@ Checklist detallada por día: [guide.md](guide.md).
 open web/index.html        # sin compilación ni dependencias
 ```
 
-También se publica en GitHub Pages en cada push a `main` que toque `web/`.
+Se publica en GitHub Pages: <https://alvaromoli13.github.io/Robotluces/> (la raíz redirige a
+`web/`). Pages está en modo *deploy from branch* (`main`, carpeta raíz), así que **cada push a
+`main` publica todo el repositorio**, no solo `web/`: no subas nada privado.
 
 ### 2. Backend de visión
 
@@ -95,12 +98,19 @@ Con el backend arrancado en modo `real`, todo lo demás se hace por HTTP contra
 4. **Comprobar la cinemática directa**: `GET /robot/joints` devuelve los ángulos y `tool`
    (x, y, z en metros desde la base). Medir la punta con una regla y comparar.
 5. **Enseñar poses**: colocar el brazo y `POST /robot/poses/{nombre}` para `home`,
-   `above_box_red|yellow|green|purple` y, opcionalmente, `grasp_<color>`.
-   `POST /robot/goto/{nombre}` comprueba que vuelve a ella.
-6. **Calibrar cámara-robot**: con la punta sobre un punto visible de la bandeja,
-   `POST /robot/calibration/points {"u":..,"v":..,"image_size":[w,h]}`. Al menos 4 puntos
-   repartidos y `POST /robot/calibration/fit`, que devuelve el error en mm.
-7. **Medir el error** con una prueba de 10 alveolos antes de seguir.
+   `above_box_red|yellow|green|purple` y `grasp_<color>` (la pose bajada para coger; sin
+   ella la pinza se cierra sin bajar).
+6. **Volver a activar el par**: `POST /robot/torque-on`. Antes de activarlo fija como
+   destino la posición actual, así que el brazo no salta. Mientras el par está quitado,
+   `POST /robot/goto/{nombre}` y `POST /plan` responden `409` con `code: "torque_off"`;
+   `GET /robot/status` lo indica en el campo `torque`.
+7. **Comprobar cada pose**: `POST /robot/goto/{nombre}` vuelve a ella.
+8. **Calibrar cámara-robot**: con la punta sobre un punto visible de la bandeja,
+   `POST /robot/calibration/points {"u":..,"v":..,"image_size":[w,h]}` (x, y salen de la
+   cinemática directa, así que la calibración también se puede hacer con el par quitado y
+   el brazo movido a mano). Al menos 4 puntos repartidos y `POST /robot/calibration/fit`,
+   que devuelve el error en mm.
+9. **Medir el error** con una prueba de 10 alveolos antes de seguir.
 
 ### 4. Datos
 
@@ -112,6 +122,11 @@ lerobot-record \
   --dataset.single_task="grasp the seed below the gripper" \
   --dataset.num_episodes=70
 ```
+
+Con el entorno del hackathon (`LeRobot competition/`) es lo mismo con `./scripts/11_record.sh`,
+que lee puertos, cámaras y tarea del `.env` (`TASK_NAME=smartseed-grasp`,
+`TASK_PROMPT="grasp the seed below the gripper"`, 70 episodios de 12 s con 10 s de pausa);
+`RESUME=1 ./scripts/11_record.sh` continúa una grabación cortada.
 
 Cada episodio empieza en la posición enseñada encima de una caja y acaba con la semilla
 cogida y levantada. Mezclar los 4 colores, mover un poco la caja dentro de su zona y
@@ -145,7 +160,8 @@ inicio → encima de la caja X (pose enseñada) → coger la semilla
 El progreso se sigue por `WS /robot/progress`. Un agarre vacío (pinza cerrada del todo) se
 reintenta una vez; si vuelve a fallar, la celda se marca como fallida y se pasa a la
 siguiente. **Stop** es `POST /stop`: corta la secuencia y el brazo se queda en su sitio con
-par; `POST /robot/torque-off` solo cuando el brazo esté en un lugar seguro.
+par; `POST /robot/torque-off` solo cuando el brazo esté en un lugar seguro, y
+`POST /robot/torque-on` antes de volver a mover el brazo.
 
 ### Datasets y modelos
 
