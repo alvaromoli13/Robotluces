@@ -36,6 +36,16 @@ def test_fk_ik_round_trip(kin, xyz):
     assert kin.tool_xyz(again) == pytest.approx(xyz, abs=0.003)
 
 
+FOLDED = {"shoulder_pan": 7.4, "shoulder_lift": -102.9, "elbow_flex": 97.1, "wrist_flex": -101.1, "wrist_roll": -0.4}
+
+
+@pytest.mark.parametrize("xyz", [(0.30, 0.0, 0.06), (0.38, -0.05, 0.06)])
+def test_ik_tilts_the_gripper_for_cells_beyond_the_straight_down_reach(kin, xyz):
+    # the taught home is folded; real tray cells sit 0.3-0.45 m out, where pointing down is impossible
+    joints = kin.solve(*xyz, seed=FOLDED)
+    assert kin.tool_xyz(joints) == pytest.approx(xyz, abs=0.003)
+
+
 def test_unreachable_target_raises(kin):
     with pytest.raises(IKError):
         kin.solve(0.9, 0.0, 0.1, seed=SEED)

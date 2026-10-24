@@ -49,14 +49,20 @@ class Kinematics:
         return float(x), float(y), float(z)
 
     def solve(self, x: float, y: float, z: float, seed: dict[str, float], max_rounds: int = 6) -> dict[str, float]:
+        """Gripper pointing down when possible; beyond that reach (~0.2-0.28 m) only the position counts."""
         target = pose_above(x, y, z)
-        current = self._vec(seed)
+        # a folded seed sends the position-only solve to twisted wrists; start it from an arm reaching towards (x, y)
+        reaching = np.array([math.degrees(math.atan2(y, x)), 0.0, 0.0, 60.0, seed["wrist_roll"]])
         with self._lock:
-            for _ in range(max_rounds):
-                current = np.array(self._kin.inverse_kinematics(current, target))[: len(ARM_JOINTS)]
-                reached = self._kin.forward_kinematics(current)[:3, 3]
-                if np.linalg.norm(reached - target[:3, 3]) < TOLERANCE_M:
-                    return dict(zip(ARM_JOINTS, map(float, current)))
+            for start, orientation_weight, rounds in ((self._vec(seed), 0.01, max_rounds),
+                                                      (reaching, 0.0, max_rounds * 5)):
+                current = start
+                for _ in range(rounds):
+                    current = np.array(self._kin.inverse_kinematics(
+                        current, target, orientation_weight=orientation_weight))[: len(ARM_JOINTS)]
+                    reached = self._kin.forward_kinematics(current)[:3, 3]
+                    if np.linalg.norm(reached - target[:3, 3]) < TOLERANCE_M:
+                        return dict(zip(ARM_JOINTS, map(float, current)))
         raise IKError(f"target ({x:.3f}, {y:.3f}, {z:.3f}) m is unreachable (missed by "
                       f"{np.linalg.norm(reached - target[:3, 3]) * 1000:.0f} mm)")
 
