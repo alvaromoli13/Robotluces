@@ -8,6 +8,7 @@ from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
 from .depth import find_holes, grid_in_tray
+from .occupancy import mark_occupied
 from .geometry import analyze_tray
 
 # One model at a time on the GPU: two threads driving MPS at once abort the whole process
@@ -93,6 +94,7 @@ def create_app(detector="default", depth="default", robot="default"):
         holes = find_holes(depth_map, tray=corners) if depth_map is not None else []
         if holes and geometry:
             holes = grid_in_tray(holes, corners, geometry.rows, geometry.cols) or holes
+        holes = mark_occupied(img, holes, corners)
         return {
             "found": geometry is not None,
             "corners": corners,
@@ -102,8 +104,8 @@ def create_app(detector="default", depth="default", robot="default"):
             "confidence": geometry.confidence if geometry else 0.0,
             "detector_score": score,
             "source": "owlv2" if bbox is not None else "contour",
-            "holes": [{k: float(v) if k in ("x", "y", "area", "depth") else int(v) for k, v in h.items()}
-                      for h in holes],
+            "holes": [{k: bool(v) if k == "occupied" else float(v) if k in ("x", "y", "area", "depth", "fill_score")
+                       else int(v) for k, v in h.items()} for h in holes],
             "elapsed_ms": round((time.perf_counter() - start) * 1000, 1),
             "image_size": [w, h],
         }

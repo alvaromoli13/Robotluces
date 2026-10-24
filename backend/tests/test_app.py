@@ -135,7 +135,8 @@ def test_holes_come_from_the_depth_map():
     assert [(h["row"], h["col"]) for h in body["holes"]] == [(0, 0), (0, 1)]
     got = np.array([[h["x"], h["y"]] for h in body["holes"]])
     assert np.abs(got - np.array(centers)).max() < 0.06
-    assert all(set(h) == {"x", "y", "area", "depth", "row", "col"} for h in body["holes"])
+    assert all(set(h) == {"x", "y", "area", "depth", "row", "col", "occupied", "fill_score"} for h in body["holes"])
+    assert all(h["occupied"] is False and isinstance(h["fill_score"], float) for h in body["holes"])
 
 
 def test_no_holes_without_depth_model(tray):
