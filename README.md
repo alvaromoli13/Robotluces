@@ -1,392 +1,159 @@
-# SmartSeed 🌱 — Siembra asistida con un brazo SO-101
+# SmartSeed 🌱 — criterios y reproducción
 
-Proyecto para el **Hackathon Robotekin LeRobot** (Vitoria-Gasteiz, 23-25 octubre 2026).
-Entrega: **domingo 13:00**. Presentaciones: 14:15.
+Hackathon Robotekin LeRobot · Vitoria-Gasteiz, 23-25 octubre 2026 · entrega domingo 13:00.
 
-## La idea
+Siembra asistida con un brazo **SO-101**: el cliente diseña su semillero en una interfaz
+tipo butacas de cine y el robot siembra cada alveolo con la semilla elegida.
 
-Un brazo robótico **SO-101** (LeRobot) siembra un semillero alveolado siguiendo el
-diseño que el cliente elige en una interfaz gráfica.
+> La idea completa, la arquitectura y el plan de trabajo están en **[guide.md](guide.md)**.
+> Este README recoge solo **cómo resolvemos cada criterio** y **los pasos para repetir
+> nuestro resultado**.
 
-- Hay **4 tipos de semilla**, cada uno en una **caja de un color**.
-- El semillero es una bandeja de alveolos en rejilla (filas × columnas).
-- La interfaz funciona como el **selector de asientos de un cine o de un estadio**: cada
-  alveolo es una casilla y se pinta del color de la semilla que llevará.
-- Cuando el cliente pulsa **Listo**, el robot coge las semillas de las cajas de colores y
-  va sembrando cada alveolo según el plan.
+## Criterios
 
-## Entregables y evaluación
+| Criterio | Qué se valora | Puntos | Cómo lo resolvemos |
+|---|---|---|---|
+| Demo en vivo | Cinco intentos seguidos de la tarea completa sin tocar el robot. Cada éxito suma 6 puntos. | 30 | Tarea de demo corta y fija: plantilla de 4 alveolos, uno por color. La secuencia es siempre la misma (posición enseñada sobre la caja → agarre con la policy → cinemática inversa al alveolo → soltar), con comprobación de la pinza y un reintento por celda, así que un fallo de agarre no rompe el intento. El semillero completo se reserva para el vídeo. |
+| Datos y entrenamiento | Cantidad, variedad y consistencia de las demostraciones, cámaras y encuadre, y cómo habéis iterado sobre los fallos. | 20 | 60-80 episodios de agarre grabados con `lerobot-record`, mezclando los 4 colores, moviendo la caja dentro de su zona y cambiando la luz entre episodios. Dos cámaras fijas y siempre el mismo encuadre: cenital (`top`) para la escena y muñeca (`wrist`) para el agarre. Antes de grabar todo, tanda de prueba de ~10 episodios con pocos pasos de entrenamiento para validar el pipeline. Cada iteración, sus fallos y el arreglo quedan apuntados en [guide.md](guide.md). |
+| Dificultad de la tarea | Ambición realista para 48 horas: desde coger un objeto hasta tareas de varios pasos que toleran cambios de posición o de luz. | 15 | Tarea de varios pasos y no de un solo agarre: elegir la caja del color correcto → coger → transportar → soltar en el alveolo (fila, columna) que pide el plan. Tolera cambios de posición por los dos lados: las **cajas se mueven** dentro de su zona y la policy corrige la diferencia; el **semillero va donde lo deje el agricultor** y se localiza por visión (ArUco, huecos por profundidad o detección con OWLv2), sin posiciones fijas. |
+| Utilidad e impacto | Si la solución resuelve un problema real. | 15 | La siembra de semilleros alveolados en viveros y huertos es trabajo manual, repetitivo y a medida. SmartSeed deja que el cliente diseñe la mezcla de variedades alveolo a alveolo, guarde plantillas y repita la última fórmula, sin tocar código ni el robot. |
+| Innovación e ingenio | Originalidad del enfoque y de la solución. | 10 | Interfaz de selector de butacas sobre la imagen en directo de la cámara cenital, con la rejilla **detectada** superpuesta y el progreso visible a simple vista. Enfoque **híbrido**: se aprende solo la parte difícil de percepción (una ACT de agarre, la misma para los 4 colores) y la geometría se calcula exacta con homografía y cinemática inversa. Detección del semillero sin marcadores: los alveolos se encuentran como **cuencas rodeadas de paredes** en un mapa de profundidad monocular, así que funciona con cualquier forma de bandeja. |
+| Presentación y equipo | Cómo contáis lo que habéis hecho y respondéis a las preguntas del jurado. | 10 | Relato en cuatro pasos: problema → interfaz → robot sembrando → resultado, el mismo del vídeo de 1 minuto. Llevamos preparadas las respuestas a las preguntas probables (cuántos datos, qué fallaba y cómo se arregló, por qué híbrido y no todo aprendido, qué utilidad real tiene). |
+| Bonus | Dataset publicado en Hugging Face (+3) y repositorio reproducible (+2). | +5 | Los datasets se suben al Hub en cuanto se graban y se enlazan aquí. El repositorio es reproducible: los comandos exactos de instalación, grabación, entrenamiento y ejecución están en la sección siguiente. |
 
-**Entregables** (antes del domingo a las 13:00):
-1. **Demo en vivo** ante el jurado.
-2. **Vídeo de 1 minuto como máximo.**
-3. **Dataset publicado en Hugging Face** (bonus +3).
-4. **Repositorio reproducible**, este (bonus +2).
-5. **Presentación** del proyecto y turno de preguntas del jurado.
+## Estado
 
-**Criterios.** Cada jurado puntúa a cada equipo y la nota final es la media de todos.
+| Parte | Estado |
+|---|---|
+| Interfaz web (rejilla, 4 semillas, plantillas, última fórmula, progreso) | ✅ funcionando, publicada en GitHub Pages en modo demo |
+| Visión: localizar el semillero y contar alveolos (ArUco · profundidad · OWLv2) | ✅ backend local con tests |
+| Leader y follower montados y calibrados | ✅ viernes 23 |
+| Ejecutor del robot: cinemática, homografía, poses, cola de siembra y Stop | ✅ en código, con robot falso y tests |
+| Puesta a punto con el brazo real: poses enseñadas y calibración cámara-robot | 🔜 |
+| Escena: pelotas, 4 cajas de colores, zonas marcadas, cámaras fijas | 🔜 |
+| Dataset de agarre y policy ACT | 🔜 |
+| Demo ensayada 5 veces seguidas, vídeo y dataset en el Hub | 🔜 |
 
-| Criterio | Qué se valora | Puntos |
-|---|---|---|
-| Demo en vivo | 5 intentos seguidos de la tarea completa **sin tocar el robot**; cada éxito suma 6 puntos | 30 |
-| Datos y entrenamiento | Cantidad, variedad y consistencia de las demostraciones; cámaras y encuadre; cómo se ha iterado sobre los fallos | 20 |
-| Dificultad de la tarea | Ambición realista para 48 h: desde coger un objeto hasta tareas de varios pasos que aguantan cambios de posición o de luz | 15 |
-| Utilidad e impacto | Que resuelva un problema real | 15 |
-| Innovación e ingenio | Originalidad del enfoque y de la solución | 10 |
-| Presentación y equipo | Cómo se cuenta lo hecho y cómo se responde al jurado | 10 |
-| Bonus | Dataset en Hugging Face (+3) y repositorio reproducible (+2) | +5 |
+Checklist detallada por día: [guide.md](guide.md).
 
-**Qué implica para el proyecto:**
-- **La demo es lo que más puntúa** (30). La "tarea completa" de la demo tiene que ser
-  algo que el robot haga bien **5 veces seguidas**, por ejemplo una plantilla pequeña
-  fija de 4 alveolos, uno por color. Es mejor una demo corta y fiable que el semillero
-  entero con fallos. El semillero completo puede salir en el vídeo.
-- **Datos (20)**: muchas demostraciones y consistentes, variando un poco la posición de
-  las semillas y la luz. Hay que apuntar los fallos de cada iteración y cómo se
-  arreglaron (ver `docs/iteraciones.md` cuando exista), porque es lo que se cuenta al
-  jurado.
-- **Dificultad (15)**: la tarea es de varios pasos (elegir caja → coger → llevar →
-  soltar en el alveolo correcto), lo que ya es ambicioso. Hay que demostrar que aguanta
-  cambios de posición o de luz.
-- **Utilidad (15)**: siembra a medida para viveros y huertos; el cliente diseña su
-  semillero sin trabajo manual repetitivo.
-- **Innovación (10)**: la interfaz tipo butacas de cine con la cámara en directo y las
-  plantillas reutilizables.
-- **Bonus (+5)**: subir los datasets al Hub en cuanto se graben y dejar en el repo los
-  comandos exactos para grabar, entrenar y ejecutar.
+## Pasos para repetir nuestro resultado
 
-## Flujo de uso
+### 0. Requisitos
 
-0. **Colocar el semillero**: el agricultor deja la bandeja **en cualquier sitio de la zona
-   de trabajo** de la mesa. La cámara cenital la detecta y la web muestra la rejilla real
-   (número de alveolos y su posición) sobre la imagen en directo.
-1. **Elegir plantilla**: al abrir la app se carga la **última fórmula usada**. También se
-   puede escoger una **plantilla guardada**.
-2. **Editar**: el cliente toca alveolos para cambiar su semilla (cada alveolo puede llevar
-   una semilla distinta), o usa los botones de
-   **rellenar todo de un color**. Los alveolos vacíos se quedan sin sembrar.
-3. **Guardar (opcional)**: el diseño se puede guardar como plantilla con nombre.
-4. **Listo**: se envía el plan al robot. La interfaz muestra en directo qué alveolo se
-   está sembrando y cuáles ya están hechos.
-5. **Terminado**: la fórmula queda guardada como "última usada" para la próxima vez.
+- Mac con Python 3.12 y [uv](https://docs.astral.sh/uv/).
+- Un brazo **SO-101** (leader + follower) y dos cámaras USB: cenital (`top`) y muñeca (`wrist`).
+- LeRobot (`lerobot[feetech,kinematics]`, fijado al commit `e595b79`) ya es dependencia del
+  backend: lo instala `uv sync`. El URDF y las mallas del SO-101 están en el repositorio
+  (`backend/assets/so101/`), no hay que descargarlos.
 
-La rejilla se muestra **sobre la imagen de la cámara cenital**, de modo que el cliente ve
-el semillero real con el plan superpuesto, y el progreso se puede comprobar a simple vista.
+### 1. Interfaz
 
-## Arquitectura
-
-```
-┌──────────────┐  plan (JSON)  ┌──────────────────┐  acciones  ┌──────────┐
-│  Web (web/)  │ ────────────▶ │ Backend local    │ ─────────▶ │  SO-101  │
-│ rejilla +    │ ◀──────────── │ (Mac, Python,    │ ◀───────── │ follower │
-│ cámara       │  progreso     │  LeRobot)        │  estado    │ + cámaras│
-└──────────────┘  (WebSocket)  └──────────────────┘            └──────────┘
+```bash
+open web/index.html        # sin compilación ni dependencias
 ```
 
-- **Web** (`web/`): HTML/CSS/JS sin framework. Plantillas y última fórmula en
-  `localStorage`. Se publica en GitHub Pages en **modo demo**, sin robot.
-- **Backend local**: servidor en Python en el portátil conectado al robot. Recibe el plan,
-  lo convierte en una cola de tareas `(color de caja → alveolo fila,columna)` y transmite
-  la cámara y el progreso. También detecta el semillero en la imagen. Es el único sitio
-  que habla con el hardware.
-- **Ejecución en el robot**: enfoque híbrido, ver la sección siguiente.
+También se publica en GitHub Pages en cada push a `main` que toque `web/`.
 
-## Enfoque del robot: híbrido
-
-Cada alveolo del plan se siembra en dos fases:
-
-| Fase | Cómo se hace | Qué se mueve en la escena |
-|---|---|---|
-| 1. **Coger** la "semilla" de la caja del color X | Movimiento programado hasta encima de la caja X y después **policy aprendida** (ACT) que hace el agarre final con la cámara de la muñeca | Las **cajas pueden moverse** unos centímetros dentro de su zona: la policy corrige la diferencia |
-| 2. **Soltarla** en el alveolo (fila, columna) | **Visión + cinemática inversa**: la cámara localiza el alveolo y el brazo calcula cómo llegar encima | El **semillero va donde lo deje el agricultor**, dentro de la zona de trabajo |
-
-- **Policy: una sola ACT de agarre, igual para todos los colores.** El brazo llega por
-  movimiento programado a una posición enseñada encima de la caja que toca, y desde ahí la
-  ACT hace solo "coge la semilla que tienes debajo", guiándose sobre todo por la cámara de
-  la muñeca. Es la misma habilidad para las 4 cajas, así que basta **un modelo y unos
-  60-80 episodios** mezclando los 4 colores, y se entrena en una noche.
-- **Por qué no 4 ACT, una por color**: en el Mac cada entrenamiento de 20 000 pasos tarda
-  unas 4 horas (medido antes del evento), unas 17 horas para las 4. No cabe en el tiempo
-  del hackathon.
-- Alternativa descartada por tiempo: una SmolVLA que reciba el color como texto.
-- **Por qué no se aprende todo**: ACT no recibe "a qué alveolo voy". Aprender
-  "caja X → alveolo (fila, columna)" exigiría demostraciones para 4 colores × 40 alveolos,
-  cientos de combinaciones, y no cabe en 48 horas. La parte geométrica (dónde está cada
-  alveolo) es un cálculo exacto; la parte difícil de percepción (coger de una caja que se
-  ha movido) es la que se aprende.
-- **Lo que suma puntos**: la variación de las cajas en las demostraciones es lo que
-  demuestra el criterio de dificultad ("aguanta cambios de posición o de luz") y el de
-  datos y entrenamiento.
-- **Plan B de la recogida**: si la policy no es fiable a tiempo, las cajas también se fijan
-  y la recogida se hace con posiciones enseñadas. La demo sale igual y la policy queda
-  como mejora.
-
-## Secuencia de siembra
-
-El ejecutor del backend recorre el plan celda a celda. Cada siembra es una secuencia fija:
-
-```
-inicio → encima de la caja X (posición enseñada) → ACT coge la semilla
-→ subir → encima de la celda (cinemática inversa) → abrir pinza → inicio
-```
-
-1. **Encima de la caja X**: una posición articular enseñada con el leader para cada zona
-   de caja, guardada una vez.
-2. **Agarre**: se ejecuta la ACT durante unos segundos, como máximo, hasta que cierra la
-   pinza.
-3. **¿Ha cogido algo?** Se mira la posición de la pinza (`gripper.pos`, de 0 a 100): si se
-   ha cerrado del todo, no hay nada dentro. Si falla, se reintenta una vez y, si vuelve a
-   fallar, se marca la celda como fallida y se pasa a la siguiente.
-4. **Subir** unos centímetros en vertical para no arrastrar la caja.
-5. **Encima de la celda**: el centro de la celda en píxeles pasa a (x, y) del robot con la
-   homografía, se le suma una altura fija de unos 5 cm sobre la bandeja y la cinemática
-   inversa da los ángulos (ver la sección siguiente).
-6. **Abrir pinza**, volver a inicio y avisar a la web del progreso.
-
-**Cómo se mueve el brazo.** El SO-101 recibe ángulos de articulación en grados:
-`robot.send_action({"shoulder_pan.pos": …, "shoulder_lift.pos": …, "elbow_flex.pos": …,
-"wrist_flex.pos": …, "wrist_roll.pos": …, "gripper.pos": 0-100})`. El destino no se manda
-de golpe: se interpola entre la posición actual y la final a unos 30 Hz, y
-`max_relative_target` en la configuración del follower limita cuánto puede moverse en
-cada paso, por seguridad.
-
-**Stop**: corta la secuencia y desactiva el par de los motores. Tiene que funcionar desde
-la web y desde el teclado del portátil.
-
-## Semillero libre: detección y cinemática inversa
-
-### 1. Detectar el semillero
-- Se pegan **4 marcadores ArUco** del diccionario `ARUCO_MIP_36h12` en las esquinas de la
-  bandeja: id 0 arriba a la izquierda, 1 arriba a la derecha, 2 abajo a la derecha y 3 abajo
-  a la izquierda ([generador para imprimirlos](https://damianofalcioni.github.io/js-aruco2/samples/marker-creator/marker-creator.html?dictionary=ARUCO_MIP_36h12)).
-  La web (`web/scanner.js`) los detecta en directo con `js-aruco2`. OpenCV (`cv2.aruco`, ya
-  instalado) los encuentra con cualquier luz, mucho mejor que intentar detectar una
-  bandeja negra con alveolos negros.
-- Con las 4 esquinas y el número de filas × columnas se calcula el centro de cada alveolo
-  en píxeles, aunque la bandeja esté girada. Eso es lo que la web pinta sobre la imagen.
-- **Sin marcadores: modelo de visión local** (`backend/`). Funciona sin internet una vez
-  descargado el modelo:
-  - **OWLv2** (`google/owlv2-base-patch16-ensemble`), un detector abierto que busca
-    objetos a partir de texto ("a black plastic seed tray"), localiza la bandeja en la
-    imagen.
-  - **OpenCV** saca dentro de esa zona las 4 esquinas exactas, endereza la bandeja y
-    **cuenta filas y columnas** por la repetición de los bordes de los alveolos.
-  - La web le manda un fotograma por segundo y pinta el resultado en directo, con la
-    rejilla en azul. En el Mac (MPS) tarda unos 0,7 s por fotograma; la primera vez,
-    unos 12 s más mientras carga el modelo.
-- **Huecos por profundidad, sin esquinas.** **Depth Anything V2 Small**
-  (`depth-anything/Depth-Anything-V2-Small-hf`) estima la profundidad relativa de cada
-  píxel (unos 130 ms por fotograma en MPS). La mesa alrededor de la caja está tan baja
-  como el fondo de un compartimento, así que «hondo» no basta: un hueco es una **cuenca
-  rodeada de paredes**, una zona de la que el agua no podría salir hasta el borde de la
-  imagen sin pasar por encima de una pared. Cada cuenca da el centro de un hueco y la web
-  pone una casilla encima, sea cual sea la forma de la bandeja. Con la caja de cartón de
-  2 compartimentos detecta los 2 huecos con la cámara real.
-- **Prioridad** en la web: ArUco (rejilla verde) > huecos por profundidad (círculos azules)
-  > rejilla del modelo de visión (azul) > esquinas arrastradas a mano (amarilla). Si el
-  usuario escribe filas o columnas a mano, se vuelve a la rejilla y el modelo ya no las
-  sobrescribe.
-- Sin backend la web funciona igual, con marcadores o esquinas a mano.
-
-Arrancar el backend (en el portátil del robot):
+### 2. Backend de visión
 
 ```bash
 cd backend
-uv sync          # la primera vez; instala torch, transformers y OpenCV en backend/.venv
-./run.sh         # http://localhost:8000 · GET /health · POST /vision/tray
+uv sync                    # la primera vez: torch, transformers, OpenCV en backend/.venv
+./run.sh                   # http://localhost:8000 · GET /health · POST /vision/tray
+uv run pytest              # tests con bandejas y mapas de profundidad sintéticos
 ```
 
-Después abre la web (publicada o `web/index.html`) y pulsa **Escanear con cámara**. Si
-el backend está en otra dirección, ejecuta esto en la consola del navegador:
-`localStorage.setItem('smartseed.backendUrl', 'http://IP:8000')`.
+En la web, **Escanear con cámara**. Si el backend está en otra dirección, en la consola
+del navegador:
 
-Limitaciones conocidas: está ajustado con imágenes sintéticas. Con la bandeja real hay
-que comprobar los brillos sobre el plástico negro, una mesa oscura que se confunda con la
-bandeja y si cuenta bien los huecos (puede contar la mitad o el doble si las sombras
-marcan otro patrón). Tests: `cd backend && uv run pytest`.
+```js
+localStorage.setItem('smartseed.backendUrl', 'http://IP:8000')
+```
 
-### 2. Calibrar la cámara con el robot (una vez)
-- Se lleva la punta de la pinza a 4-6 marcas de la mesa. En cada una se guarda el píxel
-  donde la ve la cámara y la posición de la punta que da la cinemática directa.
-- `cv2.findHomography` convierte esas parejas en una transformación **píxel de la mesa →
-  coordenadas (x, y) del robot**. Como esas posiciones salen del mismo modelo del brazo que
-  luego usa la cinemática inversa, buena parte de los errores del modelo se compensan.
-- Unos 15 minutos. Solo se repite si se mueve la cámara cenital o el robot.
+`SMARTSEED_DISABLE_MODEL=1` arranca sin OWLv2 (solo contornos), útil para probar rápido.
 
-### 3. Soltar en el alveolo
-- Para cada alveolo: píxel → (x, y) del robot → **cinemática inversa** a una altura fija
-  unos centímetros por encima del alveolo → abrir la pinza.
-- LeRobot trae la cinemática: `lerobot.model.kinematics.RobotKinematics`
-  (`forward_kinematics` / `inverse_kinematics`). Requisitos:
-  - `uv pip install -e "vendor/lerobot[kinematics]"`, que instala `placo`.
-  - El URDF del SO-101, `so101_new_calib.urdf`, del repositorio
-    [SO-ARM100](https://github.com/TheRobotStudio/SO-ARM100/tree/main/Simulation/SO101).
+El mismo servicio expone el ejecutor del robot. Por defecto usa un **robot falso**
+(`SMARTSEED_ROBOT=fake`) y no abre ningún puerto serie. Con el brazo real:
 
-### Riesgos y cómo mitigarlos
-- **El URDF tiene que coincidir con nuestra calibración**: `so101_new_calib` está pensado
-  para la calibración de LeRobot, pero hay que comprobarlo en 10 minutos. Se mueve el brazo
-  a mano y se mira que la posición que da `forward_kinematics` coincida con la real.
-- **Precisión**: entre la calibración y la cinemática se puede acumular alrededor de 1 cm
-  de error (estimación, **hay que medirlo**). Con alveolos de 4 cm y pelotas de 2,5 cm el
-  margen es justo. Mitigación: soltar desde un poco más arriba, pelotas algo más pequeñas o
-  una bandeja con alveolos más grandes, y medir el error real con una prueba de
-  10 alveolos.
-- **Zona de trabajo**: "cualquier sitio" significa dentro de la zona donde llega el brazo
-  y que ve la cámara cenital. Se marca en la mesa. Si la bandeja queda fuera, la web avisa
-  y no arranca.
-- **Tiempo**: instalar, calibrar y ajustar cuesta medio sábado. Es el mayor riesgo técnico
-  del proyecto.
+```bash
+SMARTSEED_ROBOT=real SMARTSEED_ROBOT_PORT=/dev/tty.usbmodemXXXX ./run.sh
+```
 
-### Plan B del semillero
-Si el **sábado a mediodía** la prueba de 10 alveolos no acierta de forma fiable, se dibuja
-en la mesa el contorno de la bandeja y se sueltan las pelotas con **4 esquinas enseñadas
-con el leader** e interpolación. La cámara sigue detectando la rejilla para la web y
-comprueba que la bandeja está en su sitio.
+Las poses enseñadas y la calibración se guardan en `backend/data/` (fuera de git;
+`SMARTSEED_DATA_DIR` cambia la ruta).
 
-## Ejecutor del robot (`backend/smartseed_robot/`)
+### 3. Escena y calibración
 
-Por defecto el robot es **falso** (`SMARTSEED_ROBOT=fake`): no abre ningún puerto serie. Con
-el brazo real: `SMARTSEED_ROBOT=real SMARTSEED_ROBOT_PORT=/dev/tty.usbmodem5B8E1124861 ./run.sh`
-(follower `follower_01`, grados, `max_relative_target` 8). Los datos enseñados se guardan en
-`backend/data/` (`poses.json`, `calibration.json`, fuera de git; `SMARTSEED_DATA_DIR` lo cambia).
+1. Marcar en la mesa la **zona de trabajo** del semillero y la zona de cada caja de color.
+2. Pegar los 4 marcadores ArUco (`ARUCO_MIP_36h12`, ids 0-3 = arriba-izq, arriba-der,
+   abajo-der, abajo-izq) en las esquinas de la bandeja.
+3. Colocar las cámaras `top` y `wrist`. **A partir de aquí, cámaras y robot no se mueven.**
 
-Puesta a punto con el brazo (todo en `http://127.0.0.1:8000`, mueve el brazo a mano con el par
-desactivado: `POST /robot/torque-off`):
+Con el backend arrancado en modo `real`, todo lo demás se hace por HTTP contra
+`http://127.0.0.1:8000`. Para mover el brazo a mano, primero `POST /robot/torque-off`:
 
-1. **Comprobar la cinemática directa**: `GET /robot/joints` devuelve ángulos y `tool` (x, y, z
-   en metros respecto a la base). Mide con una regla la punta de la pinza y compara.
-2. **Enseñar poses** (`home`, `above_box_red|yellow|green|purple`, y opcional `grasp_<color>`
-   que baja a coger): coloca el brazo y `POST /robot/poses/{nombre}`.
+4. **Comprobar la cinemática directa**: `GET /robot/joints` devuelve los ángulos y `tool`
+   (x, y, z en metros desde la base). Medir la punta con una regla y comparar.
+5. **Enseñar poses**: colocar el brazo y `POST /robot/poses/{nombre}` para `home`,
+   `above_box_red|yellow|green|purple` y, opcionalmente, `grasp_<color>`.
    `POST /robot/goto/{nombre}` comprueba que vuelve a ella.
-3. **Calibrar cámara-robot**: con la punta sobre un punto visible de la bandeja,
-   `POST /robot/calibration/points {"u":..,"v":..,"image_size":[w,h]}` (x, y salen de la
-   cinemática directa). Al menos 4 puntos repartidos y `POST /robot/calibration/fit`
-   (devuelve el error en mm).
-4. **Sembrar**: `POST /plan {"image_size":[w,h],"cells":[{"cell_index","row","col","color","u","v"}]}`
-   y seguir el progreso por `WS /robot/progress`.
-5. **Parar**: `POST /stop` (el brazo se queda en su sitio con par). `POST /robot/torque-off`
-   solo cuando el brazo esté en un lugar seguro.
+6. **Calibrar cámara-robot**: con la punta sobre un punto visible de la bandeja,
+   `POST /robot/calibration/points {"u":..,"v":..,"image_size":[w,h]}`. Al menos 4 puntos
+   repartidos y `POST /robot/calibration/fit`, que devuelve el error en mm.
+7. **Medir el error** con una prueba de 10 alveolos antes de seguir.
 
-Un agarre vacío (pinza cerrada del todo) se reintenta una vez; si falla otra vez la celda
-se marca como fallida y se sigue. Con la aproximación en vertical el alcance a altura de
-bandeja es de unos 28 cm desde la base.
+### 4. Datos
 
-## Escena y objetos
-
-Las semillas se representan con **pelotas** u objetos parecidos: coger una semilla real
-con la pinza del SO-101 fallaría demasiado para aguantar 5 demos seguidas.
-
-- **Tamaño**: más o menos el 60-70 % de la boca del alveolo, para que entre aunque el
-  robot suelte un poco desviado. Por ejemplo, unos 2,5 cm para alveolos de 4 cm.
-- **Que no reboten ni rueden**: bolas de madera, de goma maciza, canicas grandes o
-  pompones. Nada de pelotas de ping-pong.
-- **Color**: cada pelota del color de su caja. Se entiende al momento en la demo y en
-  el vídeo.
-- **Cajas**: bajas, de 3 a 5 cm de borde, para que la pinza llegue al fondo, y con pocas
-  pelotas dentro para que no coja dos a la vez.
-- **Mesa**: de un color que contraste con las pelotas y las cajas y sin reflejos, con la
-  luz lo más constante posible.
-
-### Formato del plan
-
-```json
-{
-  "tray": { "rows": 5, "cols": 8 },
-  "seeds": {
-    "red":    "tomate",
-    "green":  "lechuga",
-    "yellow": "girasol",
-    "purple": "albahaca"
-  },
-  "cells": [["red", "red", null, "green", "..."], "..."]
-}
+```bash
+lerobot-record \
+  --robot.type=so101_follower \
+  --teleop.type=so101_leader \
+  --dataset.repo_id=<usuario>/smartseed-grasp \
+  --dataset.single_task="grasp the seed below the gripper" \
+  --dataset.num_episodes=70
 ```
 
-`null` = alveolo vacío. El tamaño de la bandeja es configurable.
+Cada episodio empieza en la posición enseñada encima de una caja y acaba con la semilla
+cogida y levantada. Mezclar los 4 colores, mover un poco la caja dentro de su zona y
+variar la luz entre episodios. Tanda de prueba de ~10 episodios antes de grabar las 70.
 
-## Pasos a seguir
+### 5. Entrenamiento
 
-### 1. Hardware y escena (viernes)
-- [x] Montar el leader y el follower y calibrarlos (hecho el viernes 23).
-- [ ] Comprobar que la teleoperación va bien, pinza incluida.
-- [ ] Conseguir las pelotas y las 4 cajas de colores (ver [Escena y objetos](#escena-y-objetos)).
-- [ ] Marcar en la mesa la **zona de trabajo** del semillero y la zona de cada caja: se
-      pueden mover dentro de su zona.
-- [ ] Pegar los 4 marcadores ArUco en las esquinas de la bandeja.
-- [ ] Colocar la cámara cenital (`top`), que vea toda la zona de trabajo y las zonas de
-      las cajas, y la del brazo (`wrist`). **Las cámaras y el robot no se mueven más.**
-- [ ] Probar con la teleoperación que se coge una pelota de cada caja y se suelta en un
-      alveolo.
-
-### 2. Interfaz (viernes-sábado)
-- [ ] Rejilla de alveolos tipo cine, con tamaño configurable.
-- [ ] Selector de las 4 semillas/colores y botones de "rellenar todo de un color".
-- [ ] Guardar y cargar plantillas, y cargar automáticamente la última fórmula usada.
-- [ ] Botón **Listo** que envía el plan al backend, con vista de progreso.
-- [ ] Imagen de la cámara cenital con la rejilla **detectada** superpuesta, y aviso si la
-      bandeja está fuera de la zona de trabajo.
-
-### 3. Backend y conexión con el robot (sábado)
-- [ ] Servidor local (FastAPI + WebSocket) con los endpoints `POST /plan`, `POST /stop`
-      y `WS /progress`, y streaming de la cámara.
-- [ ] Detección del semillero con ArUco → centros de los alveolos en píxeles.
-- [ ] Instalar `lerobot[kinematics]` y descargar el URDF del SO-101. Comprobar que la
-      cinemática directa coincide con la posición real del brazo.
-- [ ] Enseñar con el leader la posición encima de cada zona de caja y la posición de
-      inicio.
-- [ ] Calibración cámara-robot (homografía píxel → x, y del robot).
-- [ ] Soltar por cinemática inversa y **medir el error** con una prueba de 10 alveolos.
-- [ ] Sábado a mediodía: decidir entre semillero libre o plan B (esquinas enseñadas).
-- [ ] Ejecutor de la [secuencia de siembra](#secuencia-de-siembra): agarre con la ACT,
-      comprobación de la pinza con un reintento, movimiento interpolado y parada segura
-      (**Stop** desactiva el par de los motores).
-
-### 4. Datos y policy (viernes noche-sábado)
-- [ ] Tanda de prueba: unos 10 episodios, entrenar pocos pasos y comprobar que aprende
-      antes de grabar todo.
-- [ ] Grabar **60-80 episodios de agarre** con `lerobot-record` (tarea: *"grasp the seed
-      below the gripper"*). Cada episodio empieza en la posición enseñada encima de una
-      caja y acaba con la semilla cogida y levantada. Mezclar los 4 colores, **mover un
-      poco la caja dentro de su zona** y cambiar algo la luz entre episodios.
-- [ ] Subir los datasets al Hub de Hugging Face.
-- [ ] Entrenar **una ACT** en el Mac durante la noche (unas 4 h para 20 000 pasos), o en
-      GPU cloud, y probar con rollout.
-- [ ] Apuntar los fallos de cada iteración y cómo se arreglaron.
-
-### 5. Demo y entrega (domingo antes de las 13:00)
-- [ ] Fijar la **tarea de la demo** y ensayarla hasta que salga 5 veces seguidas sin tocar
-      el robot.
-- [ ] Grabar el **vídeo de 1 minuto como máximo**: problema → interfaz → robot sembrando →
-      resultado.
-- [ ] Publicar los datasets en Hugging Face (+3) y enlazarlos aquí.
-- [ ] Dejar el repositorio reproducible (+2): comandos de grabación, entrenamiento y
-      rollout, y la configuración usada.
-- [ ] Preparar la presentación y las respuestas a las preguntas más probables del jurado
-      (datos, fallos e iteraciones, utilidad).
-
-## Estructura del repositorio
-
-```
-web/                        interfaz (se publica en GitHub Pages)
-  index.html
-  scanner.js                cámara en directo, rejilla, ArUco y llamada al backend
-  README.md                 notas del prototipo de la interfaz
-backend/                    servicio local de visión (FastAPI + OWLv2 + OpenCV)
-  smartseed_vision/         geometry.py, detector.py, depth.py, app.py
-  tests/                    pytest con bandejas sintéticas
-  run.sh                    arranca en http://localhost:8000
-odd/tasks/                  documentos de tareas por funcionalidad
-.github/workflows/pages.yml despliega web/ en GitHub Pages
-CLAUDE.md                   guía para agentes y colaboradores
+```bash
+lerobot-train \
+  --policy.type=act \
+  --dataset.repo_id=<usuario>/smartseed-grasp \
+  --steps=20000 \
+  --output_dir=outputs/act-grasp
 ```
 
-## Probar la web
+En el Mac son unas 4 h para 20 000 pasos: se lanza por la noche. Una sola ACT para los
+4 colores, porque el agarre es la misma habilidad.
 
-Abre `web/index.html` en el navegador. No necesita compilación.
-También se publica en GitHub Pages cada vez que hay un push a `main` que cambia `web/`.
+### 6. Ejecución
+
+Con el backend y la web levantados: diseñar el plan en la interfaz y pulsar **Sembrar**.
+El plan llega como `POST /plan` con `image_size` y una lista de celdas
+(`cell_index`, `row`, `col`, `color`, `u`, `v`), se convierte en una cola de
+`(color de caja → alveolo fila, columna)` y por cada celda se ejecuta:
+
+```
+inicio → encima de la caja X (pose enseñada) → coger la semilla
+→ subir → encima de la celda (cinemática inversa) → abrir pinza → inicio
+```
+
+El progreso se sigue por `WS /robot/progress`. Un agarre vacío (pinza cerrada del todo) se
+reintenta una vez; si vuelve a fallar, la celda se marca como fallida y se pasa a la
+siguiente. **Stop** es `POST /stop`: corta la secuencia y el brazo se queda en su sitio con
+par; `POST /robot/torque-off` solo cuando el brazo esté en un lugar seguro.
+
+### Datasets y modelos
+
+- Dataset de agarre: _pendiente de publicar en el Hub_.
+- Policy ACT entrenada: _pendiente de publicar en el Hub_.
 
 ## Seguridad
 
-La web publicada no controla el robot. Solo el backend local, en la red del evento, puede
-mover el brazo. Ten siempre a mano el cable de alimentación del follower la primera vez
-que pruebes cada cambio.
+La web publicada **no controla el robot**: funciona en modo demo. Solo el backend local
+del portátil conectado al brazo manda acciones. Ten a mano el cable de alimentación del
+follower la primera vez que pruebes cada cambio.

@@ -6,7 +6,8 @@ Guidance for agents and contributors working in this repository.
 
 SmartSeed: an SO-101 arm (LeRobot) plants seeds into a cell tray following a layout the
 customer designs in a cinema-seat-style web UI. 4 seed types, one colored box each.
-Full idea, flow and roadmap: see `README.md`.
+Full idea, flow and roadmap: see `guide.md`. Resolved criteria and the steps to
+reproduce the result: see `README.md`.
 
 ## Deliverables and judging (drive every decision)
 
@@ -23,8 +24,8 @@ Implications for any work here:
 - Log failures and fixes per iteration; the judges score how the team iterated.
 - Keep record/train/rollout commands and configs in the repo so it stays reproducible.
 - Upload every dataset to the Hub as soon as it is recorded.
-- The scoring table and its implications live in `README.md`; update both files if they
-  change.
+- The scoring table lives in both `README.md` (with how each criterion is resolved) and
+  `guide.md` (with its implications); update all three files if it changes.
 
 ## Layout
 
@@ -52,10 +53,12 @@ Implications for any work here:
   `calibration.py` (pixel→robot homography), `poses.py`, `motion.py`, `executor.py`, `api.py`
   (`POST /plan`, `/stop`, `GET /robot/status`, `WS /robot/progress`, poses, calibration). `SMARTSEED_ROBOT=fake`
   (default) or `real` + `SMARTSEED_ROBOT_PORT`. Tests use `FakeRobot`; never open a serial port in tests.
-  lerobot is pinned to commit `e595b79` (same as `vendor/lerobot`). Setup steps: README "Ejecutor del robot".
+  lerobot is pinned to commit `e595b79` (same as `vendor/lerobot`). Setup steps: `guide.md` "Ejecutor del robot"
+  and `README.md` step 3.
 - `odd/tasks/` — per-feature task documents.
 - `.github/workflows/pages.yml` — deploys `web/` to GitHub Pages.
-- Root `README.md` — project idea and plan. `web/README.md` — notes on the UI prototype.
+- Root `README.md` — resolved criteria and reproduction steps. `guide.md` — project
+  idea, architecture and plan. `web/README.md` — notes on the UI prototype.
 
 ## GitHub Pages deployment
 
