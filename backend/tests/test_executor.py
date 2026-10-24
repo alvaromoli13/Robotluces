@@ -51,7 +51,7 @@ def types(executor):
 def test_plan_runs_every_cell_in_order_and_ends_home(parts):
     robot, ex = parts
     ex.run([cell(0, "red"), cell(1, "green", 100, 300)], SIZE)
-    assert types(ex) == ["plan_started", "cell_started", "cell_done", "cell_started", "cell_done", "finished"]
+    assert types(ex) == ["plan_started", "cell_started", "drop_pose", "cell_done", "cell_started", "drop_pose", "cell_done", "finished"]
     assert ex.status()["done"] == [0, 1] and ex.status()["failed"] == []
     assert ex.status()["state"] == "idle" and ex.status()["plan_id"] == ex.events[0]["plan_id"]
     assert robot.read_joints() == pytest.approx(HOME)
@@ -82,7 +82,7 @@ def test_empty_grasp_retries_once_then_succeeds(tmp_path, kin):
     robot = FakeRobot(initial=HOME, grasp_script=[False, True])
     ex = Executor(robot, make_poses(tmp_path), make_calibration(), kin, config=CONFIG)
     ex.run([cell(0)], SIZE)
-    assert types(ex) == ["plan_started", "cell_started", "cell_done", "finished"]
+    assert types(ex) == ["plan_started", "cell_started", "drop_pose", "cell_done", "finished"]
     assert ex.retries == [0]
 
 
@@ -90,7 +90,7 @@ def test_two_empty_grasps_still_release_over_the_cell_and_count_it_done(tmp_path
     robot = FakeRobot(initial=HOME, grasp_script=[False, False])
     ex = Executor(robot, make_poses(tmp_path), make_calibration(), kin, config=CONFIG)
     ex.run([cell(0), cell(1)], SIZE)
-    assert types(ex) == ["plan_started", "cell_started", "cell_done", "cell_started", "cell_done", "finished"]
+    assert types(ex) == ["plan_started", "cell_started", "drop_pose", "cell_done", "cell_started", "drop_pose", "cell_done", "finished"]
     assert ex.status()["done"] == [0, 1] and ex.status()["failed"] == []
     first, second = [e for e in ex.events if e["type"] == "cell_done"]
     assert first["empty"] is True and "empty" in first["message"]
@@ -245,7 +245,7 @@ def policy_commands(robot):
 def test_act_cell_goes_start_policy_cell_open_start(tmp_path, kin):
     robot, policy, ex = make_act_executor(tmp_path, kin, steps=5)
     ex.run([cell(0, "red")], SIZE)
-    assert types(ex) == ["plan_started", "cell_started", "cell_done", "finished"]
+    assert types(ex) == ["plan_started", "cell_started", "drop_pose", "cell_done", "finished"]
     assert policy.calls == 5 and len(policy_commands(robot)) == 5
     first = policy_commands(robot)[0]
     assert arm_of(robot.history[first - 1]) == pytest.approx(arm_of(ACT_START))  # act_start reached before the policy
@@ -379,3 +379,74 @@ def test_drop_z_out_of_range_is_invalid(tmp_path, kin, drop_z):
     with pytest.raises(PlanError) as err:
         ex.run([cell(0)], SIZE, drop_z=drop_z)
     assert err.value.status == 422 and err.value.code == "invalid" and robot.commands == []
+
+
+# -- closed-loop drop correction ---------------------------------------------------------------------
+def sagging(degrees):
+    """The arm reads lower than commanded, like servos giving way under gravity when extended."""
+    return lambda state: {**state, "shoulder_lift": state["shoulder_lift"] + degrees}
+
+
+def drop_poses(ex):
+    return [e for e in ex.events if e["type"] == "drop_pose"]
+
+
+def place_executor(tmp_path, kin, sag=None, **cfg):
+    robot = FakeRobot(initial=HOME, sag=sag)
+    config = ExecutorConfig(hz=1000, max_speed=10_000, settle_s=0.0, **cfg)
+    return robot, Executor(robot, make_poses(tmp_path), make_calibration(), kin, config=config)
+
+
+def test_drop_pose_event_reports_target_reached_and_error(parts):
+    _, ex = parts
+    ex.run([cell(3)], SIZE)
+    (event,) = drop_poses(ex)
+    assert event["cell_index"] == 3 and event["corrections"] == 0
+    assert event["target"] == pytest.approx([*robot_xy(320, 240), CONFIG.drop_z], abs=1e-6)
+    assert event["reached"] == pytest.approx(event["target"], abs=0.003)
+    assert event["error_mm"] < 5.0
+    assert types(ex).index("drop_pose") < types(ex).index("cell_done")
+
+
+def test_sag_without_correction_misses_the_cell(tmp_path, kin):
+    _, ex = place_executor(tmp_path, kin, sag=sagging(-20.0), place_corrections=0)
+    ex.run([cell(0)], SIZE, mode="place")
+    (event,) = drop_poses(ex)
+    assert event["corrections"] == 0 and event["error_mm"] > 8.0
+
+
+def test_closed_loop_correction_reduces_the_drop_error_under_sag(tmp_path, kin):
+    _, open_loop = place_executor(tmp_path, kin, sag=sagging(-20.0), place_corrections=0)
+    open_loop.run([cell(0)], SIZE, mode="place")
+    _, closed = place_executor(tmp_path, kin, sag=sagging(-20.0))
+    closed.run([cell(0)], SIZE, mode="place")
+    (before,), (after,) = drop_poses(open_loop), drop_poses(closed)
+    assert 1 <= after["corrections"] <= 2
+    assert after["error_mm"] < before["error_mm"] / 2
+    assert after["error_mm"] < 6.0
+    assert closed.events[-1]["type"] == "finished"
+
+
+def test_correction_also_runs_in_the_full_taught_cycle(tmp_path, kin):
+    robot = FakeRobot(initial=HOME, sag=sagging(-20.0))
+    ex = Executor(robot, make_poses(tmp_path), make_calibration(), kin, config=CONFIG)
+    ex.run([cell(0)], SIZE)
+    (event,) = drop_poses(ex)
+    assert event["corrections"] >= 1 and event["error_mm"] < 6.0
+    assert robot.read_joints()["gripper"] == pytest.approx(CONFIG.gripper_open)
+
+
+def test_stop_during_a_correction_stops_without_releasing(tmp_path, kin):
+    robot, ex = place_executor(tmp_path, kin, sag=sagging(-20.0))
+    moves, real_move = [], ex._move
+
+    def counting_move(target):
+        moves.append(target)
+        if len(moves) == 2:  # the first move goes over the cell, the second is the correction
+            ex.stop()
+        real_move(target)
+
+    ex._move = counting_move
+    ex.run([cell(0)], SIZE, mode="place")
+    assert types(ex)[-1] == "stopped" and "drop_pose" not in types(ex)
+    assert len(moves) == 2  # no third move: the gripper never opened

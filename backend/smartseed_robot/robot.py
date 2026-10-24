@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Protocol
+from typing import Callable, Protocol
 
 import numpy as np
 
@@ -27,12 +27,15 @@ class FakeRobot:
 
     `grasp_script` is consumed once per gripper closing: True = the seed stops the jaws (gripper stays
     open at `held_value`), False = empty grasp (jaws close fully). Once exhausted every grasp succeeds.
+    `sag` optionally maps the true joint state to what the arm reports (e.g. shoulder_lift lagging under
+    gravity), so closed-loop code can be tested; default: reads are exact.
     """
 
     CLOSING_BELOW = 10.0
 
     def __init__(self, initial: dict[str, float] | None = None, grasp_script: list[bool] | None = None,
-                 held_value: float = 25.0):
+                 held_value: float = 25.0, sag: Callable[[dict[str, float]], dict[str, float]] | None = None):
+        self._sag = sag
         self._state = dict.fromkeys(JOINTS, 0.0) | (initial or {})
         self._script = list(grasp_script or [])
         self._held_value = held_value
@@ -44,10 +47,11 @@ class FakeRobot:
         self.closed = False
 
     def read_joints(self) -> dict[str, float]:
-        return dict(self._state)
+        return self._sag(dict(self._state)) if self._sag else dict(self._state)
 
     def read_observation(self) -> dict[str, np.ndarray]:
-        frame = {"observation.state": np.array([self._state[j] for j in JOINTS], dtype=np.float32)}
+        state = self.read_joints()
+        frame = {"observation.state": np.array([state[j] for j in JOINTS], dtype=np.float32)}
         return frame | {f"observation.images.{cam}": np.zeros(IMAGE_SHAPE, dtype=np.uint8) for cam in CAMERAS}
 
     def send_joints(self, target: dict[str, float]) -> None:

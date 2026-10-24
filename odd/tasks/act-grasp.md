@@ -93,3 +93,18 @@ T1/T3 on the real arm with the user: run the server from Terminal.app (README "S
   (robot); camera.js 24/25 where the one failure (`js-aruco2 ... counts markers`, synthetic webcam
   shows no tray) also fails on the commit before this change. Not run on hardware; backend needs a
   restart to pick up the new fields.
+
+- T7 done. Route: single writer (inline, user-directed). Gripper pitch preference + closed-loop drop.
+  `solve` tries approach pitches 0,15..90 deg (outwards, `pose_pitched`, orientation weight 1.0; accepts
+  position < 3 mm and axis error < 10 deg) from the reaching and given seeds, position-only last;
+  `solve_with_pitch` also returns the pitch. Fresh-instance table (z=0.06): x 0.25/0.30/0.35/0.40/0.44 ->
+  0/15/30/45/60 deg; z=0.10: 15/15/30/45/60; 1-4 ms per solve. Root cause of the old order-dependent IK:
+  placo does not refresh kinematics after `set_joint`, so the first iteration linearised around the
+  previous attempt (fixed with a `forward_kinematics` before every IK call). Also fixed: the shoulder_pan
+  axis sits 38.8 mm in front of the URDF origin and +pan turns towards -y (yaw and reaching seed).
+  Executor `_release`: settle, FK on the read joints, re-aim past the cell by the xy shortfall up to
+  `place_corrections` (2) when error > `place_tolerance_m` (5 mm), then open; `drop_pose` event
+  (`target`, `reached`, `error_mm`, `corrections`), web shows it in the run detail. `FakeRobot(sag=...)`
+  models servo sag. Strict TDD: RED = ImportError `pose_pitched` and 5 executor failures (`unexpected
+  keyword 'sag'`); GREEN = full backend suite 202 passed. Not run on hardware.
+

@@ -115,6 +115,17 @@ Con el backend arrancado en modo `real`, todo lo demás se hace por HTTP contra
    que devuelve el error en mm.
 9. **Medir el error** con una prueba de 10 alveolos antes de seguir.
 
+#### Cómo suelta sobre la celda
+
+La IK prefiere la pinza vertical (`pitch` 0) y, si el brazo no llega así, la inclina hacia
+fuera en pasos de 15° (15, 30 ... 90) hasta el primero que alcanza la celda: la punta queda lo
+más hacia abajo posible. Solo si ninguna inclinación llega cuenta solo la posición. Con el
+brazo estirado los servos ceden por gravedad, así que tras mover sobre la celda el ejecutor
+espera `settle_s`, lee las articulaciones, calcula con FK dónde está la punta y, si falla más de
+`place_tolerance_m` (5 mm), apunta más allá por lo que faltaba y repite hasta
+`place_corrections` veces (2). Entonces abre y emite `drop_pose` por WS (`target`, `reached`,
+`error_mm`, `corrections`); la web enseña "Soltado a N mm del hueco".
+
 #### Sembrar con policy ACT
 
 Un color con policy ACT no usa `above_box_<color>`: por celda el ejecutor va a `act_start`,

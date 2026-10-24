@@ -341,6 +341,7 @@ Progreso por `WS /robot/progress`, un JSON por evento:
 |---|---|---|
 | `plan_started` | `total` | Muestra el panel de siembra |
 | `cell_started` | `cell_index`, `row`, `col`, `color` | La casilla parpadea |
+| `drop_pose` | `cell_index`, `target`, `reached`, `error_mm`, `corrections` | Antes de abrir la pinza: enseña "Soltado a N mm del hueco" (la web ignora los tipos que no conoce) |
 | `cell_done` | `cell_index`, `message`, `empty` | Marca ✓ y avanza la barra; con `empty` avisa de que la pinza parecía vacía |
 | `cell_failed` | `cell_index`, `message` | Marca ✕ en rojo y lo cuenta aparte |
 | `finished` | `message` | Cierra la siembra como terminada |

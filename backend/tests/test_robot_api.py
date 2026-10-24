@@ -125,8 +125,8 @@ def test_plan_runs_and_progress_streams_contract_events(client):
         events = []
         while not events or events[-1]["type"] != "finished":
             events.append(ws.receive_json())
-    assert [e["type"] for e in events] == ["plan_started", "cell_started", "cell_done"] + [
-        "cell_started", "cell_done", "cell_started", "cell_done", "finished"]
+    assert [e["type"] for e in events] == ["plan_started", "cell_started", "drop_pose", "cell_done"] + [
+        "cell_started", "drop_pose", "cell_done", "cell_started", "drop_pose", "cell_done", "finished"]
     assert all(set(e) >= {"type", "plan_id", "cell_index", "message"} and e["plan_id"] == body["plan_id"]
                for e in events)
     assert [e["cell_index"] for e in events if e["type"] == "cell_done"] == [0, 1, 2]

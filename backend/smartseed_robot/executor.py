@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import threading
 import uuid
 from dataclasses import dataclass, field
@@ -42,6 +43,8 @@ class ExecutorConfig:
     gripper_closed: float = 0.0
     empty_below: float = 8.0  # gripper reading under this after closing = nothing inside
     retries: int = 1
+    place_tolerance_m: float = 0.005  # xy miss over the cell that is still accepted when releasing
+    place_corrections: int = 2  # extra moves, aiming past the cell by the measured shortfall (servo sag)
     grasp_deltas: dict[str, float] = field(default_factory=dict)  # used when no grasp_<color> pose is taught
 
 
@@ -206,12 +209,24 @@ class Executor:
         return self.robot.read_joints()["gripper"] > self.cfg.empty_below
 
     def _release(self, c, image_size, back: dict[str, float]) -> None:
-        """IK over the cell with the gripper as it is, open, then back to `back`."""
+        """IK over the cell with the gripper as it is, closed-loop on the real tool position, open, then back."""
         cfg = self.cfg
-        now = self.robot.read_joints()
         x, y = self.calibration.pixel_to_robot(c["u"], c["v"], image_size)
-        target = self.kin.solve(x, y, self._drop_z, seed={j: now[j] for j in ARM_JOINTS})
-        self._move({**target, "gripper": now["gripper"]})
+        aim, corrections = [x, y], 0
+        while True:
+            now = self.robot.read_joints()
+            target = self.kin.solve(*aim, self._drop_z, seed={j: now[j] for j in ARM_JOINTS})
+            self._move({**target, "gripper": now["gripper"]})
+            if self._stop.wait(cfg.settle_s):
+                raise Stopped
+            reached = self.kin.tool_xyz(self.robot.read_joints())
+            miss = (x - reached[0], y - reached[1])
+            if math.hypot(*miss) <= cfg.place_tolerance_m or corrections >= cfg.place_corrections:
+                break
+            aim = [aim[0] + miss[0], aim[1] + miss[1]]  # aim past the cell by what the arm fell short
+            corrections += 1
+        self._emit("drop_pose", self._current, target=[x, y, self._drop_z], reached=list(reached),
+                   error_mm=round(math.hypot(*miss) * 1000, 1), corrections=corrections)
         self._move({"gripper": cfg.gripper_open})
         self._move(back)
 

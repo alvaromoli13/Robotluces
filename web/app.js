@@ -555,6 +555,9 @@
         case 'cell_started':
           markCell(msg.cell_index, 'planting');
           break;
+        case 'drop_pose':
+          if (typeof msg.error_mm === 'number') { run.detail = 'Soltado a ' + Math.round(msg.error_mm) + ' mm del hueco'; renderRun(); }
+          break;
         case 'cell_done':
           markCell(msg.cell_index, 'done');
           if (msg.empty) toast('En ' + cellName(msg.cell_index) + ' la pinza parecía vacía; se ha abierto sobre la casilla igualmente.');
