@@ -538,6 +538,7 @@
           break;
         case 'cell_done':
           markCell(msg.cell_index, 'done');
+          if (msg.empty) toast('En ' + cellName(msg.cell_index) + ' la pinza parecía vacía; se ha abierto sobre la casilla igualmente.');
           break;
         case 'cell_failed':
           markCell(msg.cell_index, 'failed', 'Falló ' + cellName(msg.cell_index) + ': la pinza salió vacía');

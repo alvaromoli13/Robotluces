@@ -166,10 +166,13 @@ class Executor:
                 self._current = c["cell_index"]
                 self._emit("cell_started", c["cell_index"], row=c["row"], col=c["col"], color=c["color"],
                            total=len(plan))
-                ok = self._plant(c, image_size)
-                (self._done if ok else self._failed).append(c["cell_index"])
-                self._emit("cell_done" if ok else "cell_failed", c["cell_index"],
-                           None if ok else "gripper stayed empty after retry")
+                empty = not self._plant(c, image_size)
+                self._done.append(c["cell_index"])  # the arm always releases over the cell, seed or not
+                if empty:
+                    self._emit("cell_done", c["cell_index"], "grasp looked empty; released over the cell anyway",
+                               empty=True)
+                else:
+                    self._emit("cell_done", c["cell_index"])
             self._current = None
             self._emit("finished", message=f"{len(self._done)} done, {len(self._failed)} failed")
             self._state = "idle"
@@ -204,23 +207,22 @@ class Executor:
         return True
 
     def _plant(self, c, image_size) -> bool:
+        """Always carries on to the cell and opens there; returns whether the gripper looked loaded."""
         cfg, color = self.cfg, c["color"]
         if self._acts(color):
             return self._plant_with_policy(c, image_size)
         home, box = self.poses.get("home"), self.poses.get(f"above_box_{color}")
         opened = {"gripper": cfg.gripper_open}
         self._move({**home, **opened})
+        holding = False
         for attempt in range(cfg.retries + 1):
             self._move({**box, **opened})
             self.grasper.grasp(color, self._move, self.robot.read_joints)
-            if self._holding():
+            holding = self._holding()
+            if holding:
                 break
             if attempt < cfg.retries:
                 self.retries.append(c["cell_index"])
-            else:
-                self._move({**box, **opened})
-                self._move({**home, **opened})
-                return False
         self._move({**box, "gripper": self.robot.read_joints()["gripper"]})  # lift with the seed
         now = self.robot.read_joints()
         x, y = self.calibration.pixel_to_robot(c["u"], c["v"], image_size)
@@ -228,4 +230,4 @@ class Executor:
         self._move({**target, "gripper": now["gripper"]})
         self._move(opened)
         self._move({**home, **opened})
-        return True
+        return holding

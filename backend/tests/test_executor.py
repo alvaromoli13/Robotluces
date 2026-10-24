@@ -86,13 +86,19 @@ def test_empty_grasp_retries_once_then_succeeds(tmp_path, kin):
     assert ex.retries == [0]
 
 
-def test_two_empty_grasps_mark_the_cell_failed_and_continue(tmp_path, kin):
+def test_two_empty_grasps_still_release_over_the_cell_and_count_it_done(tmp_path, kin):
     robot = FakeRobot(initial=HOME, grasp_script=[False, False])
     ex = Executor(robot, make_poses(tmp_path), make_calibration(), kin, config=CONFIG)
     ex.run([cell(0), cell(1)], SIZE)
-    assert types(ex) == ["plan_started", "cell_started", "cell_failed", "cell_started",
-                         "cell_done", "finished"]
-    assert ex.status()["failed"] == [0] and ex.status()["done"] == [1]
+    assert types(ex) == ["plan_started", "cell_started", "cell_done", "cell_started", "cell_done", "finished"]
+    assert ex.status()["done"] == [0, 1] and ex.status()["failed"] == []
+    first, second = [e for e in ex.events if e["type"] == "cell_done"]
+    assert first["empty"] is True and "empty" in first["message"]
+    assert not second.get("empty")
+    target = (*robot_xy(320, 240), CONFIG.drop_z)
+    at_drop = [s for s in robot.history
+               if kin.tool_xyz({k: v for k, v in s.items() if k != "gripper"}) == pytest.approx(target, abs=0.003)]
+    assert at_drop and at_drop[-1]["gripper"] == CONFIG.gripper_open
     assert robot.read_joints() == pytest.approx(HOME)
 
 
