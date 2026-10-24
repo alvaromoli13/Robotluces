@@ -25,17 +25,92 @@
   };
 
   // ── Varieties ──────────────────────────────────────────────────────────────
-  // Each variety maps to the colour of its physical box. `box` is what the robot
-  // receives; the keys are stored inside saved layouts, so keep them stable.
-  const SEEDS = {
-    TOMATE:     { label: 'Tomate',    emoji: '🍅', box: 'red',    boxLabel: 'roja',     strong: '#c8372d', tint: '#fde3df', mid: '#f4b1a9' },
-    PIMIENTO:   { label: 'Pimiento',  emoji: '🫑', box: 'green',  boxLabel: 'verde',    strong: '#2b8a4e', tint: '#dcf3e0', mid: '#a3dbb1' },
-    LIMON:      { label: 'Limón',     emoji: '🍋', box: 'yellow', boxLabel: 'amarilla', strong: '#d9a400', tint: '#fff2b8', mid: '#f7dc6a' },
-    BERENJENAS: { label: 'Berenjena', emoji: '🍆', box: 'purple', boxLabel: 'morada',   strong: '#7440b0', tint: '#ece2f8', mid: '#c9afe8' },
-  };
+  // Seeds are user-defined: name + emoji + the colour of the bowl the robot looks for
+  // (`box`, the id sent as `color` in POST /plan). They live in localStorage; the ids
+  // are stored inside saved layouts, so keep them stable. The first load seeds the list
+  // with the original four, whose ids are the old layout keys.
+  const SEEDS_KEY = 'smartseed.seeds';
+  const MAX_NAME = 20;
 
-  const seedKey = name => String(name || '').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-  const seedMeta = name => { const k = seedKey(name); return SEEDS[k] || SEEDS[k + 'S'] || null; };
+  // Bowl colours the picker offers. `id` is what the backend receives (^[a-z][a-z_-]{0,19}$).
+  const BOWL_COLORS = [
+    { id: 'red',    label: 'Rojo',     boxLabel: 'roja',     base: '#c8372d' },
+    { id: 'orange', label: 'Naranja',  boxLabel: 'naranja',  base: '#d9660a' },
+    { id: 'yellow', label: 'Amarillo', boxLabel: 'amarilla', base: '#d9a400' },
+    { id: 'green',  label: 'Verde',    boxLabel: 'verde',    base: '#2b8a4e' },
+    { id: 'blue',   label: 'Azul',     boxLabel: 'azul',     base: '#2563c9' },
+    { id: 'purple', label: 'Morado',   boxLabel: 'morada',   base: '#7440b0' },
+    { id: 'pink',   label: 'Rosa',     boxLabel: 'rosa',     base: '#d9467f' },
+    { id: 'white',  label: 'Blanco',   boxLabel: 'blanca',   base: '#ffffff' },
+  ];
+  const COLOR_ID = /^[a-z][a-z_-]{0,19}$/;
+  const SEED_ID = /^[A-Z0-9_-]{1,40}$/;
+
+  const DEFAULT_SEEDS = [
+    { id: 'TOMATE', name: 'Tomate', emoji: '🍅', color: 'red' },
+    { id: 'PIMIENTO', name: 'Pimiento', emoji: '🫑', color: 'green' },
+    { id: 'LIMON', name: 'Limón', emoji: '🍋', color: 'yellow' },
+    { id: 'BERENJENAS', name: 'Berenjena', emoji: '🍆', color: 'purple' },
+  ];
+
+  const EMOJIS = ['🍅', '🫑', '🍋', '🍆', '🥕', '🥬', '🌽', '🥒', '🍓', '🌻', '🌿', '🫘',
+    '🧅', '🧄', '🥔', '🍉', '🎃', '🌶️', '🥦', '🫛', '🍠', '🌱', '🍀', '🌷'];
+
+  // Shades of one colour: `strong` fills a planted cell, `tint` and `mid` are its soft
+  // versions. A near-white bowl is darkened until it stands out from an empty cell.
+  const hexRgb = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+  const rgbHex = c => '#' + c.map(v => Math.round(v).toString(16).padStart(2, '0')).join('');
+  const mixHex = (a, b, t) => { const x = hexRgb(a), y = hexRgb(b); return rgbHex(x.map((v, i) => v * (1 - t) + y[i] * t)); };
+  const lum = h => {
+    const [r, g, b] = hexRgb(h).map(v => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); });
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  const contrastWhite = h => 1.05 / (lum(h) + 0.05);
+
+  function shades(base) {
+    let strong = base;
+    const floor = lum(base) > 0.85 ? 3 : 1.6;
+    for (let i = 0; i < 12 && contrastWhite(strong) < floor; i++) strong = mixHex(strong, '#000000', 0.12);
+    return { strong, tint: mixHex(base, '#ffffff', 0.86), mid: mixHex(base, '#ffffff', 0.6), edge: mixHex(strong, '#ffffff', 0.55) };
+  }
+
+  const bowlColor = id => BOWL_COLORS.find(c => c.id === id) || { id, label: id, boxLabel: id, base: '#6b7a72' };
+
+  // The live seed table, keyed by id and rebuilt from the stored list.
+  let SEEDS = {};
+
+  function seedMetaOf(raw) {
+    const c = bowlColor(raw.color);
+    return { id: raw.id, label: raw.name, emoji: raw.emoji, box: raw.color, boxLabel: c.boxLabel, colorLabel: c.label, ...shades(c.base) };
+  }
+
+  function setSeeds(list) {
+    SEEDS = {};
+    list.forEach(raw => { SEEDS[raw.id] = seedMetaOf(raw); });
+  }
+
+  const seedList = () => Object.values(SEEDS).map(m => ({ id: m.id, name: m.label, emoji: m.emoji, color: m.box }));
+
+  const seedKey = name => String(name || '').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+
+  // Resolves what a saved layout holds (a current id, an old key such as TOMATE / BERENJENAS
+  // or a plain name) to the id of a seed that still exists, else null.
+  function resolveSeed(raw) {
+    const k = seedKey(raw);
+    if (!k) return null;
+    if (SEEDS[k]) return k;
+    if (SEEDS[k + 'S']) return k + 'S';
+    const byName = Object.values(SEEDS).find(m => seedKey(m.label) === k || seedKey(m.label) + 'S' === k);
+    return byName ? byName.id : null;
+  }
+
+  const esc = v => String(v).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+
+  function newSeedId() {
+    let id;
+    do { id = 'S' + Date.now().toString(36).toUpperCase() + Math.random().toString(36).slice(2, 5).toUpperCase(); } while (SEEDS[id]);
+    return id;
+  }
 
   // ── State ──────────────────────────────────────────────────────────────────
   const LAYOUT_KEY = 'smartseed.lastLayout';
@@ -44,7 +119,7 @@
   const MAX_CELLS = 200;
   const DEMO_MS_PER_CELL = 1100;
 
-  let selected = 'TOMATE';
+  let selected = null;            // id of the seed a tap places
   let rows = 3, cols = 3;
   let cells = [];                 // flat, row-major; each item is a variety key or null
   let run = null;                 // see startRun()
@@ -77,22 +152,32 @@
   // Accepts both shapes: the current {rows, cols, cells} and the old flat array of
   // {name, emoji} objects saved before the tray size was stored with it.
   function normalizeLayout(raw) {
-    if (Array.isArray(raw)) return { rows: 0, cols: 0, cells: raw.map(c => (c && seedMeta(c.name) ? seedKey(c.name) : null)) };
+    if (Array.isArray(raw)) return { rows: 0, cols: 0, cells: raw.map(c => (c ? resolveSeed(c.name) : null)) };
     if (!raw || !Array.isArray(raw.cells)) return null;
     return {
       rows: Number(raw.rows) || 0,
       cols: Number(raw.cols) || 0,
-      cells: raw.cells.map(c => {
-        if (!c) return null;
-        const key = seedKey(typeof c === 'string' ? c : c.name);
-        return SEEDS[key] ? key : (SEEDS[key + 'S'] ? key + 'S' : null);
-      }),
+      cells: raw.cells.map(c => (c ? resolveSeed(typeof c === 'string' ? c : c.name) : null)),
     };
   }
 
   function saveLayout() {
     writeJSON(LAYOUT_KEY, { rows, cols, cells });
   }
+
+  // Accepts only well-formed entries; anything else falls back to the original four.
+  function loadSeeds() {
+    const raw = readJSON(SEEDS_KEY, null);
+    if (!Array.isArray(raw)) return DEFAULT_SEEDS;
+    const seen = new Set();
+    const list = raw.filter(r => r && typeof r === 'object' && SEED_ID.test(String(r.id)) && !seen.has(r.id) && seen.add(r.id) &&
+      typeof r.name === 'string' && r.name.trim() && typeof r.emoji === 'string' && r.emoji &&
+      typeof r.color === 'string' && COLOR_ID.test(r.color))
+      .map(r => ({ id: r.id, name: r.name.trim().slice(0, MAX_NAME), emoji: r.emoji, color: r.color }));
+    return list.length ? list : DEFAULT_SEEDS;
+  }
+
+  const saveSeeds = () => writeJSON(SEEDS_KEY, seedList());
 
   function loadTemplates() {
     const raw = readJSON(TEMPLATES_KEY, {});
@@ -108,15 +193,16 @@
 
   function renderLegend() {
     const m = SEEDS[selected];
-    $('trayLegend').innerHTML =
-      '<span class="legend-dot" style="--box:' + m.strong + '"></span>' +
-      '<span>Seleccionada: <strong>' + m.emoji + ' ' + m.label + '</strong></span>';
+    $('trayLegend').innerHTML = m
+      ? '<span class="legend-dot" style="--box:' + m.strong + '"></span>' +
+        '<span>Seleccionada: <strong>' + esc(m.emoji + ' ' + m.label) + '</strong></span>'
+      : '<span>Crea una semilla con «+» para empezar.</span>';
   }
 
   function renderBoxLegend() {
     $('boxLegend').innerHTML = Object.values(SEEDS).map(m =>
       '<li><i class="box-dot" style="--box:' + m.strong + '"></i>' +
-      '<span><strong>' + m.label + '</strong> · caja ' + m.boxLabel + '</span></li>').join('');
+      '<span><strong>' + esc(m.label) + '</strong> · caja ' + esc(m.boxLabel) + '</span></li>').join('');
   }
 
   const cellLabel = (m, i) => (m
@@ -124,13 +210,14 @@
     : 'Casilla ' + (i + 1) + ' vacía');
 
   // Says what the tap will actually do, which depends on the variety now selected.
-  const cellTitle = (m, i) => (m
-    ? m.label + ' · caja ' + m.boxLabel +
-      (m === SEEDS[selected] ? ' · toca para vaciar' : ' · toca para poner ' + SEEDS[selected].label)
-    : 'Casilla ' + (i + 1) + ' · toca para poner ' + SEEDS[selected].label);
+  const cellTitle = (m, i) => {
+    const sel = SEEDS[selected];
+    if (m) return m.label + ' · caja ' + m.boxLabel + (m === sel ? ' · toca para vaciar' : sel ? ' · toca para poner ' + sel.label : '');
+    return 'Casilla ' + (i + 1) + (sel ? ' · toca para poner ' + sel.label : '');
+  };
 
   const cellInner = (m, i) =>
-    '<span class="cell-emoji">' + (m ? m.emoji : '') + '</span>' +
+    '<span class="cell-emoji">' + (m ? esc(m.emoji) : '') + '</span>' +
     '<span class="cell-num">' + String(i + 1).padStart(2, '0') + '</span>' +
     '<span class="cell-state" aria-hidden="true"><svg><use href="#i-check"/></svg></span>' +
     (m ? '<span class="cell-clear" data-clear-cell="' + i + '" aria-hidden="true" title="Vaciar casilla">' +
@@ -139,7 +226,7 @@
   function cellHtml(key, i) {
     const m = key ? SEEDS[key] : null;
     return '<button type="button" class="tray-cell' + (m ? ' filled' : '') + '" data-cell="' + i + '"' +
-      ' aria-label="' + cellLabel(m, i) + '" title="' + cellTitle(m, i) + '">' + cellInner(m, i) + '</button>';
+      ' aria-label="' + esc(cellLabel(m, i)) + '" title="' + esc(cellTitle(m, i)) + '">' + cellInner(m, i) + '</button>';
   }
 
   const cellNode = i => $('trayGrid').querySelector('[data-cell="' + i + '"]');
@@ -198,6 +285,7 @@
   function fillAll(key) {
     if (run) return;
     if (!total()) { toast('Crea primero un casillero.'); return; }
+    if (!SEEDS[key]) { toast('Crea primero una semilla con «+».'); return; }
     cells = cells.map(() => key);
     saveLayout();
     cells.forEach((_, i) => paintCell(i));
@@ -206,10 +294,9 @@
   }
 
   function selectSeed(key) {
-    if (!SEEDS[key]) return;
-    selected = key;
+    selected = SEEDS[key] ? key : null;
     document.querySelectorAll('.seed').forEach(b => {
-      const on = b.dataset.seed === key;
+      const on = !!selected && b.dataset.seed === selected;
       b.classList.toggle('selected', on);
       b.setAttribute('aria-pressed', String(on));
     });
@@ -333,7 +420,7 @@
         cell_index: i,
         row: Math.floor(i / cols),
         col: i % cols,
-        color: SEEDS[cells[i]].box,
+        color: SEEDS[cells[i]].box,  // the bowl colour id the robot looks for
         u: at.u,
         v: at.v,
       });
@@ -576,29 +663,59 @@
     finishRun('Siembra detenida.', 'Parada solicitada');
   }
 
-  // ── Palette wiring ─────────────────────────────────────────────────────────
-
-  const palette = $('seedGrid');
-  palette.querySelectorAll('.seed').forEach(b => {
-    const m = SEEDS[b.dataset.seed];
-    if (!m) return;
-    b.style.setProperty('--box', m.strong);
-    b.style.setProperty('--box-tint', m.tint);
-  });
-  $('seedSidebar').appendChild(palette);
-  const mobilePalette = palette.cloneNode(true);
-  mobilePalette.removeAttribute('id');
-  mobilePalette.querySelectorAll('[id]').forEach(el => el.removeAttribute('id'));
-  $('seedMobile').appendChild(mobilePalette);
+  // ── Palette ────────────────────────────────────────────────────────────────
+  // Written twice from the same markup: the desktop sidebar and the phone dock.
 
   const isDesktop = () => !!(window.matchMedia && window.matchMedia('(min-width: 900px)').matches);
 
-  document.querySelectorAll('.seed').forEach(b => {
-    b.draggable = isDesktop();
-    b.addEventListener('click', () => selectSeed(b.dataset.seed));
-    b.addEventListener('dragstart', e => {
-      selectSeed(b.dataset.seed);
-      e.dataTransfer.setData('text/plain', b.dataset.seed);
+  // `preview` renders the same tile as a plain, inert box for the modal.
+  function seedTileHtml(m, on, preview) {
+    const style = '--box:' + m.strong + ';--box-tint:' + m.tint + ';--box-edge:' + m.edge;
+    const tag = preview ? 'div' : 'button';
+    return '<' + tag + (preview ? '' : ' type="button" data-seed="' + m.id + '" aria-pressed="' + on + '" title="' +
+      esc(m.label + ' · caja ' + m.boxLabel) + '"' + (isDesktop() ? ' draggable="true"' : '')) +
+      ' class="seed' + (on ? ' selected' : '') + '" style="' + style + '">' +
+      '<span class="seed-check" aria-hidden="true"><svg class="ic"><use href="#i-check"/></svg></span>' +
+      '<span class="seed-tile" aria-hidden="true">' + esc(m.emoji) + '</span>' +
+      '<span class="seed-text"><span class="seed-name">' + esc(m.label) + '</span>' +
+      '<span class="seed-box"><i class="box-dot"></i>Caja ' + esc(m.boxLabel) + '</span></span></' + tag + '>';
+  }
+
+  function renderPalette() {
+    const html = Object.values(SEEDS).map(m =>
+      '<div class="seed-item">' + seedTileHtml(m, m.id === selected) +
+      '<button type="button" class="seed-edit" data-edit-seed="' + m.id + '" aria-label="Editar ' + esc(m.label) + '"' +
+      ' title="Editar o borrar ' + esc(m.label) + '"><svg class="ic" aria-hidden="true"><use href="#i-edit"/></svg></button></div>').join('') +
+      '<div class="seed-item seed-item-add"><button type="button" class="seed-add" data-add-seed title="Añadir una semilla nueva">' +
+      '<span class="seed-tile" aria-hidden="true"><svg class="ic"><use href="#i-plus"/></svg></span>' +
+      '<span class="seed-text"><span class="seed-name">Nueva<span class="seed-name-long"> semilla</span></span><span class="seed-box">Nombre, emoji y color</span></span></button></div>';
+    ['seedSidebar', 'seedMobile'].forEach(id => { $(id).querySelector('.seed-grid').innerHTML = html; });
+  }
+
+  // Everything that shows seeds, after the list changed.
+  function refreshSeeds() {
+    if (!SEEDS[selected]) selected = Object.keys(SEEDS)[0] || null;
+    renderPalette();
+    renderBoxLegend();
+    renderLegend();
+    renderTray();
+  }
+
+  ['seedSidebar', 'seedMobile'].forEach(id => {
+    const root = $(id);
+    root.addEventListener('click', e => {
+      const edit = e.target.closest('[data-edit-seed]');
+      if (edit) { openSeedModal(edit.dataset.editSeed, edit); return; }
+      const add = e.target.closest('[data-add-seed]');
+      if (add) { openSeedModal(null, add); return; }
+      const tile = e.target.closest('.seed');
+      if (tile) selectSeed(tile.dataset.seed);
+    });
+    root.addEventListener('dragstart', e => {
+      const tile = e.target.closest && e.target.closest('.seed');
+      if (!tile) return;
+      selectSeed(tile.dataset.seed);
+      e.dataTransfer.setData('text/plain', tile.dataset.seed);
       e.dataTransfer.effectAllowed = 'copy';
     });
   });
@@ -624,6 +741,211 @@
       selectSeed(key);
       fillAll(key);
     });
+  });
+
+  // ── Seed modal ─────────────────────────────────────────────────────────────
+  // One dialog for "Nueva semilla" and for editing; delete lives in edit mode.
+
+  const modalEl = $('seedModal');
+  const form = $('seedForm');
+  const draft = { id: null, emoji: '', color: '' };
+  let modalScope = null;          // the palette (sidebar or dock) that opened the modal
+
+  const optionBtn = (cls, attrs, inner) => '<button type="button" role="radio" class="' + cls + '" ' + attrs + '>' + inner + '</button>';
+
+  function usedColors() {
+    const used = {};
+    Object.values(SEEDS).forEach(m => { if (m.id !== draft.id) used[m.box] = m.label; });
+    return used;
+  }
+
+  function renderPickers() {
+    const used = usedColors();
+    $('seedEmojiGrid').innerHTML = EMOJIS.map(em =>
+      optionBtn('emoji-opt', 'data-emoji="' + em + '" aria-checked="' + (draft.emoji === em) + '" aria-label="' + em + '"', em)).join('');
+    $('seedColorGrid').innerHTML = BOWL_COLORS.map(c => {
+      const taken = used[c.id];
+      const sh = shades(c.base);
+      return optionBtn('color-opt' + (taken ? ' taken' : ''),
+        'data-color="' + c.id + '" aria-checked="' + (draft.color === c.id) + '"' + (taken ? ' aria-disabled="true"' : '') +
+        ' aria-label="' + c.label + (taken ? ', en uso por ' + esc(taken) : '') + '"' +
+        (taken ? ' title="Ya lo usa ' + esc(taken) + ': cada color es una caja distinta."' : ''),
+        '<i class="swatch" style="--sw:' + c.base + ';--sw-edge:' + sh.edge + '"></i><span>' + c.label + '</span>' +
+        (taken ? '<small>' + esc(taken) + '</small>' : ''));
+    }).join('');
+    syncPickers();
+  }
+
+  // Marks the chosen options in place, so a keyboard user keeps the focus.
+  function syncPickers() {
+    $('seedEmojiGrid').querySelectorAll('[role="radio"]').forEach(o => o.setAttribute('aria-checked', String(o.dataset.emoji === draft.emoji)));
+    $('seedColorGrid').querySelectorAll('[role="radio"]').forEach(o => o.setAttribute('aria-checked', String(o.dataset.color === draft.color)));
+    syncRoving($('seedEmojiGrid'));
+    syncRoving($('seedColorGrid'));
+  }
+
+  // Roving tabindex: one tab stop per group, arrows move inside it.
+  function syncRoving(group) {
+    const opts = [...group.querySelectorAll('[role="radio"]')];
+    const on = opts.find(o => o.getAttribute('aria-checked') === 'true') || opts.find(o => o.getAttribute('aria-disabled') !== 'true');
+    opts.forEach(o => { o.tabIndex = o === on ? 0 : -1; });
+  }
+
+  function renderPreview() {
+    const name = $('seedName').value.trim();
+    const base = draft.color ? bowlColor(draft.color) : { id: '', label: '', boxLabel: '', base: '#c6d3d0' };
+    const m = {
+      id: 'PREVIEW', label: name || 'Nombre', emoji: draft.emoji || '🌱',
+      box: draft.color, boxLabel: base.boxLabel || '…', ...shades(base.base),
+    };
+    $('seedPreview').innerHTML = seedTileHtml(m, false, true);
+    $('seedNameCount').textContent = $('seedName').value.length + ' / ' + MAX_NAME;
+  }
+
+  function setModalError(msg) {
+    $('seedError').textContent = msg || '';
+    $('seedName').setAttribute('aria-invalid', String(!!msg));
+  }
+
+  function setDraft(patch) {
+    Object.assign(draft, patch);
+    syncPickers();
+    renderPreview();
+  }
+
+  function openSeedModal(id, opener) {
+    if (id && run) { toast('Espera a que termine la siembra para editar semillas.'); return; }
+    modalScope = (opener && opener.closest('#seedSidebar, #seedMobile')) || null;
+    const m = id ? SEEDS[id] : null;
+    draft.id = m ? m.id : null;
+    draft.emoji = m ? m.emoji : '';
+    $('seedName').value = m ? m.label : '';
+    setModalError('');
+    $('seedEmojiCustom').value = '';
+    const free = BOWL_COLORS.find(c => !usedColors()[c.id]);
+    draft.color = m ? m.box : (free ? free.id : '');
+    $('seedModalTitle').textContent = m ? 'Editar semilla' : 'Nueva semilla';
+    $('seedSave').textContent = m ? 'Guardar cambios' : 'Guardar';
+    $('seedDelete').hidden = !m;
+    renderPickers();
+    renderPreview();
+    modalEl.hidden = false;
+    document.body.classList.add('modal-open');
+    $('seedName').focus();
+  }
+
+  function closeSeedModal() {
+    if (modalEl.hidden) return;
+    modalEl.hidden = true;
+    document.body.classList.remove('modal-open');
+    // The palette was rebuilt behind the modal, so the opener is gone: find its twin.
+    const target = modalScope && (draft.id && SEEDS[draft.id]
+      ? modalScope.querySelector('[data-edit-seed="' + draft.id + '"]')
+      : modalScope.querySelector('[data-add-seed]'));
+    modalScope = null;
+    if (target) target.focus();
+  }
+
+  // The first grapheme of what was typed or pasted, when it is an emoji.
+  function firstEmoji(text) {
+    const v = String(text || '').trim();
+    if (!v) return '';
+    const first = window.Intl && Intl.Segmenter
+      ? [...new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(v)][0].segment
+      : [...v][0];
+    return /\p{Extended_Pictographic}/u.test(first) ? first : '';
+  }
+
+  function saveSeedFromModal() {
+    const name = $('seedName').value.trim();
+    if (!name) { setModalError('Escribe un nombre para la semilla.'); $('seedName').focus(); return; }
+    if (!draft.emoji) { setModalError('Elige un emoji.'); return; }
+    if (!draft.color) { setModalError('Elige el color de la caja.'); return; }
+    if (usedColors()[draft.color]) { setModalError('Ese color ya lo usa otra semilla.'); return; }
+    const editing = !!draft.id;
+    const id = draft.id || newSeedId();
+    const list = seedList();
+    const entry = { id, name: name.slice(0, MAX_NAME), emoji: draft.emoji, color: draft.color };
+    if (editing) list[list.findIndex(x => x.id === id)] = entry; else list.push(entry);
+    setSeeds(list);
+    saveSeeds();
+    if (!editing) selected = id;
+    refreshSeeds();
+    closeSeedModal();
+    toast('Semilla «' + entry.name + '» ' + (editing ? 'actualizada.' : 'creada.'));
+  }
+
+  function deleteSeedFromModal() {
+    const m = SEEDS[draft.id];
+    if (!m) return;
+    if (run) { toast('Espera a que termine la siembra para borrar semillas.'); return; }
+    if (Object.keys(SEEDS).length < 2) { setModalError('Debe quedar al menos una semilla.'); return; }
+    const used = cells.filter(k => k === m.id).length;
+    const ask = used
+      ? '«' + m.label + '» está en ' + used + (used === 1 ? ' hueco' : ' huecos') + ' del mapa. Si la borras, esos huecos se vaciarán. ¿Borrar la semilla?'
+      : '¿Borrar la semilla «' + m.label + '»?';
+    if (!window.confirm(ask)) return;
+    const list = seedList().filter(x => x.id !== m.id);
+    cells = cells.map(k => (k === m.id ? null : k));
+    saveLayout();
+    setSeeds(list);
+    saveSeeds();
+    refreshSeeds();
+    closeSeedModal();
+    toast('Semilla «' + m.label + '» borrada' + (used ? ' y ' + used + (used === 1 ? ' hueco vaciado.' : ' huecos vaciados.') : '.'));
+  }
+
+  function moveRoving(e, group) {
+    const keys = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 };
+    if (!(e.key in keys)) return;
+    const opts = [...group.querySelectorAll('[role="radio"]')];
+    const at = opts.indexOf(document.activeElement);
+    if (at < 0) return;
+    e.preventDefault();
+    const next = opts[(at + keys[e.key] + opts.length) % opts.length];
+    next.focus();
+    next.click();
+  }
+
+  $('seedEmojiGrid').addEventListener('click', e => {
+    const b = e.target.closest('[data-emoji]');
+    if (b) { b.focus(); $('seedEmojiCustom').value = ''; setDraft({ emoji: b.dataset.emoji }); }
+  });
+  $('seedColorGrid').addEventListener('click', e => {
+    const b = e.target.closest('[data-color]');
+    if (!b) return;
+    b.focus();  // macOS browsers do not focus a button on click
+    if (b.getAttribute('aria-disabled') === 'true') { setModalError('Ese color ya lo usa «' + usedColors()[b.dataset.color] + '»: cada color es una caja distinta.'); return; }
+    setModalError('');
+    setDraft({ color: b.dataset.color });
+  });
+  $('seedEmojiGrid').addEventListener('keydown', e => moveRoving(e, $('seedEmojiGrid')));
+  $('seedColorGrid').addEventListener('keydown', e => moveRoving(e, $('seedColorGrid')));
+  $('seedEmojiCustom').addEventListener('input', e => {
+    const em = firstEmoji(e.target.value);
+    if (e.target.value.trim() && !em) { setModalError('Pega un emoji, por ejemplo 🥑.'); return; }
+    setModalError('');
+    if (em) setDraft({ emoji: em });
+  });
+  $('seedName').addEventListener('input', () => { setModalError(''); renderPreview(); });
+  form.addEventListener('submit', e => { e.preventDefault(); saveSeedFromModal(); });
+  $('seedCancel').addEventListener('click', closeSeedModal);
+  $('seedCancelX').addEventListener('click', closeSeedModal);
+  $('seedDelete').addEventListener('click', deleteSeedFromModal);
+  modalEl.addEventListener('mousedown', e => { if (e.target.matches('[data-modal-close]')) closeSeedModal(); });
+
+  // Esc closes; Tab stays inside the dialog.
+  document.addEventListener('keydown', e => {
+    if (modalEl.hidden) return;
+    if (e.key === 'Escape') { e.preventDefault(); closeSeedModal(); return; }
+    if (e.key !== 'Tab') return;
+    const items = [...modalEl.querySelectorAll('input, button, [tabindex]')]
+      .filter(el => !el.disabled && !el.hidden && el.tabIndex >= 0 && !el.closest('[hidden]'));
+    if (!items.length) return;
+    const first = items[0], last = items[items.length - 1];
+    const outside = !modalEl.contains(document.activeElement);
+    if (e.shiftKey && (document.activeElement === first || outside)) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && (document.activeElement === last || outside)) { e.preventDefault(); first.focus(); }
   });
 
   // ── Tray wiring ────────────────────────────────────────────────────────────
@@ -709,6 +1031,9 @@
 
   // ── Boot ───────────────────────────────────────────────────────────────────
 
+  setSeeds(loadSeeds());
+  selected = Object.keys(SEEDS)[0] || null;
+
   const saved = normalizeLayout(readJSON(LAYOUT_KEY, null) ?? readJSON(LEGACY_LAYOUT_KEY, null));
   if (saved && saved.rows && saved.cols) {
     rows = saved.rows;
@@ -722,10 +1047,9 @@
   $('customRows').value = rows;
   $('customCols').value = cols;
 
-  renderBoxLegend();
-  selectSeed(selected);
   renderTemplates('');
-  renderTray();
+  refreshSeeds();
+  selectSeed(selected);
 
   window.smartseedApp = {
     openApp,
@@ -733,5 +1057,6 @@
     dims: () => ({ rows, cols }),
     isRunning: () => !!run,
     seedCount: filledCount,
+    seeds: seedList,
   };
 })();

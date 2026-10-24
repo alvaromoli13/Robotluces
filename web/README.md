@@ -12,7 +12,8 @@ carpeta.
    bandeja y sus huecos (marcadores ArUco, profundidad o el modelo de visión, ver
    `scanner.js`) y pinta el mapa de alveolos **encima de la imagen en directo**.
 2. **Diseñar.** Mapa tipo butacas de cine: cada alveolo es una casilla y se pinta del
-   color de la caja de la que saldrá su semilla. Cuatro variedades, una caja por color.
+   color de la caja de la que saldrá su semilla. Las variedades son tuyas: «+» abre el modal (nombre, emoji y color de la caja, uno por semilla;
+   el lápiz de cada una la edita o la borra). Vienen cuatro por defecto.
    Arrastra una variedad desde la paleta o toca las casillas. "Rellenar todo el mapa"
    pone la variedad seleccionada en todos los huecos.
 3. **Guardar.** El diseño se guarda como plantilla con nombre, y la última fórmula usada
@@ -67,6 +68,7 @@ Todo en `localStorage` del navegador, nada sale de la máquina:
 |---|---|
 | `smartseed.lastLayout` | Última fórmula usada (`{rows, cols, cells}`) |
 | `smartseed.templates` | Plantillas con nombre |
+| `smartseed.seeds` | Semillas (`[{id, name, emoji, color}]`); `color` es el id de caja que recibe `/plan` |
 | `smartseed.cameraId` | Última cámara elegida |
 | `smartseed.scanCorners` | Esquinas de la bandeja ajustadas a mano |
 | `smartseed.backendUrl` | Dirección del backend, si no es la de por defecto |

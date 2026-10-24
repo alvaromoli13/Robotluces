@@ -88,6 +88,38 @@ const VIEWPORTS = {
       };
     });
 
+    // The seed modal, empty and filled in, then a custom seed planted on the map.
+    const palette = name === 'desktop' ? '#seedSidebar' : '#seedMobile';
+    await page.click(palette + ' [data-add-seed]');
+    await new Promise(r => setTimeout(r, 150));
+    await page.screenshot({ path: `${OUT}/${name}-4-modal.png` });
+    await page.type('#seedName', 'Albahaca');
+    await page.click('#seedEmojiGrid [data-emoji="🌿"]');
+    await page.click('#seedColorGrid [data-color="blue"]');
+    const modalMetrics = await page.evaluate(() => {
+      const card = document.querySelector('.modal-card').getBoundingClientRect();
+      return {
+        cardInsideViewport: card.left >= 0 && card.right <= window.innerWidth && card.top >= 0 && card.bottom <= window.innerHeight,
+        cardW: Math.round(card.width), cardH: Math.round(card.height),
+        pageOverflowX: document.documentElement.scrollWidth > window.innerWidth,
+        modalScrollsX: document.querySelector('.modal-card').scrollWidth > document.querySelector('.modal-card').clientWidth + 1,
+        focusInside: document.querySelector('.modal-card').contains(document.activeElement),
+      };
+    });
+    await page.screenshot({ path: `${OUT}/${name}-5-modal-filled.png` });
+    await page.click('#seedSave');
+    await new Promise(r => setTimeout(r, 150));
+    await page.evaluate(() => [3, 4, 10, 11, 12, 25, 28, 29].forEach(i => document.querySelector('#trayGrid [data-cell="' + i + '"]').click()));
+    await new Promise(r => setTimeout(r, 200));
+    const paletteMetrics = await page.evaluate(() => {
+      const tiles = [...document.querySelectorAll((window.innerWidth >= 900 ? '#seedSidebar' : '#seedMobile') + ' .seed-item')];
+      const tops = new Set(tiles.map(t => Math.round(t.getBoundingClientRect().top)));
+      return { tiles: tiles.length, rowsOfTiles: tops.size, modalClosed: document.getElementById('seedModal').hidden,
+        pageOverflowX: document.documentElement.scrollWidth > window.innerWidth,
+        customCells: document.querySelectorAll('#trayGrid .tray-cell.filled[aria-label*="Albahaca"]').length };
+    });
+    await page.screenshot({ path: `${OUT}/${name}-6-custom-map.png` });
+
     // Planting run (no backend -> demo simulation).
     await page.evaluate(() => document.getElementById('mapPlantBtn').click());
     await new Promise(r => setTimeout(r, 3200));
@@ -100,7 +132,7 @@ const VIEWPORTS = {
       panelVisible: !document.getElementById('runPanel').hidden,
     }));
 
-    report.push({ name, viewport: viewport.width + 'x' + viewport.height, fonts, filledAfterEdit, metrics, runState, errors });
+    report.push({ name, viewport: viewport.width + 'x' + viewport.height, fonts, filledAfterEdit, metrics, modalMetrics, paletteMetrics, runState, errors });
     await page.close();
   }
 

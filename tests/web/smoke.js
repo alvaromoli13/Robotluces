@@ -28,16 +28,20 @@ vc.on('jsdomError', e => {
 vc.on('error', m => errs.push('console.error: ' + m));
 
 (async () => {
-  const dom = await JSDOM.fromFile(PAGE, {
+  // `preset` is what localStorage already holds when the page boots.
+  const boot = preset => JSDOM.fromFile(PAGE, {
     runScripts: 'dangerously',
     resources: 'usable',
     pretendToBeVisual: true,
     virtualConsole: vc,
     beforeParse(window) {
       window.prompt = () => 'Plantilla test';
+      window.__confirmAnswer = true;
+      window.__confirmed = [];
+      window.confirm = msg => { window.__confirmed.push(msg); return window.__confirmAnswer; };
       // jsdom refuses localStorage on a file:// (opaque) origin; the page always guards
       // its storage access, but the test needs to read what was written.
-      const store = new Map();
+      const store = new Map(Object.entries(preset));
       Object.defineProperty(window, 'localStorage', {
         configurable: true,
         value: {
@@ -82,6 +86,7 @@ vc.on('error', m => errs.push('console.error: ' + m));
     },
   });
 
+  const dom = await boot({});
   const { window } = dom;
   const doc = window.document;
   const $ = id => doc.getElementById(id);
@@ -111,6 +116,10 @@ vc.on('error', m => errs.push('console.error: ' + m));
   ok('backend ws url derived', window.smartseedBackend.ws('/progress') === 'ws://localhost:8000/progress', window.smartseedBackend.ws('/progress'));
   ok('gate shown, app hidden at boot', !$('scannerGate').hidden && $('mainApp').hidden);
   ok('box legend lists the 4 boxes', $('boxLegend').querySelectorAll('li').length === 4);
+  ok('first load seeds the original four', window.smartseedApp.seeds().map(x => x.id + ':' + x.color).join() === 'TOMATE:red,PIMIENTO:green,LIMON:yellow,BERENJENAS:purple',
+    JSON.stringify(window.smartseedApp.seeds()));
+  ok('the sidebar palette ends with a + tile', !!$('seedSidebar').querySelector('.seed-add') && !!$('seedMobile').querySelector('.seed-add'));
+  ok('seed modal starts closed', $('seedModal').hidden);
   ok('palette moved into the sidebar', !!$('seedSidebar').querySelector('.seed'));
   ok('palette cloned into the mobile dock', $('seedMobile').querySelectorAll('.seed').length === 4);
   ok('no duplicate ids in the cloned palette', $('seedMobile').querySelectorAll('[id]').length === 0);
@@ -174,6 +183,169 @@ vc.on('error', m => errs.push('console.error: ' + m));
   window.smartseedApp.resizeTray(3, 4);
   ok('shrinking back keeps what still fits', filled().length === 3, filled().length);
 
+  // ── Seeds: add, edit, delete through the modal ─────────────────────────────
+  const fire = (el, type, init) => el.dispatchEvent(new window.KeyboardEvent(type, { bubbles: true, cancelable: true, ...init }));
+  const typeInto = (el, value) => { el.value = value; el.dispatchEvent(new window.Event('input', { bubbles: true })); };
+  const addTile = () => $('seedSidebar').querySelector('[data-add-seed]');
+  const seedTiles = () => [...$('seedSidebar').querySelectorAll('.seed')];
+  const tileOf = label => seedTiles().find(t => t.querySelector('.seed-name').textContent === label);
+  const emojiOpt = e => [...$('seedEmojiGrid').querySelectorAll('[data-emoji]')].find(b => b.dataset.emoji === e);
+  const colorOpt = id => $('seedColorGrid').querySelector('[data-color="' + id + '"]');
+  const submit = () => $('seedForm').dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
+
+  addTile().focus();
+  addTile().click();
+  ok('+ opens the modal', !$('seedModal').hidden && $('seedModalTitle').textContent === 'Nueva semilla');
+  ok('modal is an accessible dialog', $('seedForm').getAttribute('role') === 'dialog' && $('seedForm').getAttribute('aria-modal') === 'true' &&
+    !!doc.getElementById($('seedForm').getAttribute('aria-labelledby')));
+  ok('name field is focused and labelled', doc.activeElement === $('seedName') && doc.querySelector('label[for="seedName"]'));
+  ok('emoji grid offers 24 emojis', $('seedEmojiGrid').querySelectorAll('[data-emoji]').length === 24);
+  ok('colour grid offers 8 swatches', $('seedColorGrid').querySelectorAll('[data-color]').length === 8);
+  ok('colours already used are disabled with the seed that owns them',
+    ['red', 'green', 'yellow', 'purple'].every(c => colorOpt(c).getAttribute('aria-disabled') === 'true') &&
+    colorOpt('red').getAttribute('aria-label').includes('Tomate') && !!colorOpt('red').title);
+  ok('a free colour is preselected', colorOpt('orange').getAttribute('aria-checked') === 'true');
+
+  submit();
+  ok('an empty name is refused', !$('seedModal').hidden && $('seedError').textContent.includes('nombre'), $('seedError').textContent);
+  typeInto($('seedName'), 'x'.repeat(30));
+  ok('the name is capped at 20 chars', $('seedName').maxLength === 20);
+  typeInto($('seedName'), 'Albahaca');
+  ok('the preview follows the name', $('seedPreview').textContent.includes('Albahaca'));
+  submit();
+  ok('an emoji is required', !$('seedModal').hidden && $('seedError').textContent.includes('emoji'), $('seedError').textContent);
+  emojiOpt('🌿').click();
+  ok('picking an emoji marks it and updates the preview', emojiOpt('🌿').getAttribute('aria-checked') === 'true' &&
+    $('seedPreview').textContent.includes('🌿'));
+  typeInto($('seedEmojiCustom'), 'abc');
+  ok('the custom emoji field refuses plain text', $('seedError').textContent.includes('emoji'));
+  typeInto($('seedEmojiCustom'), '🥑');
+  ok('a pasted emoji becomes the choice', $('seedPreview').textContent.includes('🥑') && $('seedError').textContent === '');
+  colorOpt('red').click();
+  ok('a used colour cannot be picked', colorOpt('red').getAttribute('aria-checked') === 'false' && colorOpt('orange').getAttribute('aria-checked') === 'true');
+  colorOpt('blue').click();
+  ok('a free colour can be picked', colorOpt('blue').getAttribute('aria-checked') === 'true');
+  submit();
+  ok('saving closes the modal and returns focus to +', $('seedModal').hidden && doc.activeElement === addTile(), doc.activeElement && doc.activeElement.className);
+  ok('the new seed is in the sidebar and the dock', !!tileOf('Albahaca') && [...$('seedMobile').querySelectorAll('.seed-name')].some(n => n.textContent === 'Albahaca'));
+  ok('the new seed is in the box legend', $('boxLegend').textContent.includes('Albahaca') && $('boxLegend').textContent.includes('caja azul') &&
+    $('boxLegend').querySelectorAll('li').length === 5);
+  ok('the new seed is selected', tileOf('Albahaca').classList.contains('selected') && $('trayLegend').textContent.includes('Albahaca'), $('trayLegend').textContent);
+  const stored = JSON.parse(window.localStorage.getItem('smartseed.seeds'));
+  ok('seeds are persisted', stored.length === 5 && stored[4].name === 'Albahaca' && stored[4].emoji === '🥑' && stored[4].color === 'blue', JSON.stringify(stored[4]));
+
+  // Assign it to the cell that carries the third planted cell, so the plan can be checked.
+  cellNodes()[11].click();
+  ok('the custom seed fills a cell', cellNodes()[11].getAttribute('aria-label').includes('Albahaca') && cellNodes()[11].getAttribute('aria-label').includes('caja azul'),
+    cellNodes()[11].getAttribute('aria-label'));
+  ok('the filled cell is tinted with the bowl colour', cellNodes()[11].style.getPropertyValue('--cell-strong') === '#2563c9', cellNodes()[11].style.getPropertyValue('--cell-strong'));
+
+  // Names are user text: they must never reach the DOM as markup.
+  addTile().click();
+  typeInto($('seedName'), '<b>Fresa</b>');
+  emojiOpt('🍓').click();
+  colorOpt('white').click();
+  submit();
+  ok('names are escaped, not injected', !!tileOf('<b>Fresa</b>') && !$('seedSidebar').querySelector('.seed-name b'));
+  const white = seedTiles().find(t => t.querySelector('.seed-name').textContent === '<b>Fresa</b>');
+  ok('a white bowl gets a visible edge and a darker strong shade', /--box-edge:#[0-9a-f]{6}/.test(white.getAttribute('style')) &&
+    !/--box:#fff/i.test(white.getAttribute('style')), white.getAttribute('style'));
+  cellNodes()[1].click();
+  ok('white seed fills a cell with a visible fill', cellNodes()[1].style.getPropertyValue('--cell-strong') !== '#ffffff' && !!cellNodes()[1].style.getPropertyValue('--cell-strong'));
+
+  // Escape and backdrop close without saving; focus returns to the opener.
+  addTile().focus();
+  addTile().click();
+  typeInto($('seedName'), 'No guardar');
+  fire(doc, 'keydown', { key: 'Escape' });
+  ok('Esc closes the modal without saving', $('seedModal').hidden && !tileOf('No guardar') && window.smartseedApp.seeds().length === 6);
+  ok('Esc returns focus to the opener', doc.activeElement === addTile());
+  addTile().click();
+  $('seedModal').querySelector('.modal-backdrop').dispatchEvent(new window.MouseEvent('mousedown', { bubbles: true }));
+  ok('the backdrop closes the modal', $('seedModal').hidden);
+  addTile().click();
+  $('seedCancel').click();
+  ok('Cancelar closes the modal', $('seedModal').hidden);
+
+  // Focus stays inside the dialog.
+  addTile().click();
+  $('seedSave').focus();
+  fire(doc, 'keydown', { key: 'Tab' });
+  ok('Tab from the last control wraps to the first', doc.activeElement === $('seedCancelX'), doc.activeElement && doc.activeElement.id);
+  fire(doc, 'keydown', { key: 'Tab', shiftKey: true });
+  ok('Shift+Tab from the first control wraps to the last', doc.activeElement === $('seedSave'), doc.activeElement && doc.activeElement.id);
+  $('seedCancel').click();
+
+  // Edit
+  const editBtn = $('seedSidebar').querySelector('[data-edit-seed]');
+  ok('every tile has an edit button with a label', seedTiles().length === 6 && $('seedSidebar').querySelectorAll('[data-edit-seed]').length === 6 &&
+    /^Editar /.test(editBtn.getAttribute('aria-label')));
+  const albahacaId = window.smartseedApp.seeds()[4].id;
+  $('seedSidebar').querySelector('[data-edit-seed="' + albahacaId + '"]').click();
+  ok('edit opens the same modal prefilled', !$('seedModal').hidden && $('seedModalTitle').textContent === 'Editar semilla' && $('seedName').value === 'Albahaca' &&
+    colorOpt('blue').getAttribute('aria-checked') === 'true' && !$('seedDelete').hidden);
+  ok('the seed own colour stays selectable while editing', colorOpt('blue').getAttribute('aria-disabled') !== 'true');
+  typeInto($('seedName'), 'Albahaca dulce');
+  colorOpt('orange').click();
+  submit();
+  ok('edit renames the seed everywhere', !!tileOf('Albahaca dulce') && $('boxLegend').textContent.includes('Albahaca dulce'));
+  ok('edit recolours the cells already planted', cellNodes()[11].getAttribute('aria-label').includes('caja naranja') && cellNodes()[11].style.getPropertyValue('--cell-strong') === '#d9660a',
+    cellNodes()[11].getAttribute('aria-label'));
+  $('seedSidebar').querySelector('[data-edit-seed="' + albahacaId + '"]').click();
+  colorOpt('blue').click();
+  submit();
+  ok('colour back to blue for the plan', cellNodes()[11].getAttribute('aria-label').includes('caja azul'));
+
+  // Delete
+  const fresaId = window.smartseedApp.seeds()[5].id;
+  $('seedSidebar').querySelector('[data-edit-seed="' + fresaId + '"]').click();
+  window.__confirmAnswer = false;
+  $('seedDelete').click();
+  ok('delete asks for confirmation', window.__confirmed.length === 1 && window.__confirmed[0].includes('1 hueco'), window.__confirmed[0]);
+  ok('declining keeps the seed and its cells', window.smartseedApp.seeds().length === 6 && cellNodes()[1].classList.contains('filled') && !$('seedModal').hidden);
+  window.__confirmAnswer = true;
+  $('seedDelete').click();
+  ok('confirming deletes the seed', window.smartseedApp.seeds().length === 5 && $('seedModal').hidden);
+  ok('deleting clears the cells that used it', !cellNodes()[1].classList.contains('filled') && cellNodes()[11].classList.contains('filled'));
+  ok('the deleted seed leaves the palette and the legend', seedTiles().length === 5 && $('boxLegend').querySelectorAll('li').length === 5);
+  ok('deletion is persisted', JSON.parse(window.localStorage.getItem('smartseed.seeds')).length === 5 &&
+    !JSON.parse(window.localStorage.getItem('smartseed.lastLayout')).cells.includes(fresaId));
+  ok('a still-selected seed exists after the delete', !!doc.querySelector('.seed.selected'));
+
+  // The cell 1 is empty again, which is what the plan section below expects.
+  ok('the layout still has the three planted cells', filled().length === 3, filled().length);
+
+  // Old layouts and templates still resolve, and the stored seeds survive a reload.
+  const legacy = await boot({
+    'smartseed.lastLayout': JSON.stringify({ rows: 2, cols: 3, cells: ['TOMATE', 'LIMON', { name: 'BERENJENAS' }, 'PIMIENTOS', null, { name: 'Limón', emoji: '🍋' }] }),
+    'smartseed.templates': JSON.stringify({ Vieja: { rows: 1, cols: 2, cells: ['BERENJENAS', 'TOMATE'] } }),
+  });
+  const lw = legacy.window;
+  await sleep(300);
+  const lcells = [...lw.document.getElementById('trayGrid').querySelectorAll('[data-cell]')];
+  ok('old layout keys still resolve', lcells.filter(c => c.classList.contains('filled')).length === 5 &&
+    lcells[2].getAttribute('aria-label').includes('Berenjena') && lcells[3].getAttribute('aria-label').includes('Pimiento') &&
+    lcells[5].getAttribute('aria-label').includes('Limón'), lcells.map(c => c.getAttribute('aria-label')).join(' | '));
+  const ts = lw.document.getElementById('templateSelect');
+  ts.value = 'Vieja';
+  ts.dispatchEvent(new lw.Event('change'));
+  const tcells = [...lw.document.getElementById('trayGrid').querySelectorAll('[data-cell]')];
+  ok('old templates still resolve', tcells.length === 2 && tcells.every(c => c.classList.contains('filled')) && tcells[0].getAttribute('aria-label').includes('Berenjena'));
+  legacy.window.close();
+
+  const again = await boot({ 'smartseed.seeds': window.localStorage.getItem('smartseed.seeds'), 'smartseed.lastLayout': window.localStorage.getItem('smartseed.lastLayout') });
+  await sleep(300);
+  const aw = again.window;
+  ok('seeds survive a reload', aw.smartseedApp.seeds().length === 5 && aw.document.querySelectorAll('#seedSidebar .seed').length === 5);
+  ok('the layout with a custom seed survives a reload', aw.document.querySelectorAll('#trayGrid .tray-cell.filled').length === 3 &&
+    aw.document.querySelector('#trayGrid [data-cell="11"]').getAttribute('aria-label').includes('Albahaca'));
+  again.window.close();
+
+  const broken = await boot({ 'smartseed.seeds': '{"not":"a list"}' });
+  await sleep(200);
+  ok('a corrupt seed list falls back to the original four', broken.window.smartseedApp.seeds().length === 4);
+  broken.window.close();
+
   // ── Planting run ────────────────────────────────────────────────────────────
   // Without a camera the plan has no pixel centres. With a backend answering, the page
   // must refuse to plant instead of pretending; with none, it simulates.
@@ -198,6 +370,7 @@ vc.on('error', m => errs.push('console.error: ' + m));
       plan.cells.every(c => ['cell_index', 'row', 'col', 'color', 'u', 'v'].every(k => k in c)),
       JSON.stringify(plan.cells[0]));
     ok('plan cells carry the box colour', plan.cells[0].color === 'red', JSON.stringify(plan.cells[0]));
+    ok('a custom seed sends its own colour id', plan.cells[2].color === 'blue', JSON.stringify(plan.cells[2]));
     ok('plan cell row/col match the index',
       plan.cells.every(c => c.row === Math.floor(c.cell_index / 4) && c.col === c.cell_index % 4),
       JSON.stringify(plan.cells));
@@ -205,6 +378,13 @@ vc.on('error', m => errs.push('console.error: ' + m));
   } else {
     ok('nothing is POSTed with no backend', window.__planned.length === 0, window.__planned.length);
   }
+
+  ok('seeds cannot be edited or deleted during the run', (() => {
+    const before = window.smartseedApp.seeds().length;
+    const btn = $('seedSidebar').querySelector('[data-edit-seed]');
+    btn.click();
+    return $('seedModal').hidden && window.smartseedApp.seeds().length === before;
+  })());
 
   ok('editing is locked during the run', (() => {
     const before = filled().length;
