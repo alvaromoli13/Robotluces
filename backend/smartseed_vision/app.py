@@ -32,11 +32,14 @@ def default_depth():
     return DepthEstimator()
 
 
-def create_app(detector="default", depth="default"):
+def create_app(detector="default", depth="default", robot="default"):
     """`detector` needs `.detect(bgr) -> (bbox, score) | None`, `.loaded`, `.device`; None disables the model.
 
     `depth` needs `.estimate(bgr) -> relative depth map`, `.loaded`, `.device`. By default it is
     only loaded together with the default detector, so a test passing a detector gets no depth.
+
+    `robot` is a `smartseed_robot.api.Runtime`; by default it is built from SMARTSEED_ROBOT (fake unless
+    `real`). None leaves the robot endpoints off.
     """
     if depth == "default":
         depth = default_depth() if detector == "default" else None
@@ -47,6 +50,16 @@ def create_app(detector="default", depth="default"):
     app.add_middleware(
         CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"], allow_private_network=True
     )
+
+    if robot == "default":
+        from smartseed_robot.api import build_runtime
+
+        robot = build_runtime()
+    if robot is not None:
+        from smartseed_robot.api import create_router
+
+        app.state.robot_runtime = robot
+        app.include_router(create_router(robot))
 
     @app.get("/health")
     def health():

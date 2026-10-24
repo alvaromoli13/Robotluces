@@ -59,3 +59,26 @@ class Kinematics:
                     return dict(zip(ARM_JOINTS, map(float, current)))
         raise IKError(f"target ({x:.3f}, {y:.3f}, {z:.3f}) m is unreachable (missed by "
                       f"{np.linalg.norm(reached - target[:3, 3]) * 1000:.0f} mm)")
+
+
+class LazyKinematics:
+    """Loads the URDF on first use so starting the app (and the fake robot) stays cheap."""
+
+    def __init__(self):
+        self._kin: Kinematics | None = None
+        self._lock = threading.Lock()
+
+    def _get(self) -> Kinematics:
+        with self._lock:
+            if self._kin is None:
+                self._kin = Kinematics()
+            return self._kin
+
+    def tool_pose(self, joints):
+        return self._get().tool_pose(joints)
+
+    def tool_xyz(self, joints):
+        return self._get().tool_xyz(joints)
+
+    def solve(self, x, y, z, seed, **kw):
+        return self._get().solve(x, y, z, seed, **kw)

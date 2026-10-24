@@ -47,6 +47,12 @@ Implications for any work here:
   `uv run pytest` (wrap in `~/.claude/bin/testsem --` on the team Mac). Tests use synthetic
   trays, synthetic depth maps and stubbed models; never download a model in tests.
   `SMARTSEED_DISABLE_MODEL=1` skips OWLv2 (contour only).
+- `backend/smartseed_robot/` — robot executor mounted on the same app: `robot.py` (`RobotPort`,
+  `FakeRobot`, `LeRobotFollower`), `kinematics.py` (placo via lerobot, URDF in `backend/assets/so101/`),
+  `calibration.py` (pixel→robot homography), `poses.py`, `motion.py`, `executor.py`, `api.py`
+  (`POST /plan`, `/stop`, `GET /robot/status`, `WS /robot/progress`, poses, calibration). `SMARTSEED_ROBOT=fake`
+  (default) or `real` + `SMARTSEED_ROBOT_PORT`. Tests use `FakeRobot`; never open a serial port in tests.
+  lerobot is pinned to commit `e595b79` (same as `vendor/lerobot`). Setup steps: README "Ejecutor del robot".
 - `odd/tasks/` — per-feature task documents.
 - `.github/workflows/pages.yml` — deploys `web/` to GitHub Pages.
 - Root `README.md` — project idea and plan. `web/README.md` — notes on the UI prototype.

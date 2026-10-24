@@ -243,6 +243,34 @@ en la mesa el contorno de la bandeja y se sueltan las pelotas con **4 esquinas e
 con el leader** e interpolación. La cámara sigue detectando la rejilla para la web y
 comprueba que la bandeja está en su sitio.
 
+## Ejecutor del robot (`backend/smartseed_robot/`)
+
+Por defecto el robot es **falso** (`SMARTSEED_ROBOT=fake`): no abre ningún puerto serie. Con
+el brazo real: `SMARTSEED_ROBOT=real SMARTSEED_ROBOT_PORT=/dev/tty.usbmodem5B8E1124861 ./run.sh`
+(follower `follower_01`, grados, `max_relative_target` 8). Los datos enseñados se guardan en
+`backend/data/` (`poses.json`, `calibration.json`, fuera de git; `SMARTSEED_DATA_DIR` lo cambia).
+
+Puesta a punto con el brazo (todo en `http://127.0.0.1:8000`, mueve el brazo a mano con el par
+desactivado: `POST /robot/torque-off`):
+
+1. **Comprobar la cinemática directa**: `GET /robot/joints` devuelve ángulos y `tool` (x, y, z
+   en metros respecto a la base). Mide con una regla la punta de la pinza y compara.
+2. **Enseñar poses** (`home`, `above_box_red|yellow|green|purple`, y opcional `grasp_<color>`
+   que baja a coger): coloca el brazo y `POST /robot/poses/{nombre}`.
+   `POST /robot/goto/{nombre}` comprueba que vuelve a ella.
+3. **Calibrar cámara-robot**: con la punta sobre un punto visible de la bandeja,
+   `POST /robot/calibration/points {"u":..,"v":..,"image_size":[w,h]}` (x, y salen de la
+   cinemática directa). Al menos 4 puntos repartidos y `POST /robot/calibration/fit`
+   (devuelve el error en mm).
+4. **Sembrar**: `POST /plan {"image_size":[w,h],"cells":[{"cell_index","row","col","color","u","v"}]}`
+   y seguir el progreso por `WS /robot/progress`.
+5. **Parar**: `POST /stop` (el brazo se queda en su sitio con par). `POST /robot/torque-off`
+   solo cuando el brazo esté en un lugar seguro.
+
+Un agarre vacío (pinza cerrada del todo) se reintenta una vez; si falla otra vez la celda
+se marca como fallida y se sigue. Con la aproximación en vertical el alcance a altura de
+bandeja es de unos 28 cm desde la base.
+
 ## Escena y objetos
 
 Las semillas se representan con **pelotas** u objetos parecidos: coger una semilla real
