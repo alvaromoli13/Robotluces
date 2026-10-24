@@ -43,6 +43,7 @@ class ExecutorConfig:
     gripper_closed: float = 0.0
     empty_below: float = 8.0  # gripper reading under this after closing = nothing inside
     retries: int = 1
+    approach_clearance: float = 0.08  # m above drop_z where the arm hovers before descending (and lifts back to)
     place_tolerance_m: float = 0.005  # xy miss over the cell that is still accepted when releasing
     place_corrections: int = 2  # extra moves, aiming past the cell by the measured shortfall (servo sag)
     grasp_deltas: dict[str, float] = field(default_factory=dict)  # used when no grasp_<color> pose is taught
@@ -209,10 +210,13 @@ class Executor:
         return self.robot.read_joints()["gripper"] > self.cfg.empty_below
 
     def _release(self, c, image_size, back: dict[str, float]) -> None:
-        """IK over the cell with the gripper as it is, closed-loop on the real tool position, open, then back."""
+        """Hover over the cell, descend with the gripper as it is (closed-loop on the real tool position), open,
+        lift back to the hover pose, then `back`. Without a reachable hover pose it drops straight from where it is."""
         cfg = self.cfg
         x, y = self.calibration.pixel_to_robot(c["u"], c["v"], image_size)
         aim, corrections = [x, y], 0
+        hover_z = self._drop_z + cfg.approach_clearance
+        hovering = self._move_hover(aim, hover_z)  # coming from above keeps the path from dipping into the tray
         while True:
             now = self.robot.read_joints()
             target = self.kin.solve(*aim, self._drop_z, seed={j: now[j] for j in ARM_JOINTS})
@@ -228,7 +232,19 @@ class Executor:
         self._emit("drop_pose", self._current, target=[x, y, self._drop_z], reached=list(reached),
                    error_mm=round(math.hypot(*miss) * 1000, 1), corrections=corrections)
         self._move({"gripper": cfg.gripper_open})
+        if hovering:
+            self._move_hover(aim, hover_z)
         self._move(back)
+
+    def _move_hover(self, aim, hover_z) -> bool:
+        """Moves the tool to (aim, hover_z) keeping the gripper; False when the arm cannot reach it."""
+        now = self.robot.read_joints()
+        try:
+            target = self.kin.solve(*aim, hover_z, seed={j: now[j] for j in ARM_JOINTS})
+        except IKError:
+            return False
+        self._move({**target, "gripper": now["gripper"]})
+        return True
 
     def _grasp_with_policy(self, c, start) -> None:
         self._move(start)

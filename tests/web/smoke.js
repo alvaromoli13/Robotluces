@@ -510,6 +510,29 @@ vc.on('error', m => errs.push('console.error: ' + m));
     window.__ws.push({ type: 'finished', message: '1 done, 0 failed' });
     $('stopRunBtn').click();
 
+    // Probar dejar goes to the cell the user assigned last, not the lowest-index one.
+    const lastAssigned = cellNodes().map((c, i) => (klass(c, 'filled') ? -1 : i)).filter(i => i > firstFilled).pop();
+    ok('there is an empty cell after the first planted one', lastAssigned > firstFilled, lastAssigned);
+    cellNodes()[lastAssigned].click();
+    window.__planned.length = 0;
+    $('testPlaceBtn').click();
+    await sleep(200);
+    ok('Probar dejar uses the most recently assigned cell',
+      window.__planned.length === 1 && window.__planned[0].cells[0].cell_index === lastAssigned,
+      JSON.stringify(window.__planned[0] && window.__planned[0].cells));
+    window.__ws.push({ type: 'finished', message: '1 done, 0 failed' });
+    $('stopRunBtn').click();
+    cellNodes()[lastAssigned].click();  // unassign: the test goes back to the first planted cell
+    window.__planned.length = 0;
+    $('testPlaceBtn').click();
+    await sleep(200);
+    ok('Probar dejar falls back to the first planted cell when the last one is cleared',
+      window.__planned.length === 1 && window.__planned[0].cells[0].cell_index === firstFilled,
+      JSON.stringify(window.__planned[0] && window.__planned[0].cells));
+    window.__ws.push({ type: 'finished', message: '1 done, 0 failed' });
+    $('stopRunBtn').click();
+    window.__planned.length = 1;  // the grasp and full checks below index from here
+
     $('testGraspBtn').click();
     await sleep(200);
     const grasp = window.__planned[1];

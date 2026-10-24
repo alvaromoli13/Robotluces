@@ -182,8 +182,9 @@ las filas y columnas, **Calibrar robot** y **Cerrar cámara**, y añade:
   el brazo empuja la bandeja al soltar, súbela.
 - **Probar coger (ACT)**: solo la primera mitad. Va a la pose de inicio, ejecuta la policy del
   color de la semilla seleccionada y se queda con la semilla en la pinza (`mode: "grasp"`).
-- **Probar dejar**: solo la segunda mitad. Va encima de la primera casilla con semilla con la
-  pinza como esté, la abre y vuelve a la pose de inicio (`mode: "place"`; no necesita policy
+- **Probar dejar**: solo la segunda mitad. Va a la última casilla a la que asignaste una semilla (si ya
+  no la tiene, a la primera con semilla): se coloca 8 cm por encima (`approach_clearance`), baja
+  con la pinza como esté, la abre, sube otra vez y vuelve a la pose de inicio (`mode: "place"`; no necesita policy
   ni cajas enseñadas, sí calibración). Hay que haber cogido antes una semilla (o ponerla a mano).
 
 Las pruebas usan el mismo panel de progreso, rotulado «Prueba: coger» / «Prueba: dejar».

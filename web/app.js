@@ -123,6 +123,7 @@
   let selected = null;            // id of the seed a tap places
   let rows = 3, cols = 3;
   let cells = [];                 // flat, row-major; each item is a variety key or null
+  let lastAssigned = -1;          // the cell a seed was painted into most recently (what "Probar dejar" targets)
   let run = null;                 // see startRun()
   let toastTimer = null;
   let mobileDropAt = 0;           // guards the click that follows a mobile pointerup drop
@@ -278,6 +279,7 @@
   function setCell(i, key) {
     if (run || i < 0 || i >= total()) return;
     cells[i] = key && SEEDS[key] ? key : null;
+    if (cells[i]) lastAssigned = i;
     saveLayout();
     paintCell(i);
     updateCounts();
@@ -632,8 +634,8 @@
     const dropZ = dropHeightM();
     if (dropZ === null) { toast('La altura al soltar debe estar entre ' + DROP_RANGE_CM[0] + ' y ' + DROP_RANGE_CM[1] + ' cm.'); return; }
     if (test === 'grasp' && !SEEDS[selected]) { toast('Selecciona una semilla: el robot coge de la caja de su color.'); return; }
-    // grasp: no cell is visited, the colour is the selected seed's; place: only the first filled cell
-    const queue = test === 'grasp' ? [] : test === 'place' ? filled.slice(0, 1) : filled;
+    // grasp: no cell is visited, the colour is the selected seed's; place: only the cell assigned last (the first filled one if that is gone)
+    const queue = test === 'grasp' ? [] : test === 'place' ? [filled.includes(lastAssigned) ? lastAssigned : filled[0]] : filled;
     run = {
       test,
       queue,

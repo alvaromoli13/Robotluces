@@ -368,9 +368,8 @@ def test_drop_z_overrides_the_config_for_one_run(tmp_path, kin):
     ex.run([cell(0)], SIZE, drop_z=0.12)
     high = (*robot_xy(320, 240), 0.12)
     assert any(kin.tool_xyz(arm_of(s)) == pytest.approx(high, abs=0.003) for s in robot.history)
-    robot.history.clear()
     ex.run([cell(0)], SIZE)  # the override does not stick
-    assert not any(kin.tool_xyz(arm_of(s)) == pytest.approx(high, abs=0.003) for s in robot.history)
+    assert [e["target"][2] for e in drop_poses(ex)] == pytest.approx([0.12, CONFIG.drop_z])
 
 
 @pytest.mark.parametrize("drop_z", [0.0, 0.01, 0.3, -1])
@@ -450,3 +449,31 @@ def test_stop_during_a_correction_stops_without_releasing(tmp_path, kin):
     ex.run([cell(0)], SIZE, mode="place")
     assert types(ex)[-1] == "stopped" and "drop_pose" not in types(ex)
     assert len(moves) == 2  # no third move: the gripper never opened
+
+
+# -- approach from above -----------------------------------------------------------------------------
+def tool_heights(robot, kin):
+    return [kin.tool_xyz(arm_of(s))[2] for s in robot.history]
+
+
+def test_release_hovers_above_the_cell_before_descending_and_after_opening(tmp_path, kin):
+    robot, _, ex = make_act_executor(tmp_path, kin, robot=FakeRobot(initial={**HOME, "gripper": 25.0}))
+    ex.run([cell(0, "blue")], SIZE, mode="place")
+    hover = CONFIG.drop_z + CONFIG.approach_clearance
+    zs, grip = tool_heights(robot, kin), [s["gripper"] for s in robot.history]
+    at_hover = [i for i, z in enumerate(zs) if z == pytest.approx(hover, abs=0.003)]
+    at_drop = [i for i, z in enumerate(zs) if z == pytest.approx(CONFIG.drop_z, abs=0.003)]
+    assert at_hover and at_drop
+    assert at_hover[0] < at_drop[0]  # comes down onto the cell from above
+    opened = next(i for i in at_drop if grip[i] == CONFIG.gripper_open)
+    assert any(i > opened for i in at_hover)  # lifts straight back up after letting go
+    assert not any(grip[i] == CONFIG.gripper_open for i in at_hover if i < opened)  # opens only at the drop height
+
+
+def test_release_without_a_reachable_hover_pose_still_drops(tmp_path, kin):
+    robot, _, ex = make_act_executor(tmp_path, kin, robot=FakeRobot(initial={**HOME, "gripper": 25.0}))
+    ex.cfg.approach_clearance = 5.0  # far beyond the arm's reach
+    ex.run([cell(0, "blue")], SIZE, mode="place")
+    assert types(ex)[-1] == "finished" and drop_poses(ex)
+    assert max(tool_heights(robot, kin)) < CONFIG.drop_z + 0.05 + 0.1  # never went anywhere near the hover height
+    assert max(s["gripper"] for s in robot.history) == CONFIG.gripper_open
