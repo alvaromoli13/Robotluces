@@ -147,16 +147,23 @@
     catch (e) { return fallback; }
   }
 
-  // Tomate and Pimiento used to default to red/green. Stored copies that still carry the old
-  // default move to the new bowl (black/white); a recoloured or user-made seed is left alone,
-  // and a colour another seed already owns is never taken twice.
-  const LEGACY_DEFAULT_COLORS = { TOMATE: ['red', 'black'], PIMIENTO: ['green', 'white'] };
+  // Tomate IS the black bowl and Pimiento IS the white one: stored copies are forced to those
+  // colours (whatever they carried, e.g. the old red/green defaults). A different seed holding
+  // black or white moves to a free bowl colour so colours stay unique.
+  const BUILTIN_COLORS = { TOMATE: 'black', PIMIENTO: 'white' };
 
   function migrateDefaultColors(list) {
     let changed = false;
-    list.forEach(seed => {
-      const m = LEGACY_DEFAULT_COLORS[seed.id];
-      if (m && seed.color === m[0] && !list.some(o => o !== seed && o.color === m[1])) { seed.color = m[1]; changed = true; }
+    Object.keys(BUILTIN_COLORS).forEach(id => {
+      const seed = list.find(o => o.id === id);
+      if (!seed) return;
+      const want = BUILTIN_COLORS[id];
+      if (seed.color !== want) { seed.color = want; changed = true; }
+      list.forEach(o => {
+        if (o === seed || o.color !== want || BUILTIN_COLORS[o.id] === want) return;
+        const free = BOWL_COLORS.find(c => !list.some(x => x.color === c.id));
+        if (free) { o.color = free.id; changed = true; }
+      });
     });
     return changed;
   }

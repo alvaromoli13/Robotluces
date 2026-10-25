@@ -391,12 +391,20 @@ vc.on('error', m => errs.push('console.error: ' + m));
   migrated.window.close();
   const recoloured = await boot({ 'smartseed.seeds': JSON.stringify([{ ...oldDefaults[0], color: 'orange' }, oldDefaults[1], oldDefaults[3]]) });
   await sleep(200);
-  ok('a Tomate the user recoloured keeps its colour', colours(recoloured.window) === 'TOMATE:orange,PIMIENTO:white,SABC:blue', colours(recoloured.window));
+  ok('Tomate is always the black bowl, even if stored with another colour', colours(recoloured.window) === 'TOMATE:black,PIMIENTO:white,SABC:blue', colours(recoloured.window));
   recoloured.window.close();
   const taken = await boot({ 'smartseed.seeds': JSON.stringify([oldDefaults[0], oldDefaults[1], { id: 'SXYZ', name: 'Sal', emoji: '🧂', color: 'white' }]) });
   await sleep(200);
-  ok('a colour already owned by another seed is not duplicated', colours(taken.window) === 'TOMATE:black,PIMIENTO:green,SXYZ:white', colours(taken.window));
+  ok('a user seed holding white moves to a free colour so Pimiento is white', colours(taken.window) === 'TOMATE:black,PIMIENTO:white,SXYZ:red', colours(taken.window));
   taken.window.close();
+  const pimGreen = await boot({ 'smartseed.seeds': JSON.stringify([oldDefaults[0], { ...oldDefaults[1], color: 'blue' }, oldDefaults[2]]) });
+  await sleep(200);
+  ok('Pimiento stored with any colour resolves to white and persists', colours(pimGreen.window) === 'TOMATE:black,PIMIENTO:white,LIMON:yellow' &&
+    JSON.parse(pimGreen.window.localStorage.getItem('smartseed.seeds')).map(x => x.color).join() === 'black,white,yellow');
+  ok('a saved layout cell for Pimiento plans as white', pimGreen.window.smartseedApp.seeds().find(x => x.id === 'PIMIENTO').color === 'white');
+  pimGreen.window.close();
+  const html = require('fs').readFileSync(require('path').join(__dirname, '../../web/index.html'), 'utf8');
+  ok('local scripts and styles carry a cache-busting version', /app\.js\?v=\w+/.test(html) && /app\.css\?v=\w+/.test(html) && /scanner\.js\?v=\w+/.test(html));
 
   // ── Planting run ────────────────────────────────────────────────────────────
   // Without a camera the plan has no pixel centres. With a backend answering, the page

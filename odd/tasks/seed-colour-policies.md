@@ -25,6 +25,7 @@ Strict TDD enabled. Runners: `~/.claude/bin/testsem -- 'cd backend && uv run pyt
 - [x] T2 stack.sh default policies/duration (route: direct inline) — `bash -n` ok
 - [x] T3 Sow flow audit + test (route: direct inline) — RED: 3 failed (final pose not home); GREEN: `uv run pytest` 240 passed
 - [x] T4 Docs (README/CLAUDE.md/guide.md) mentions of old defaults
+- [x] T-next Pimiento sent a non-white colour (409 missing_pose): built-in TOMATE/PIMIENTO are now forced to black/white on load (persisted; a user seed holding that colour moves to a free bowl colour) + `?v=` cache-bust on web/index.html assets (route: direct inline) — RED: 5 smoke failures (127/132); GREEN: `npm test` 132/132 (nobackend) + 186/186 (robot), `uv run pytest` 240 passed
 
 ## Acceptance
 - Fresh load: `TOMATE:black,PIMIENTO:white`; stored `TOMATE:red` / `PIMIENTO:green` resolve to the new colours,
