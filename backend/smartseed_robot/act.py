@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Mapping, Protocol
 
+from .catalog import resolve_spec
 from .poses import COLOR_ID
 from .robot import JOINTS, RobotPort
 
@@ -61,12 +62,17 @@ class ActConfig:
 
 
 class ActGrasp:
-    """Per-colour ACT policies, loaded on first use. `run` drives one policy closed loop."""
+    """Per-colour ACT policies, loaded on first use. `run` drives one policy closed loop. `select` swaps the
+    policy of a colour at runtime; the env config stays the default."""
 
-    def __init__(self, config: ActConfig, factory: Callable[[str], PolicyRunner] | None = None):
+    def __init__(self, config: ActConfig, factory: Callable[[str], PolicyRunner] | None = None,
+                 resolver: Callable[[str, str | None], str] | None = None):
         self.config = config
         self._factory = factory or (lambda spec: LeRobotActPolicy(spec, config.device))
+        self._resolver = resolver or resolve_spec
         self._cache: dict[str, PolicyRunner] = {}
+        self._chosen: dict[str, tuple[str, str | None, str]] = {}  # colour -> (repo, checkpoint, spec to load)
+        self._lock = threading.Lock()
 
     @property
     def colors(self) -> list[str]:
@@ -75,10 +81,31 @@ class ActGrasp:
     def has(self, color: str) -> bool:
         return color in self.config.policies
 
+    def active(self) -> dict[str, dict]:
+        with self._lock:
+            return {c: self._describe(c) for c in self.colors}
+
+    def _describe(self, color: str) -> dict:
+        repo, checkpoint, _ = self._chosen.get(color, (self.config.policies[color], None, None))
+        return {"repo": repo, "checkpoint": checkpoint,
+                "default": (repo, checkpoint) == (self.config.policies[color], None)}
+
+    def select(self, color: str, repo: str, checkpoint: str | None = None) -> None:
+        """Use `repo` (at `checkpoint`, None = the final model) for `color` from the next run. Resolving may download;
+        if it fails nothing changes. The model itself loads lazily."""
+        if color not in self.config.policies:
+            raise KeyError(color)
+        spec = self._resolver(repo, checkpoint)
+        with self._lock:
+            self._chosen[color] = (repo, checkpoint, spec)
+            self._cache.pop(color, None)
+
     def policy(self, color: str) -> PolicyRunner:
-        if color not in self._cache:
-            self._cache[color] = self._factory(self.config.policies[color])
-        return self._cache[color]
+        with self._lock:
+            if color not in self._cache:
+                spec = self._chosen[color][2] if color in self._chosen else self.config.policies[color]
+                self._cache[color] = self._factory(spec)
+            return self._cache[color]
 
     def run(self, color: str, robot: RobotPort, stop: threading.Event, hz: float,
             duration_s: float | None = None) -> bool:

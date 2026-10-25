@@ -276,3 +276,110 @@ def test_invalid_mode_or_drop_z_is_422(client, extra):
 def test_grasp_mode_without_policy_is_a_409_with_code(client):
     r = client.post("/plan", json={"image_size": SIZE, "cells": cells(1), "mode": "grasp"})
     assert r.status_code == 409 and r.json()["code"] == "missing_pose"
+
+
+HUB = {"RafaelJaime/act-smartseed-d1-c100": ["model.safetensors", "checkpoints/010000/pretrained_model/model.safetensors",
+                                              "checkpoints/020000/pretrained_model/model.safetensors"]}
+
+
+class StubHub:
+    def __init__(self, repos=HUB):
+        self.repos, self.down = repos, False
+
+    def list_models(self, **kwargs):
+        if self.down:
+            raise OSError("offline")
+        return [type("M", (), {"id": r}) for r in self.repos]
+
+    def model_info(self, repo, **kwargs):
+        return type("I", (), {"siblings": [type("S", (), {"rfilename": n}) for n in self.repos[repo]]})
+
+
+def act_client(tmp_path, kin, hub=None, loaded=None):
+    from smartseed_robot.act import ActConfig
+    from smartseed_robot.catalog import ModelCatalog
+
+    runtime = build_runtime(
+        mode="fake", data_dir=tmp_path, robot=FakeRobot(initial=SEED), kin=kin, config=FAST,
+        act=ActConfig(policies={"red": "env/red", "green": "env/green"}),
+        policy_factory=lambda spec: loaded.append(spec) if loaded is not None else None,
+        catalog=ModelCatalog(api=hub or StubHub()),
+        spec_resolver=lambda repo, ckpt: repo if ckpt is None else f"/cache/{repo}/{ckpt}")
+    return TestClient(create_app(detector=None, depth=None, robot=runtime)), runtime
+
+
+def test_act_models_lists_hub_models_defaults_and_the_active_policy(tmp_path, kin):
+    client, _ = act_client(tmp_path, kin)
+    body = client.get("/robot/act/models").json()
+    assert body["enabled"] is True and body["offline"] is False
+    assert {"repo": "RafaelJaime/act-smartseed-d1-c100", "name": "act-smartseed-d1-c100",
+            "checkpoints": ["010000", "020000"]} in body["models"]
+    assert {"repo": "env/red", "name": "red", "checkpoints": []} in body["models"]  # env defaults stay selectable
+    assert body["active"]["red"] == {"repo": "env/red", "checkpoint": None, "default": True}
+
+
+def test_act_models_offline_still_lists_the_defaults(tmp_path, kin):
+    hub = StubHub()
+    hub.down = True
+    body = act_client(tmp_path, kin, hub)[0].get("/robot/act/models").json()
+    assert body["offline"] is True and [m["repo"] for m in body["models"]] == ["env/green", "env/red"]
+
+
+def test_act_models_when_act_is_not_configured(client):
+    assert client.get("/robot/act/models").json() == {"enabled": False, "offline": False, "models": [], "active": {}}
+    refused = client.post("/robot/act/select", json={"color": "red", "repo": "x"})
+    assert refused.status_code == 409 and refused.json()["code"] == "act_disabled"
+
+
+def test_act_select_switches_the_colour_and_the_next_run_uses_it(tmp_path, kin):
+    loaded = []
+    client, runtime = act_client(tmp_path, kin, loaded=loaded)
+    r = client.post("/robot/act/select", json={"color": "red", "repo": "RafaelJaime/act-smartseed-d1-c100",
+                                               "checkpoint": "020000"})
+    assert r.status_code == 200
+    assert r.json()["active"]["red"] == {"repo": "RafaelJaime/act-smartseed-d1-c100", "checkpoint": "020000",
+                                         "default": False}
+    assert client.get("/robot/act/models").json()["active"]["red"]["checkpoint"] == "020000"
+    runtime.executor.act.policy("red")
+    assert loaded == ["/cache/RafaelJaime/act-smartseed-d1-c100/020000"]
+
+
+def test_act_select_final_checkpoint_is_null(tmp_path, kin):
+    client, _ = act_client(tmp_path, kin)
+    r = client.post("/robot/act/select", json={"color": "green", "repo": "RafaelJaime/act-smartseed-d1-c100"})
+    assert r.status_code == 200 and r.json()["active"]["green"]["checkpoint"] is None
+
+
+@pytest.mark.parametrize("body, status", [
+    ({"color": "blue", "repo": "env/red"}, 404),  # no policy for that colour
+    ({"color": "red", "repo": "someone/else"}, 422),  # not in the catalog nor an env default
+    ({"color": "red", "repo": "RafaelJaime/act-smartseed-d1-c100", "checkpoint": "999999"}, 422),
+    ({"color": "red", "repo": "env/green", "checkpoint": "010000"}, 422)])
+def test_act_select_validates_the_choice(tmp_path, kin, body, status):
+    client, _ = act_client(tmp_path, kin)
+    assert client.post("/robot/act/select", json=body).status_code == status
+    assert client.get("/robot/act/models").json()["active"]["red"]["default"] is True
+
+
+def test_act_select_is_refused_while_a_plan_runs(tmp_path, kin):
+    client, runtime = act_client(tmp_path, kin)
+    runtime.executor._state = "running"
+    r = client.post("/robot/act/select", json={"color": "red", "repo": "env/green"})
+    assert r.status_code == 409 and r.json()["code"] == "busy" and "running" in r.json()["detail"]
+    assert client.get("/robot/act/models").json()["active"]["red"]["repo"] == "env/red"
+
+
+def test_act_select_reports_a_failed_download(tmp_path, kin):
+    from smartseed_robot.act import ActConfig
+    from smartseed_robot.catalog import ModelCatalog
+
+    def resolver(repo, ckpt):
+        raise OSError("no space left")
+
+    runtime = build_runtime(mode="fake", data_dir=tmp_path, robot=FakeRobot(initial=SEED), kin=kin, config=FAST,
+                            act=ActConfig(policies={"red": "env/red"}), policy_factory=lambda spec: None,
+                            catalog=ModelCatalog(api=StubHub()), spec_resolver=resolver)
+    client = TestClient(create_app(detector=None, depth=None, robot=runtime))
+    r = client.post("/robot/act/select", json={"color": "red", "repo": "RafaelJaime/act-smartseed-d1-c100",
+                                                "checkpoint": "010000"})
+    assert r.status_code == 502 and r.json()["code"] == "download_failed" and "no space left" in r.json()["detail"]

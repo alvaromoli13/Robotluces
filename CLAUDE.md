@@ -64,7 +64,7 @@ Implications for any work here:
   `SMARTSEED_DISABLE_MODEL=1` skips OWLv2 (contour only).
 - `backend/smartseed_robot/` — robot executor mounted on the same app: `robot.py` (`RobotPort`,
   `FakeRobot`, `LeRobotFollower`), `kinematics.py` (placo via lerobot, URDF in `backend/assets/so101/`),
-  `calibration.py` (pixel→robot homography), `poses.py`, `motion.py`, `act.py` (per-colour ACT policy closed loop, `ActConfig` from `SMARTSEED_ACT_*`/`SMARTSEED_CAM_*` env), `executor.py`, `api.py`
+  `calibration.py` (pixel→robot homography), `poses.py`, `motion.py`, `act.py` (per-colour ACT policy closed loop, `ActConfig` from `SMARTSEED_ACT_*`/`SMARTSEED_CAM_*` env; `select` swaps a colour's policy at runtime), `catalog.py` (Hub model/checkpoint catalog, cached; `GET /robot/act/models`, `POST /robot/act/select`), `executor.py`, `api.py`
   (`POST /plan`, `/stop`, `GET /robot/status`, `WS /robot/progress`, poses, calibration). `SMARTSEED_ROBOT=fake`
   (default) or `real` + `SMARTSEED_ROBOT_PORT`. Tests use `FakeRobot`; never open a serial port in tests.
   lerobot is pinned to commit `e595b79` (same as `vendor/lerobot`). Setup steps: `guide.md` "Ejecutor del robot"

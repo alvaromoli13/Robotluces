@@ -124,3 +124,54 @@ def test_run_writes_timing_and_first_frames_to_the_debug_dir(tmp_path):
     log = (tmp_path / "act_timing.log").read_text()
     assert "red" in log and "steps=20" in log and "late=" in log and "max_ms=" in log
     assert (tmp_path / "act_red_top.png").exists() and (tmp_path / "act_red_wrist.png").exists()
+
+
+def test_select_swaps_the_policy_of_one_colour_and_reports_it_active():
+    loaded = []
+
+    def factory(spec):
+        loaded.append(spec)
+        return FakePolicy()
+
+    resolved = []
+
+    def resolver(repo, checkpoint):
+        resolved.append((repo, checkpoint))
+        return repo if checkpoint is None else f"/cache/{repo}/{checkpoint}"
+
+    act = ActGrasp(ActConfig(policies={"red": "env/red", "green": "env/green"}), factory, resolver)
+    assert act.active() == {"red": {"repo": "env/red", "checkpoint": None, "default": True},
+                            "green": {"repo": "env/green", "checkpoint": None, "default": True}}
+    robot, stop = FakeRobot(), threading.Event()
+    act.run("red", robot, stop, hz=1000, duration_s=0.005)
+    act.select("red", "hub/new", "020000")
+    assert resolved == [("hub/new", "020000")] and loaded == ["env/red"]  # nothing loads until the next run
+    assert act.active()["red"] == {"repo": "hub/new", "checkpoint": "020000", "default": False}
+    assert act.active()["green"]["default"] is True
+    act.run("red", robot, stop, hz=1000, duration_s=0.005)
+    act.run("red", robot, stop, hz=1000, duration_s=0.005)
+    assert loaded == ["env/red", "/cache/hub/new/020000"]
+
+
+def test_select_the_env_default_again_goes_back_to_default():
+    act = ActGrasp(ActConfig(policies={"red": "env/red"}), lambda spec: FakePolicy(), lambda repo, ckpt: repo)
+    act.select("red", "hub/new")
+    act.select("red", "env/red")
+    assert act.active()["red"] == {"repo": "env/red", "checkpoint": None, "default": True}
+
+
+def test_select_rejects_a_colour_without_a_policy_and_keeps_the_state():
+    act = ActGrasp(ActConfig(policies={"red": "env/red"}), lambda spec: FakePolicy(), lambda repo, ckpt: repo)
+    with pytest.raises(KeyError):
+        act.select("blue", "hub/new")
+    assert act.colors == ["red"]
+
+
+def test_a_failed_resolution_leaves_the_active_policy_untouched():
+    def resolver(repo, checkpoint):
+        raise OSError("no network")
+
+    act = ActGrasp(ActConfig(policies={"red": "env/red"}), lambda spec: FakePolicy(), resolver)
+    with pytest.raises(OSError):
+        act.select("red", "hub/new", "010000")
+    assert act.active()["red"]["repo"] == "env/red"
