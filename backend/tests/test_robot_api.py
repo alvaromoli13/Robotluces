@@ -59,7 +59,7 @@ def client(tmp_path, kin):
 def test_status_contract_when_idle(client):
     assert client.get("/robot/status").json() == {
         "state": "idle", "robot": "fake", "plan_id": None, "current_cell": None, "done": [], "failed": [],
-        "calibrated": False, "poses": [], "policies": [], "torque": True}
+        "calibrated": False, "poses": [], "policies": [], "torque": True, "cameras": True}
 
 
 def test_joints_endpoint_returns_joints_and_tool_position(client):

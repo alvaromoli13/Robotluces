@@ -531,6 +531,16 @@ vc.on('error', m => errs.push('console.error: ' + m));
     })());
     cellNodes()[3].click();
     window.__refusePlan = null;
+
+    $('mapPlantBtn').click();
+    await sleep(200);
+    window.__ws.push({ type: 'error', code: 'camera_unavailable', cell_index: 0, message: 'CameraUnavailable: camera(s) top still unavailable' });
+    ok('a camera_unavailable error is explained in Spanish',
+      $('toast').textContent.includes('cámara desconectada') && $('runDetail').textContent.includes('revisa el USB'),
+      $('toast').textContent + ' | ' + $('runDetail').textContent);
+    ok('the run ends after a camera error', window.__ws.closed && window.smartseedScan.frozen === false);
+    $('stopRunBtn').click();
+    ok('closing after a camera error restores the map', $('runPanel').hidden && !$('trayActions').hidden);
   }
 
   // ── Stopping mid-run ────────────────────────────────────────────────────────

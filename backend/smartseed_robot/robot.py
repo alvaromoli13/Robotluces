@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from typing import Callable, Protocol
 
 import numpy as np
@@ -10,10 +11,18 @@ CAMERAS = ("top", "wrist")
 IMAGE_SHAPE = (480, 640, 3)  # H, W, RGB
 
 
+class CameraUnavailable(RuntimeError):
+    """A camera is gone and reopening it failed; the plan cannot continue."""
+
+
 class RobotPort(Protocol):
     def read_joints(self) -> dict[str, float]: ...
     def read_observation(self) -> dict[str, np.ndarray]:
         """Policy frame: `observation.state` (float32, JOINTS order) and `observation.images.<cam>` (HWC uint8)."""
+    def cameras_ok(self) -> bool:
+        """True while every camera's read thread is alive."""
+    def reconnect_cameras(self) -> None:
+        """Reopen every camera (same config); raises `CameraUnavailable` if that keeps failing."""
     def send_joints(self, target: dict[str, float]) -> None: ...
     def torque_off(self) -> None: ...
     def torque_on(self) -> None: ...
@@ -45,11 +54,27 @@ class FakeRobot:
         self.history: list[dict[str, float]] = []
         self.torque_enabled = True
         self.closed = False
+        self._cameras_alive, self._reconnectable, self.reconnects = True, True, 0
 
     def read_joints(self) -> dict[str, float]:
         return self._sag(dict(self._state)) if self._sag else dict(self._state)
 
+    def drop_cameras(self, reconnectable: bool = True) -> None:
+        """Simulate the USB glitch: the cameras' read threads died (and optionally stay dead)."""
+        self._cameras_alive, self._reconnectable = False, reconnectable
+
+    def cameras_ok(self) -> bool:
+        return self._cameras_alive
+
+    def reconnect_cameras(self) -> None:
+        self.reconnects += 1
+        if not self._reconnectable:
+            raise CameraUnavailable("fake cameras cannot be reopened")
+        self._cameras_alive = True
+
     def read_observation(self) -> dict[str, np.ndarray]:
+        if not self._cameras_alive:
+            raise RuntimeError("OpenCVCamera(0) read thread is not running.")
         state = self.read_joints()
         frame = {"observation.state": np.array([state[j] for j in JOINTS], dtype=np.float32)}
         return frame | {f"observation.images.{cam}": np.zeros(IMAGE_SHAPE, dtype=np.uint8) for cam in CAMERAS}
@@ -109,6 +134,34 @@ class LeRobotFollower:
         from lerobot.utils.feature_utils import build_dataset_frame
 
         return build_dataset_frame(self._features, self._robot.get_observation(), prefix=OBS_STR)
+
+    def cameras_ok(self) -> bool:
+        """lerobot's read thread exits for good after too many failed reads (USB glitch); `is_connected` stays true."""
+        return all(cam.is_connected and cam.thread is not None and cam.thread.is_alive()
+                   for cam in self._robot.cameras.values())
+
+    def reconnect_cameras(self, attempts: int = 3, backoff_s: float = 0.5,
+                          sleep: Callable[[float], None] = time.sleep) -> None:
+        """Disconnect and connect every camera again (the cameras keep their config and index). Bounded retries
+        with a growing pause; `CameraUnavailable` if one still fails."""
+        failed: dict[str, Exception] = {}
+        for attempt in range(attempts):
+            if attempt:
+                sleep(backoff_s * attempt)
+            failed = {}
+            for name, cam in self._robot.cameras.items():
+                try:
+                    try:
+                        cam.disconnect()
+                    except Exception:  # already disconnected or half dead: connect decides
+                        pass
+                    cam.connect()
+                except Exception as exc:
+                    failed[name] = exc
+            if not failed:
+                return
+        raise CameraUnavailable("camera(s) " + ", ".join(f"{n} ({type(e).__name__}: {e})" for n, e in failed.items())
+                                + f" still unavailable after {attempts} attempts")
 
     def read_joints(self) -> dict[str, float]:
         obs = self._robot.get_observation()

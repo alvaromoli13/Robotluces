@@ -612,7 +612,8 @@
           finishRun(run.test ? 'Prueba detenida.' : 'Siembra detenida.', msg.message || 'Parada solicitada');
           break;
         case 'error':
-          finishRun('El robot ha informado de un error.', msg.message || 'Error del robot');
+          if (msg.code === 'camera_unavailable') finishRun('Siembra detenida: cámara desconectada, revisa el USB.', 'Cámara desconectada: revisa el USB y vuelve a sembrar.');
+          else finishRun('El robot ha informado de un error.', msg.message || 'Error del robot');
           break;
       }
     };

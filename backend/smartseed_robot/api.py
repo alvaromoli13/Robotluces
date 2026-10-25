@@ -112,7 +112,7 @@ def create_router(rt: Runtime) -> APIRouter:
 
     @router.get("/robot/status")
     def status():
-        return ex.status() | {"torque": rt.robot.torque_enabled}
+        return ex.status() | {"torque": rt.robot.torque_enabled, "cameras": rt.robot.cameras_ok()}
 
     def act_models() -> tuple[list[dict], bool]:
         """Hub catalog plus the env defaults (always selectable, even offline), and whether the Hub was unreachable."""

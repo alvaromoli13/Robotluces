@@ -11,7 +11,7 @@ from .calibration import Calibration, CalibrationError
 from .kinematics import IKError, Kinematics
 from .motion import MotionConfig, move_to
 from .poses import COLOR_ID, PoseStore
-from .robot import ARM_JOINTS, RobotPort
+from .robot import ARM_JOINTS, CameraUnavailable, RobotPort
 
 
 class PlanError(Exception):
@@ -199,6 +199,9 @@ class Executor:
             self._current = None
             self._emit("stopped", message="stopped by user; the arm holds its position")
             self._state = "idle"
+        except CameraUnavailable as exc:
+            self._emit("error", self._current, f"{type(exc).__name__}: {exc}", code="camera_unavailable")
+            self._state = "error"
         except Exception as exc:  # the arm holds position: never cut torque mid-air on our own
             self._emit("error", self._current, f"{type(exc).__name__}: {exc}")
             self._state = "error"

@@ -160,6 +160,22 @@ def test_unexpected_exception_emits_error_and_does_not_cut_torque(tmp_path, kin)
     assert robot.torque_enabled and not ex.running
 
 
+def test_dead_cameras_that_cannot_reconnect_fail_the_plan_with_a_clear_code(tmp_path, kin):
+    robot, _, ex = make_act_executor(tmp_path, kin)
+    robot.drop_cameras(reconnectable=False)
+    ex.run([cell(0)], SIZE)
+    last = ex.events[-1]
+    assert last["type"] == "error" and last["code"] == "camera_unavailable" and last["cell_index"] == 0
+    assert ex.status()["state"] == "error" and robot.torque_enabled
+
+
+def test_dead_cameras_that_reconnect_do_not_fail_the_plan(tmp_path, kin):
+    robot, _, ex = make_act_executor(tmp_path, kin)
+    robot.drop_cameras()
+    ex.run([cell(0)], SIZE)
+    assert types(ex)[-1] == "finished" and robot.reconnects == 1
+
+
 def test_missing_pose_is_a_conflict(tmp_path, kin):
     poses = make_poses(tmp_path, colors=("red",))
     ex = Executor(FakeRobot(initial=HOME), poses, make_calibration(), kin, config=CONFIG)

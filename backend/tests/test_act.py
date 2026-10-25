@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from smartseed_robot.act import ACT_START_FALLBACK, ActConfig, ActGrasp
-from smartseed_robot.robot import JOINTS, FakeRobot
+from smartseed_robot.robot import JOINTS, CameraUnavailable, FakeRobot
 
 
 class FakePolicy:
@@ -175,3 +175,47 @@ def test_a_failed_resolution_leaves_the_active_policy_untouched():
     with pytest.raises(OSError):
         act.select("red", "hub/new", "010000")
     assert act.active()["red"]["repo"] == "env/red"
+
+
+def test_dead_cameras_are_reopened_before_the_run():
+    robot = FakeRobot()
+    robot.drop_cameras()
+    act = ActGrasp(ActConfig(policies={"red": "x"}, duration_s=0.01), lambda spec: FakePolicy())
+    assert act.run("red", robot, threading.Event(), hz=1000) is True
+    assert robot.reconnects == 1
+
+
+def test_a_camera_dying_mid_run_is_reopened_and_the_step_retried():
+    class Glitch(FakeRobot):
+        reads = 0
+
+        def read_observation(self):
+            self.reads += 1
+            if self.reads == 3:
+                self.drop_cameras()
+            return super().read_observation()
+
+    robot = Glitch()
+    act = ActGrasp(ActConfig(policies={"red": "x"}, duration_s=0.01), lambda spec: FakePolicy())
+    assert act.run("red", robot, threading.Event(), hz=1000) is True
+    assert robot.reconnects == 1
+
+
+def test_a_failed_reconnect_aborts_the_run_with_camera_unavailable():
+    robot = FakeRobot()
+    robot.drop_cameras(reconnectable=False)
+    act = ActGrasp(ActConfig(policies={"red": "x"}, duration_s=0.01), lambda spec: FakePolicy())
+    with pytest.raises(CameraUnavailable):
+        act.run("red", robot, threading.Event(), hz=1000)
+
+
+def test_a_non_camera_failure_is_not_masked_by_a_reconnect():
+    class BusDown(FakeRobot):
+        def read_observation(self):
+            raise OSError("bus down")
+
+    robot = BusDown()
+    act = ActGrasp(ActConfig(policies={"red": "x"}, duration_s=0.01), lambda spec: FakePolicy())
+    with pytest.raises(OSError):
+        act.run("red", robot, threading.Event(), hz=1000)
+    assert robot.reconnects == 0

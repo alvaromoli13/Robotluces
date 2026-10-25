@@ -116,11 +116,14 @@ class ActGrasp:
         period, late, worst, done = 1 / hz, 0, 0.0, 0
         deadline = time.monotonic()
         try:
+            if not robot.cameras_ok():
+                robot.reconnect_cameras()
+                deadline = time.monotonic()
             for done in range(steps):
                 if stop.is_set():
                     return False
                 started = time.monotonic()
-                observation = robot.read_observation()
+                observation = self._observe(robot)
                 if done == 0:
                     self._save_frames(color, observation)
                 action = policy.step(observation)
@@ -137,6 +140,17 @@ class ActGrasp:
             return True
         finally:
             self._log(color, done, late, worst)
+
+    @staticmethod
+    def _observe(robot: RobotPort) -> dict:
+        """One observation; if a camera died (or a frame went stale) reopen the cameras and read again once."""
+        try:
+            return robot.read_observation()
+        except Exception:
+            if robot.cameras_ok():
+                raise
+            robot.reconnect_cameras()
+            return robot.read_observation()
 
     def _log(self, color: str, steps: int, late: int, worst: float) -> None:
         if self.config.debug_dir:
