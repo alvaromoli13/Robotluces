@@ -84,6 +84,17 @@
             <button id="testGraspBtn" class="secondary-btn" type="button" title="Mueve a la pose de inicio y ejecuta la política ACT del color de la semilla seleccionada; se queda con la semilla en la pinza">Probar coger (ACT)</button>
             <button id="testPlaceBtn" class="secondary-btn" type="button" title="Lleva la pinza sobre la primera casilla con semilla, la abre y vuelve a la pose de inicio">Probar dejar</button>
           </div>
+          <!-- ACT model per bowl colour; only shown when the backend runs ACT policies. -->
+          <div id="actPanel" class="act-panel" hidden>
+            <p class="cal-help"><strong>Modelo ACT.</strong> Elige qué política coge la semilla de cada color; se usa desde el siguiente intento, sin reiniciar nada.</p>
+            <div class="act-row">
+              <select id="actColor" aria-label="Color de la caja"></select>
+              <select id="actModel" aria-label="Modelo ACT"></select>
+              <select id="actCheckpoint" aria-label="Checkpoint"></select>
+              <button id="actApplyBtn" class="secondary-btn" type="button">Aplicar</button>
+            </div>
+            <p id="actStatus" class="scan-status" aria-live="polite"></p>
+          </div>
         </div>
         <div class="cal-row">
           <button id="calibrateBtn" class="scanner-secondary" type="button" aria-pressed="false">Calibrar robot</button>

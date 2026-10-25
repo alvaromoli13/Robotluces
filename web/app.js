@@ -605,6 +605,82 @@
     return body.detail || 'el robot ha respondido HTTP ' + status + '.';
   }
 
+  // ── ACT model selector ─────────────────────────────────────────────────────
+  //   GET  /robot/act/models  -> {enabled, offline, models:[{repo,name,checkpoints:["010000",..]}],
+  //                               active:{<colour>:{repo,checkpoint,default}}}
+  //   POST /robot/act/select  {color, repo, checkpoint|null} -> {active}   (checkpoint null = final model)
+  // The backend downloads the checkpoint on select and loads it on the next ACT run.
+  let actCatalog = null;
+
+  const stepLabel = step => 'Paso ' + Number(step);
+  const colorLabel = id => (BOWL_COLORS.find(c => c.id === id) || { label: id }).label.toLowerCase();
+
+  function fillSelect(id, entries, value) {
+    const el = $(id);
+    el.innerHTML = '';
+    entries.forEach(([val, text]) => el.add(new Option(text, val)));
+    if (value !== undefined && entries.some(e => e[0] === value)) el.value = value;
+  }
+
+  function renderActStatus() {
+    const modelName = repo => (actCatalog.models.find(m => m.repo === repo) || { name: repo }).name;
+    $('actStatus').textContent = 'Activo: ' + Object.entries(actCatalog.active).map(([color, a]) =>
+      colorLabel(color) + ' → ' + modelName(a.repo) + ' (' + (a.checkpoint === null ? 'final' : stepLabel(a.checkpoint).toLowerCase()) +
+      (a.default ? ', por defecto' : '') + ')').join(' · ');
+  }
+
+  function renderActCheckpoints() {
+    const model = actCatalog.models.find(m => m.repo === $('actModel').value);
+    fillSelect('actCheckpoint', [['', 'final'], ...(model ? model.checkpoints : []).map(s => [s, stepLabel(s)])], '');
+  }
+
+  function renderAct() {
+    const colors = Object.keys(actCatalog.active).sort();
+    const first = actCatalog.active[colors[0]];
+    fillSelect('actColor', [['all', 'Todos los colores'], ...colors.map(c => [c, colorLabel(c)])], $('actColor').value || 'all');
+    fillSelect('actModel', actCatalog.models.map(m => [m.repo, m.name]), $('actModel').value || (first && first.repo));
+    renderActCheckpoints();
+    renderActStatus();
+  }
+
+  // Hidden when there is no backend or it runs no ACT policies.
+  async function loadAct() {
+    try {
+      const res = await window.smartseedBackend.fetch('/robot/act/models', {}, 6000);
+      const body = res.ok ? await res.json() : null;
+      actCatalog = body && body.enabled ? body : null;
+    } catch (e) { actCatalog = null; }
+    $('actPanel').hidden = !actCatalog;
+    if (actCatalog) renderAct();
+  }
+
+  async function applyAct() {
+    if (run && !run.finished) { toast('El robot sigue con la ejecución anterior: espera o párala.'); return; }
+    const color = $('actColor').value;
+    const colors = color === 'all' ? Object.keys(actCatalog.active).sort() : [color];
+    const body = { repo: $('actModel').value, checkpoint: $('actCheckpoint').value || null };
+    $('actApplyBtn').disabled = true;
+    $('actStatus').textContent = 'Descargando el modelo…';
+    try {
+      for (const c of colors) {
+        const res = await window.smartseedBackend.fetch('/robot/act/select', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ color: c, ...body }),
+        }, 300000);  // the first download of a checkpoint can take minutes
+        if (!res.ok) {
+          let err = {};
+          try { err = await res.json(); } catch (e) { /* no JSON body */ }
+          toast('No se puede cambiar el modelo: ' + refusalText(err, res.status));
+          break;
+        }
+        actCatalog.active = (await res.json()).active;
+      }
+    } catch (e) { toast('No se ha podido contactar con el robot para cambiar el modelo.'); }
+    $('actApplyBtn').disabled = false;
+    renderActStatus();
+  }
+
   // "Altura al soltar" setting (cm), persisted; null when the field holds nonsense.
   const DROP_KEY = 'smartseed.dropHeightCm';
   const DROP_RANGE_CM = [2, 25];
@@ -1055,7 +1131,10 @@
     const open = $('settingsPanel').hidden;
     $('settingsPanel').hidden = !open;
     $('settingsBtn').setAttribute('aria-expanded', String(open));
+    if (open) loadAct();
   });
+  $('actModel').addEventListener('change', () => actCatalog && renderActCheckpoints());
+  $('actApplyBtn').addEventListener('click', () => actCatalog && applyAct());
   try { const saved = localStorage.getItem(DROP_KEY); if (saved !== null && Number(saved) > 0) $('dropHeight').value = saved; }
   catch (e) { /* storage blocked: keep the default */ }
   $('dropHeight').addEventListener('input', () => {

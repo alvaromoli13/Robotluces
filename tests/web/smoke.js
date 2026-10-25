@@ -60,11 +60,32 @@ vc.on('error', m => errs.push('console.error: ' + m));
       const planned = [];
       window.__planned = planned;
       window.__calls = [];
+      window.__actSelected = [];
+      window.__actRefuse = null;  // set to {detail, code} to make /robot/act/select answer 409
+      window.__actModels = {
+        enabled: true, offline: false,
+        models: [
+          { repo: 'RafaelJaime/act-smartseed-d1-c100', name: 'act-smartseed-d1-c100', checkpoints: ['010000', '020000', '040000'] },
+          { repo: 'env/red', name: 'red', checkpoints: [] },
+        ],
+        active: {
+          red: { repo: 'env/red', checkpoint: null, default: true },
+          green: { repo: 'env/red', checkpoint: null, default: true },
+        },
+      };
       window.__refusePlan = null;  // set to {detail, code} to make /plan answer 422
       window.fetch = async (url, opts) => {
         if (MODE !== 'robot') throw new Error('connection refused');
         if (String(url).endsWith('/robot/status')) {
           return { ok: true, status: 200, json: async () => ({ state: 'idle', robot: 'fake', calibrated: true }) };
+        }
+        if (String(url).endsWith('/robot/act/models')) return { ok: true, status: 200, json: async () => window.__actModels };
+        if (String(url).endsWith('/robot/act/select')) {
+          const body = JSON.parse(opts.body);
+          window.__actSelected.push(body);
+          if (window.__actRefuse) return { ok: false, status: 409, json: async () => window.__actRefuse };
+          window.__actModels.active[body.color] = { repo: body.repo, checkpoint: body.checkpoint, default: false };
+          return { ok: true, status: 200, json: async () => ({ active: window.__actModels.active }) };
         }
         if (String(url).endsWith('/plan')) {
           if (window.__refusePlan) {
@@ -486,6 +507,54 @@ vc.on('error', m => errs.push('console.error: ' + m));
   $('dropHeight').value = '8';
   $('dropHeight').dispatchEvent(new window.Event('input'));
   ok('drop height is persisted', window.localStorage.getItem('smartseed.dropHeightCm') === '8');
+
+  // ── ACT model selector (settings) ───────────────────────────────────────────
+  ok('the ACT selector lives in the settings and starts hidden', settings.contains($('actPanel')) && $('actPanel').hidden);
+  if (MODE === 'robot') {
+    $('settingsBtn').click();
+    await sleep(100);
+    const opts = id => [...$(id).options].map(o => o.value);
+    ok('opening the settings shows the selector when the backend runs ACT', !$('actPanel').hidden);
+    ok('the model list comes from the catalog', opts('actModel').join() === 'RafaelJaime/act-smartseed-d1-c100,env/red', opts('actModel').join());
+    ok('the colour list offers every colour and all of them', opts('actColor').join() === 'all,green,red', opts('actColor').join());
+    ok('the active model is shown', $('actStatus').textContent.includes('red') && $('actStatus').textContent.includes('por defecto'), $('actStatus').textContent);
+    $('actModel').value = 'RafaelJaime/act-smartseed-d1-c100';
+    $('actModel').dispatchEvent(new window.Event('change'));
+    ok('a model lists final first, then its checkpoints', opts('actCheckpoint').join() === ',010000,020000,040000' && $('actCheckpoint').value === '', opts('actCheckpoint').join());
+    ok('a model without checkpoints offers only final', (() => { $('actModel').value = 'env/red'; $('actModel').dispatchEvent(new window.Event('change')); return opts('actCheckpoint').join() === ''; })());
+    $('actModel').value = 'RafaelJaime/act-smartseed-d1-c100';
+    $('actModel').dispatchEvent(new window.Event('change'));
+    $('actColor').value = 'red';
+    $('actCheckpoint').value = '020000';
+    $('actApplyBtn').click();
+    await sleep(100);
+    ok('Aplicar posts the colour, model and checkpoint', JSON.stringify(window.__actSelected) === JSON.stringify([{ color: 'red', repo: 'RafaelJaime/act-smartseed-d1-c100', checkpoint: '020000' }]), JSON.stringify(window.__actSelected));
+    ok('the status shows the new active model', $('actStatus').textContent.includes('act-smartseed-d1-c100') && $('actStatus').textContent.includes('20000'), $('actStatus').textContent);
+    ok('Aplicar is enabled again', !$('actApplyBtn').disabled);
+    window.__actSelected.length = 0;
+    $('actColor').value = 'all';
+    $('actCheckpoint').value = '';
+    $('actApplyBtn').click();
+    await sleep(150);
+    ok('"Todos" applies to every colour; final sends null', window.__actSelected.map(b => b.color + ':' + b.checkpoint).join() === 'green:null,red:null', JSON.stringify(window.__actSelected));
+    window.__actSelected.length = 0;
+    window.__actRefuse = { detail: 'a plan is running', code: 'busy' };
+    $('actApplyBtn').click();
+    await sleep(100);
+    ok('a refusal is said in Spanish and stops the loop', $('toast').textContent.includes('ya hay una siembra en curso') && window.__actSelected.length === 1, $('toast').textContent);
+    window.__actRefuse = null;
+    $('settingsBtn').click();
+    window.__actModels.enabled = false;
+    $('settingsBtn').click();
+    await sleep(100);
+    ok('the selector hides when the backend has no ACT policies', $('actPanel').hidden);
+    $('settingsBtn').click();
+  } else {
+    $('settingsBtn').click();
+    await sleep(100);
+    ok('with no backend the ACT selector stays hidden', $('actPanel').hidden);
+    $('settingsBtn').click();
+  }
 
   const seedList = window.smartseedApp.seeds();
   seedTiles()[1].click();  // the colour of the selected seed is the one the pick asks for

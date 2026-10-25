@@ -327,6 +327,9 @@ select:focus-visible { outline: 3px solid var(--leaf); outline-offset: 2px; }
 .settings-tests input { width: 100%; max-width: 160px; }
 .settings-tests .cal-help { margin-top: 8px; }
 .settings-tests .secondary-btn { flex: 1 1 140px; }
+.act-panel { margin-top: 12px; }
+.act-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.act-row select { flex: 1 1 140px; min-width: 0; }
 /* The tests need the seed map, so they only show once the camera sits over it. */
 .settings-tests { display: none; }
 #mapa-semillero.camera-mode .settings-tests { display: block; }
