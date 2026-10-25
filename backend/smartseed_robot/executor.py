@@ -47,6 +47,7 @@ class ExecutorConfig:
     place_tolerance_m: float = 0.005  # xy miss over the cell that is still accepted when releasing
     place_corrections: int = 2  # extra moves, aiming past the cell by the measured shortfall (servo sag)
     grasp_deltas: dict[str, float] = field(default_factory=dict)  # used when no grasp_<color> pose is taught
+    release_wrist_tilt_deg: float = 5.0  # wrist_flex added over the cell just before opening (+ = tip further down)
 
 
 class Grasper(Protocol):
@@ -238,6 +239,8 @@ class Executor:
             corrections += 1
         self._emit("drop_pose", self._current, target=[x, y, self._drop_z], reached=list(reached),
                    error_mm=round(math.hypot(*miss) * 1000, 1), corrections=corrections)
+        if cfg.release_wrist_tilt_deg:
+            self._move({"wrist_flex": self.robot.read_joints()["wrist_flex"] + cfg.release_wrist_tilt_deg})
         self._move({"gripper": cfg.gripper_open})
         if hovering:
             self._move_hover(aim, hover_z)

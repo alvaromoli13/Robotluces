@@ -11,7 +11,7 @@ from smartseed_robot.robot import FakeRobot
 SIZE = (640, 480)
 HOME = {"shoulder_pan": 0.0, "shoulder_lift": -30.0, "elbow_flex": 60.0, "wrist_flex": 30.0, "wrist_roll": 0.0,
         "gripper": 60.0}
-CONFIG = ExecutorConfig(hz=1000, max_speed=10_000, settle_s=0.0)
+CONFIG = ExecutorConfig(hz=1000, max_speed=10_000, settle_s=0.0, release_wrist_tilt_deg=0.0)  # tilt tested apart
 
 
 def robot_xy(u, v):
@@ -512,3 +512,19 @@ def test_release_without_a_reachable_hover_pose_still_drops(tmp_path, kin):
     assert types(ex)[-1] == "finished" and drop_poses(ex)
     assert max(tool_heights(robot, kin)) < CONFIG.drop_z + 0.05 + 0.1  # never went anywhere near the hover height
     assert max(s["gripper"] for s in robot.history) == CONFIG.gripper_open
+
+
+def test_release_tilts_the_wrist_down_slightly_before_opening(tmp_path, kin):
+    robot = FakeRobot(initial=HOME)
+    tilt = 5.0
+    ex = Executor(robot, make_poses(tmp_path), make_calibration(), kin,
+                  config=ExecutorConfig(hz=1000, max_speed=10_000, settle_s=0.0, release_wrist_tilt_deg=tilt))
+    ex.run([cell(0, "red")], SIZE)
+    opened = next(i for i, s in enumerate(robot.history) if s["gripper"] == CONFIG.gripper_open and i > 0
+                  and robot.history[i - 1]["gripper"] < CONFIG.gripper_open)
+    drop = next(e for e in ex.events if e["type"] == "drop_pose")
+    target = (*robot_xy(320, 240), CONFIG.drop_z)
+    before = [s for s in robot.history[:opened] if kin.tool_xyz(arm_of(s)) == pytest.approx(target, abs=0.003)]
+    assert drop and before
+    assert robot.history[opened]["wrist_flex"] == pytest.approx(before[0]["wrist_flex"] + tilt, abs=0.5)
+    assert kin.tool_xyz(arm_of(robot.history[opened])) == pytest.approx(target, abs=0.015)  # still over the cell
