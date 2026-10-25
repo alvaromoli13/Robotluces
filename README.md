@@ -19,7 +19,7 @@ tipo butacas de cine y el robot siembra cada alveolo con la semilla elegida.
 | Utilidad e impacto | Si la solución resuelve un problema real. | 15 | La siembra de semilleros alveolados en viveros y huertos es trabajo manual, repetitivo y a medida. SmartSeed deja que el cliente diseñe la mezcla de variedades alveolo a alveolo, guarde plantillas y repita la última fórmula, sin tocar código ni el robot. |
 | Innovación e ingenio | Originalidad del enfoque y de la solución. | 10 | Interfaz de selector de butacas sobre la imagen en directo de la cámara cenital, con la rejilla **detectada** superpuesta y el progreso visible a simple vista. Enfoque **híbrido**: se aprende solo la parte difícil de percepción (una ACT por color de cuenco, que lo busca aunque lo cambies de sitio) y la geometría se calcula exacta con homografía y cinemática inversa. Detección del semillero **sin marcadores**: los alveolos se encuentran como **cuencas rodeadas de paredes** en un mapa de profundidad monocular, así que funciona con cualquier forma de bandeja. Y como con el brazo estirado los servos ceden, el soltado **se corrige solo**: mide dónde ha quedado la punta y vuelve a apuntar por lo que le faltaba. |
 | Presentación y equipo | Cómo contáis lo que habéis hecho y respondéis a las preguntas del jurado. | 10 | Relato en cuatro pasos: problema → interfaz → robot sembrando → resultado, el mismo del vídeo de 1 minuto. Llevamos preparadas las respuestas a las preguntas probables: cuántos datos, qué fallaba y cómo se arregló, por qué híbrido y no todo aprendido, qué precisión tiene, qué utilidad real tiene y qué pasa si se cae el wifi. |
-| Bonus | Dataset publicado en Hugging Face (+3) y repositorio reproducible (+2). | +5 | Los datasets se suben al Hub en cuanto se graban, con las etiquetas del equipo, y se enlazan aquí. El repositorio es reproducible de verdad: los comandos exactos de instalación, grabación, entrenamiento y ejecución están en la sección siguiente, `scripts/stack.sh` levanta todo con una orden, lerobot está fijado al commit `e595b79`, el URDF y las mallas del SO-101 viven en el repo, la web no carga nada de un CDN, y la suite de pruebas (147 funciones de test en `backend/tests/` más el smoke de la interfaz) corre **sin hardware** gracias al robot falso. |
+| Bonus | Dataset publicado en Hugging Face (+3) y repositorio reproducible (+2). | +5 | Los datasets se suben al Hub en cuanto se graban, con las etiquetas del equipo, y se enlazan aquí. El repositorio es reproducible de verdad: los comandos exactos de instalación, grabación, entrenamiento y ejecución están en la sección siguiente, `scripts/stack.sh` levanta todo con una orden, lerobot está fijado al commit `e595b79`, el URDF y las mallas del SO-101 viven en el repo, la web no carga nada de un CDN, y la suite de pruebas (177 funciones de test en `backend/tests/` más el smoke de la interfaz) corre **sin hardware** gracias al robot falso. |
 
 ## Estado
 
@@ -32,10 +32,12 @@ tipo butacas de cine y el robot siembra cada alveolo con la semilla elegida.
 | Leader y follower montados y calibrados | ✅ viernes 23 |
 | Ejecutor del robot: cinemática, homografía, poses, cola de siembra y Stop | ✅ en código, con robot falso y tests |
 | Policy ACT por color, modos de media prueba y soltado corregido en lazo cerrado | ✅ en código, con tests |
+| Selector de modelo y checkpoint ACT en **Ajustes**, sin reiniciar | ✅ |
+| Datasets `smartseed-grasp-d1-clean` y `d2-clean` y 4 ACT entrenadas en la nube (sáb 25) | ✅ en el Hub |
 | Pruebas automáticas del backend y de la interfaz | ✅ `uv run pytest` y `npm test`, sin hardware |
 | Puesta a punto con el brazo real: poses enseñadas y calibración cámara-robot | 🔜 |
 | Escena: pelotas, cuencos de colores, zonas marcadas, cámaras fijas | 🔜 |
-| Datasets por color y segunda policy ACT (la del cuenco negro ya está en el Hub) | 🔜 |
+| Ensayar con el brazo real cuál de las 4 ACT (y checkpoint) siembra mejor; `d1-c100-80k` entrenándose | 🔜 |
 | Demo ensayada 5 veces seguidas, vídeo (a [la carpeta de Drive](https://drive.google.com/drive/folders/1uDB6e2SAj96LFbZUaVXhP8_1dHKJPw7n)) y dataset en el Hub | 🔜 |
 
 Checklist detallada por día: [guide.md](guide.md).
@@ -94,6 +96,7 @@ SMARTSEED_ROBOT=real SMARTSEED_ROBOT_PORT=/dev/tty.usbmodemXXXX ./run.sh
 | `POST /robot/goto/{nombre}` | volver a una pose enseñada |
 | `POST /robot/calibration/points` · `/fit` · `DELETE /points` | calibración cámara-robot y su error en mm |
 | `POST /robot/torque-on` · `/robot/torque-off` | activar o quitar el par de los motores |
+| `GET /robot/act/models` · `POST /robot/act/select` | catálogo de modelos ACT del Hub con sus checkpoints y cambio de la policy de un color en caliente (ver «Elegir modelo ACT») |
 | `POST /plan` · `POST /stop` | sembrar un plan (con `mode` y `drop_z` opcionales) · cortar la secuencia |
 | `WS /robot/progress` | progreso celda a celda |
 
@@ -152,12 +155,16 @@ espera `settle_s`, lee las articulaciones, calcula con FK dónde está la punta 
 
 Un color con policy ACT no usa `above_box_<color>`: por celda el ejecutor va a `act_start`,
 corre la policy a 30 Hz durante `SMARTSEED_ACT_DURATION_S` (va al cuenco, coge la semilla y
-vuelve con ella), sube con IK a la celda, abre la pinza y vuelve a `act_start`; al acabar la última celda va a `home`. Los colores
-sin policy siguen con las poses enseñadas.
+vuelve con ella), sube con IK a la celda, **inclina la muñeca 5°** (`wrist_flex` +5°,
+`ExecutorConfig.release_wrist_tilt_deg`) justo antes de abrir la pinza y vuelve a `act_start`;
+al acabar la última celda va a `home`. Sembrar es, celda a celda: **agarre ACT desde la
+caja de la semilla y soltar sobre la celda**. Los colores sin policy siguen con las poses enseñadas.
 
 1. **Enseñar `act_start`**: con el par quitado, colocar el brazo como al empezar los
    episodios (cerca de reposo) y `POST /robot/poses/act_start`. Sin enseñar se usa la media
    de los episodios grabados `[1.1, -102.7, 96.8, 47.7, -6.0, 6.3]`.
+   **Ojo**: la `act_start` enseñada tiene `wrist_flex` ≈ 72°, mientras que los episodios de d1 y d2
+   empiezan hacia 47°. Si la policy duda al arrancar, es la primera diferencia a mirar.
 2. **Variables de entorno**:
 
    | Variable | Por defecto | Qué hace |
@@ -182,11 +189,25 @@ sin policy siguen con las poses enseñadas.
    Si el color de la política no coincide con el de la web, ese color se rechaza con `409`
    (`missing_pose`) salvo que tenga `above_box_<color>`.
 
+#### Elegir modelo ACT
+
+En **Ajustes** (panel «Modelo ACT», solo si el backend corre con policies) se elige color de
+caja, modelo y checkpoint y se pulsa **Aplicar**: la siguiente siembra usa ese modelo, sin
+reiniciar el stack. Por detrás:
+
+| Endpoint | Qué hace |
+|---|---|
+| `GET /robot/act/models` | modelos `RafaelJaime/act-smartseed-*` del Hub con sus checkpoints (el final y los intermedios) y la policy activa por color. El catálogo se cachea 5 min; sin red usa la caché o las policies de `SMARTSEED_ACT_POLICIES` |
+| `POST /robot/act/select` `{color, repo, checkpoint}` | cambia la policy de ese color. `409 busy` si hay un plan corriendo, `422` si el modelo o checkpoint no existe, `502` si falla la descarga |
+
+Un checkpoint intermedio se baja con `snapshot_download` (`checkpoints/<paso>/pretrained_model/*`)
+al seleccionarlo; el modelo se carga en la siguiente ACT.
+
 ### Proceso completo (local)
 
 Con el brazo conectado y las policies publicadas:
 
-1. Desde **Terminal.app** (permiso de cámara): `scripts/stack.sh`. Por defecto usa `RafaelJaime/act-smartseed-d1-c100` para el cuenco negro (`black`, Tomate) y `RafaelJaime/act-smartseed-d2-c100` para el blanco (`white`, Pimiento), 10 s por celda; para otra configuración, `SMARTSEED_ACT_POLICIES='{"<color>":"<repo>"}' scripts/stack.sh`.
+1. Desde **Terminal.app** (permiso de cámara): `scripts/stack.sh`. Tomate = caja negra (`black`) y Pimiento = caja blanca (`white`): la web fuerza esos colores al cargar y migra las semillas guardadas con los antiguos. Por defecto usa `RafaelJaime/act-smartseed-d1-c100` para el negro y `RafaelJaime/act-smartseed-d2-c100` para el blanco, `SMARTSEED_ACT_DURATION_S=10`; para otra configuración, `SMARTSEED_ACT_POLICIES='{"<color>":"<repo>"}' scripts/stack.sh`.
    Arranca el backend en modo real (solo `127.0.0.1:8000`) y la web en `http://localhost:8080/`;
    `Ctrl-C` cierra los dos. Se niega a arrancar si el puerto 8000 ya está ocupado.
 2. Abre la web y pulsa **Escanear** → **Calibrar robot**: «Soltar brazo», lleva la punta de la
@@ -194,7 +215,11 @@ Con el brazo conectado y las policies publicadas:
    repartidos, **Ajustar** (muestra el error en mm).
 3. **Guardar pose de inicio** (el brazo donde empiezan los episodios de la policy) y, si
    hace falta, **Guardar home**. Después **Bloquear brazo**.
-4. Escanea la bandeja, asigna las semillas a las casillas y pulsa **Sembrar**.
+4. Escanea la bandeja, asigna las semillas a las casillas y pulsa **Sembrar**. Al pulsarlo la
+   detección de bandeja y huecos **se congela**: los huecos se quedan donde estaban marcados
+   (el plan usa esas posiciones) y se reanuda cuando la siembra termina, falla o se para. Si
+   tras actualizar la web ves el comportamiento antiguo, recarga: `index.html` lleva `?v=` en
+   sus recursos para saltarse la caché.
 
 Para depurar, el botón **Ajustes** (engranaje, bajo la cámara) esconde el estado del escaneo,
 las filas y columnas, **Calibrar robot** y **Cerrar cámara**, y añade:
@@ -236,6 +261,14 @@ puertos, cámaras, tarea y etiquetas del `.env` (`TASK_NAME=smartseed-pick-<colo
 `RESUME=1 ./scripts/11_record.sh` continúa una grabación cortada. Antes de grabar hay que
 parar el backend en modo `real`: los dos usan el puerto del follower.
 
+**Datasets del sábado 25** (agarre, una sola tarea, episodios de **10 s**, tarea
+`grasp the seed below the gripper`, etiqueta `BraboRobots`), limpiados a mano:
+
+| Dataset | Episodios | Origen |
+|---|---|---|
+| [`RafaelJaime/smartseed-grasp-d1-clean`](https://huggingface.co/datasets/RafaelJaime/smartseed-grasp-d1-clean) | 96 | `smartseed-grasp-d_20261025_002427` sin los episodios 1, 15, 26 y 34 |
+| [`RafaelJaime/smartseed-grasp-d2-clean`](https://huggingface.co/datasets/RafaelJaime/smartseed-grasp-d2-clean) | 91 | `smartseed-grasp-d_20261025_010641` sin los episodios 0-4, 18, 66, 84 y 96 |
+
 **Etiquetas en Hugging Face**: todos los datasets y modelos se publican con las etiquetas
 `BraboRobots`, `smartseed`, `robotekin-hackathon`, `lerobot` y `so101` (`--dataset.tags`
 al grabar, `--policy.tags` al entrenar). En el Hub no existe la cuenta `@BraboRobots`, así
@@ -255,6 +288,41 @@ lerobot-train \
 Una ejecución por color. En la nube (`./scripts/21_train_cloud.sh`, Hugging Face Jobs)
 es alrededor de 1 h cada una; en el Mac (`./scripts/20_train_local.sh`) unas 4 h cada una.
 
+#### Entrenar en Brev (2× H100)
+
+Los modelos finales se entrenaron en máquinas de Brev con 2 H100, una variante por GPU, a
+~6,3 pasos/s: 40 000 pasos, batch 32, **~1 h 45**, con checkpoint al Hub cada 10 000. Scripts en
+`scripts/brev/` (`train_pair.sh` y `resume.sh` se ejecutan **en la máquina de Brev** y leen el
+token de Hugging Face de la caché de esa máquina: no llevan ningún secreto):
+
+| Script | Para qué |
+|---|---|
+| `train_pair.sh <dataset> <prefijo>` | instala lerobot (commit `e595b79`) y entrena dos ACT a la vez, una por GPU: `act-<prefijo>-c100` (chunk 100) y `act-<prefijo>-c50` (`chunk_size` y `n_action_steps` 50). `HF_USER` cambia la cuenta del Hub (por defecto `RafaelJaime`). Marca `~/DONE-<variante>` o `~/FAILED-<variante>` y `~/TRAIN_DONE` |
+| `resume.sh <repo origen> <paso> <pasos totales> <repo nuevo>` | máquina de 1 GPU: retoma una ACT desde un checkpoint del Hub (con el estado del optimizador) hasta más pasos y la publica en un repo nuevo. Marca `~/DONE` o `~/FAILED` |
+| `watch_one.sh <host> <repo> <paso final>` | desde el Mac: espera a `DONE`/`FAILED` por ssh y **borra la máquina solo si el checkpoint final está verificado en el Hub**. `PYTHON` apunta a un Python con `huggingface_hub` (por defecto `python3`); necesita el CLI `brev` |
+
+```bash
+# subir (scp dice OK pero el fichero no llega a ~ en Brev; así sí)
+ssh <host> 'cat > ~/train_pair.sh' < scripts/brev/train_pair.sh
+ssh <host> 'chmod +x ~/train_pair.sh && tmux new -d -s train "~/train_pair.sh RafaelJaime/smartseed-grasp-d1-clean smartseed-d1"'
+ssh <host> 'tmux ls; tail -5 ~/setup.log'      # comprobar que arrancó de verdad
+scripts/brev/watch_one.sh <host> RafaelJaime/act-smartseed-d1-c100 40000
+```
+
+Modelos (todos con etiqueta `BraboRobots`):
+
+| Modelo | Dataset | Chunk | Pasos |
+|---|---|---|---|
+| `RafaelJaime/act-smartseed-d1-c100` | d1-clean | 100 | 40k |
+| `RafaelJaime/act-smartseed-d1-c50` | d1-clean | 50 | 40k |
+| `RafaelJaime/act-smartseed-d2-c100` | d2-clean | 100 | 40k |
+| `RafaelJaime/act-smartseed-d2-c50` | d2-clean | 50 | 40k |
+| `RafaelJaime/act-smartseed-d1-c100-80k` | d1-clean | 100 | 80k, **en curso**: `d1-c100` retomado desde su checkpoint 40k con `resume.sh` |
+
+Lecciones de Brev: sube con `ssh host 'cat > ~/f' < f` y no con `scp`; tras lanzar, comprueba
+`tmux` y el log; y deja que `watch_one.sh` borre la máquina, que lo hace solo tras verificar el
+checkpoint final en el Hub.
+
 ### 6. Ejecución
 
 Con el backend y la web levantados: escanear el semillero, diseñar el plan en la interfaz
@@ -264,7 +332,8 @@ y pulsar **Sembrar**. El plan llega como `POST /plan` con `image_size` y una lis
 
 ```
 con policy:  pose de inicio → la ACT va al cuenco y vuelve con la semilla
-             → encima de la celda (cinemática inversa) → abrir pinza → pose de inicio
+             → encima de la celda (cinemática inversa) → muñeca +5° → abrir pinza → pose de inicio
+             (tras la última celda, `home`)
 
 sin policy:  inicio → encima del cuenco (pose enseñada) → coger (un reintento si sale vacío)
              → subir → encima de la celda → abrir pinza → inicio
@@ -290,7 +359,7 @@ Nada de esto necesita el brazo ni las cámaras: el robot falso y las imágenes s
 sustituyen al hardware, así que cualquiera puede clonar el repo y comprobar que funciona.
 
 ```bash
-cd backend && uv run pytest        # 147 funciones de test: visión, cinemática, calibración, ACT, ejecutor y API
+cd backend && uv run pytest        # 177 funciones de test: visión, cinemática, calibración, ACT, ejecutor y API
 
 cd tests/web && npm install        # la primera vez
 npm test                           # 2 pasadas: sin backend (modo demo) y con el robot simulado
@@ -302,8 +371,8 @@ Qué cubre cada uno está en [guide.md § Pruebas automáticas](guide.md#pruebas
 
 ### Datasets y modelos
 
-- Datasets `smartseed-pick-<color>` (uno por color): _pendiente de publicar en el Hub_.
-- Policies `act-smartseed-pick-<color>`: _pendiente de publicar en el Hub_.
+- Datasets: `RafaelJaime/smartseed-grasp-d1-clean` (96 episodios) y `smartseed-grasp-d2-clean` (91), ver «4. Datos».
+- Policies: `RafaelJaime/act-smartseed-d1-c100`, `-d1-c50`, `-d2-c100`, `-d2-c50` y, en curso, `-d1-c100-80k`, ver «5. Entrenamiento».
 - **Vídeo final (1 minuto como máximo)**: se sube a la carpeta de Drive del equipo,
   <https://drive.google.com/drive/folders/1uDB6e2SAj96LFbZUaVXhP8_1dHKJPw7n>, en cuanto esté terminado.
 

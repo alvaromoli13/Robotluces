@@ -116,8 +116,9 @@ Cada alveolo del plan se siembra en dos fases:
 - **Por qué una por color y no una sola para todos**: una única policy con los dos cuencos
   delante no tiene forma de saber a cuál ir, porque la ACT no recibe el color como entrada.
   Separarlas es lo que convierte "coge algo" en "coge del cuenco rojo".
-- **Lo que cuesta**: unos 50 episodios de 20 s por color y un entrenamiento por color
-  (alrededor de 1 h en la nube con Hugging Face Jobs, unas 4 h en el Mac).
+- **Lo que cuesta**: unas decenas de episodios por color y un entrenamiento por color. Los
+  modelos actuales salen de dos datasets de agarre de 10 s (96 y 91 episodios limpios) y de
+  40 000 pasos en Brev con 2 H100 (~1 h 45 por pareja de modelos; ver «Datos y policy»).
 - Alternativa descartada por tiempo: una SmolVLA que reciba el color como texto.
 - **Por qué no se aprende todo**: ACT no recibe "a qué alveolo voy". Aprender
   "caja X → alveolo (fila, columna)" exigiría demostraciones para 4 colores × 40 alveolos,
@@ -142,7 +143,8 @@ haya policy para ese color o no; el soltado es el mismo en las dos:
 
 ```
 con policy:  act_start → la ACT va al cuenco, coge y vuelve
-             → encima de la celda (cinemática inversa) → abrir pinza → act_start
+             → encima de la celda (cinemática inversa) → muñeca +5° → abrir pinza → act_start
+             (tras la última celda: home)
 
 sin policy:  inicio → encima del cuenco (pose enseñada) → coger → ¿lleva algo?
              → subir → encima de la celda → abrir pinza → inicio
@@ -164,7 +166,13 @@ sin policy:  inicio → encima del cuenco (pose enseñada) → coger → ¿lleva
    dónde ha quedado la punta y, si falla más de **5 mm**, vuelve a apuntar más allá por lo
    que le faltaba y repite, hasta **2 correcciones**. El error final sale en el evento
    `drop_pose` y la web lo enseña como "Soltado a N mm del hueco".
-5. **Abrir pinza**, subir otra vez a la pose de aproximación y volver al inicio de la ruta.
+5. **Inclinar la muñeca y abrir pinza**: justo antes de abrir, `wrist_flex` +5°
+   (`release_wrist_tilt_deg`) para que la semilla caiga hacia la celda; después sube otra vez a
+   la pose de aproximación y vuelve al inicio de la ruta. En un plan completo con policy, tras
+   la última celda el brazo va a `home` con la pinza abierta.
+
+En resumen, **Sembrar** es, celda a celda: agarre ACT desde la caja de la semilla y soltado
+sobre la celda; el plan acaba en `home`.
 
 **Si la pinza parece vacía, la celda se completa igual**: el brazo va a la celda, abre y
 sigue. El evento `cell_done` llega con `empty: true` y la web lo avisa. Es deliberado: en
@@ -207,6 +215,7 @@ brazo esté en un sitio seguro.
 | `max_relative_target` | 8 | tope por paso en el follower |
 | `gripper_open` / `gripper_closed` | 60 / 0 | pinza abierta y cerrada |
 | `empty_below` | 8 | por debajo de esto, la pinza va vacía (solo ruta enseñada) |
+| `release_wrist_tilt_deg` | 5° | `wrist_flex` que se suma sobre la celda justo antes de abrir la pinza |
 | `settle_s` | 0,3 s | reposo antes de juzgar el agarre y antes de medir la punta |
 | `retries` | 1 | reintentos de agarre (solo ruta enseñada) |
 | Tolerancia IK | 3 mm | con hasta 6 rondas de solver por inclinación |
@@ -358,7 +367,8 @@ Módulos:
 | `calibration.py` | homografía píxel → mesa, su error en mm y su persistencia |
 | `poses.py` | poses enseñadas con nombre (`home`, `act_start`, `above_box_<color>`, `grasp_<color>`) |
 | `motion.py` | interpolación del movimiento, cancelable |
-| `act.py` | policies ACT por color, cargadas en el primer uso, y su lazo cerrado |
+| `act.py` | policies ACT por color, cargadas en el primer uso, y su lazo cerrado; `select` cambia la de un color en caliente |
+| `catalog.py` | catálogo de modelos y checkpoints ACT del Hub (caché de 5 min) y descarga de checkpoints intermedios |
 | `executor.py` | validación del plan, modos, secuencia de cada celda y soltado corregido |
 | `api.py` | endpoints HTTP y el WebSocket de progreso |
 
@@ -381,7 +391,13 @@ desactivado: `POST /robot/torque-off`):
    y seguir el progreso por `WS /robot/progress`. Opcionales: `mode` (`"full"` por defecto,
    `"grasp"` solo coger, `"place"` solo dejar; son las pruebas del panel **Ajustes**) y
    `drop_z` (m, 0.02–0.25) para la altura de la punta al soltar.
-5. **Parar**: `POST /stop` (el brazo se queda en su sitio con par). `POST /robot/torque-off`
+5. **Elegir modelo ACT** (opcional): en **Ajustes → Modelo ACT** se escoge color, modelo y
+   checkpoint. Equivale a `GET /robot/act/models` (modelos `RafaelJaime/act-smartseed-*` del Hub
+   con sus checkpoints, caché de 5 min) y `POST /robot/act/select {color, repo, checkpoint}`
+   (`409 busy` con un plan en marcha, `422` modelo o checkpoint desconocido, `502` descarga
+   fallida). Un checkpoint intermedio se baja con `snapshot_download`
+   (`checkpoints/<paso>/pretrained_model/*`); el modelo se carga en la siguiente ACT.
+6. **Parar**: `POST /stop` (el brazo se queda en su sitio con par). `POST /robot/torque-off`
    solo cuando el brazo esté en un lugar seguro; `POST /robot/torque-on` para recuperarlo.
 
 En la ruta de poses enseñadas, un agarre vacío (pinza cerrada del todo) se reintenta una
@@ -389,6 +405,23 @@ vez; con policy no se juzga. En los dos casos el brazo **suelta igualmente sobre
 y la celda se cuenta como hecha, con el aviso de que la pinza parecía vacía. Con la pinza
 vertical el alcance a altura de bandeja es de unos 28 cm desde la base; inclinándola hacia
 fuera se llega algo más lejos.
+
+## Entrenamiento en la nube (Brev)
+
+Las ACT finales se entrenan en máquinas de Brev con 2 H100, una variante por GPU, a ~6,3
+pasos/s (40 000 pasos, batch 32, ~1 h 45). Los scripts están en `scripts/brev/`; los comandos
+completos, en [README.md § Entrenamiento](README.md#5-entrenamiento).
+
+| Script | Dónde corre | Qué hace |
+|---|---|---|
+| `train_pair.sh <dataset> <prefijo>` | máquina de Brev | entrena `-c100` y `-c50` a la vez (una por GPU) y sube checkpoints cada 10 000 pasos al Hub |
+| `resume.sh <origen> <paso> <total> <nuevo>` | máquina de Brev (1 GPU) | retoma desde un checkpoint del Hub, optimizador incluido, hasta más pasos |
+| `watch_one.sh <host> <repo> <paso final>` | el Mac | espera el fin del entrenamiento y borra la máquina solo con el checkpoint final verificado en el Hub |
+
+Lecciones de operación:
+- `scp` a Brev dice OK pero el fichero **no llega a `~`**: súbelo con `ssh host 'cat > ~/f' < f`.
+- Tras lanzar un entrenamiento, comprueba `tmux` y el log antes de irte.
+- No borres la máquina a mano: `watch_one.sh` lo hace solo tras verificar el Hub.
 
 ## Escena y objetos
 
@@ -469,6 +502,13 @@ Progreso por `WS /robot/progress`, un JSON por evento:
 Un cliente que se conecta a mitad de un plan lo recibe desde el principio, así que
 recargar la web durante una siembra no pierde el progreso.
 
+**La detección se congela al sembrar.** Al pulsar **Sembrar**, `scanner.freeze()` guarda los
+centros de las celdas y el tamaño de imagen: el plan sale de esa instantánea, y no se mandan
+más `POST /vision/tray` ni se recolocan los huecos hasta que la siembra termina, falla, se
+para o el plan es rechazado (`unfreeze()`). Los huecos se quedan donde estaban marcados.
+Los recursos de `web/index.html` llevan `?v=` para saltarse la caché del navegador al
+publicar cambios.
+
 **Sin backend** (la web publicada en GitHub Pages) el `POST` falla por red y la interfaz
 simula la siembra con la etiqueta **MODO DEMO** bien visible. Si el backend sí responde
 pero el semillero no se ha escaneado, la web se niega a sembrar y pide escanear: sin
@@ -525,11 +565,25 @@ píxeles no hay posición a la que llevar el brazo.
       antes de grabar todo.
 - [x] Policy del primer cuenco entrenada y publicada en el Hub, enchufada en el ejecutor
       (`SMARTSEED_ACT_POLICIES`).
+- [x] Datasets de agarre limpios en el Hub (episodios de 10 s, tarea `grasp the seed below the
+      gripper`, etiqueta `BraboRobots`): `RafaelJaime/smartseed-grasp-d1-clean` (96 episodios,
+      de `smartseed-grasp-d_20261025_002427` sin los 1, 15, 26 y 34) y
+      `smartseed-grasp-d2-clean` (91, de `smartseed-grasp-d_20261025_010641` sin los 0-4, 18, 66,
+      84 y 96).
+- [x] Cuatro ACT entrenadas en Brev (2 H100, una por GPU): `act-smartseed-d1-c100`, `-d1-c50`,
+      `-d2-c100`, `-d2-c50` (c50 = `chunk_size` y `n_action_steps` 50), 40 000 pasos, batch 32,
+      checkpoints cada 10 000 en el Hub. Por defecto: negro (Tomate) → `d1-c100`, blanco
+      (Pimiento) → `d2-c100`.
+- [ ] En curso: `act-smartseed-d1-c100-80k`, `d1-c100` retomado desde su checkpoint 40k
+      (con el optimizador) hasta 80k en una H100 (`scripts/brev/resume.sh`).
+- [ ] Probar con el brazo real qué modelo y checkpoint siembra mejor (selector de **Ajustes**).
+- [ ] Revisar `act_start`: la enseñada tiene `wrist_flex` ≈ 72° y los episodios de d1/d2
+      empiezan hacia 47°.
 - [ ] Grabar **~50 episodios de 20 s por color** con `lerobot-record`: cada episodio va de
       `home` al cuenco de ese color, coge una semilla y vuelve. **Los dos cuencos en la
       mesa y cambiados de sitio** entre episodios, y algo de variación de luz.
 - [ ] Subir los datasets al Hub de Hugging Face con las etiquetas del equipo.
-- [ ] Entrenar la ACT del segundo color (≈ 1 h en la nube, ~4 h en el Mac) y probarla.
+- [x] Entrenar la ACT del segundo color (`d2-c100`).
 - [ ] Enseñar `act_start` con el brazo real y comprobar el ciclo entero celda a celda.
 - [ ] Apuntar los fallos de cada iteración y cómo se arreglaron en `odd/tasks/`.
 
@@ -560,13 +614,14 @@ tests/web/                  smoke test de la interfaz (jsdom), captura y cámara
 backend/                    servicio local (FastAPI): visión y control del robot
   smartseed_vision/         geometry.py, detector.py, depth.py, occupancy.py, app.py
   smartseed_robot/          robot.py, kinematics.py, calibration.py, poses.py,
-                            motion.py, act.py, executor.py, api.py
+                            motion.py, act.py, catalog.py, executor.py, api.py
   assets/so101/             URDF y mallas del SO-101 para la cinemática (+ SOURCE.md)
   tests/                    pytest con bandejas y profundidad sintéticas, fotos de la bandeja
                             real en fixtures/ y robot falso
   run.sh                    arranca en http://localhost:8000
   pyproject.toml            dependencias (lerobot fijado al commit e595b79)
 scripts/stack.sh            backend real + web en una orden, para la demo
+scripts/brev/               entrenamiento ACT en Brev: train_pair.sh, resume.sh, watch_one.sh
 odd/tasks/                  documentos de tareas por funcionalidad, con la evidencia de cada iteración
 .github/workflows/pages.yml despliegue antiguo de web/ (ver CLAUDE.md, «GitHub Pages»)
 index.html                  redirección de la raíz de Pages a web/
@@ -581,7 +636,7 @@ Todo corre **sin brazo y sin cámaras**: el robot falso, las imágenes sintétic
 policies simuladas sustituyen al hardware, así que cualquiera puede clonar el repo y
 comprobar que funciona.
 
-**Backend** (`cd backend && uv run pytest`): 147 funciones de test en 13 ficheros.
+**Backend** (`cd backend && uv run pytest`): 177 funciones de test en 14 ficheros.
 
 | Fichero | Qué comprueba |
 |---|---|
@@ -596,6 +651,7 @@ comprobar que funciona.
 | `test_poses.py` | nombres válidos (colores propios incluidos), poses que faltan, persistencia y fichero corrupto |
 | `test_motion.py` | interpolación con límite de velocidad y parada dentro de un paso de control |
 | `test_act.py` | configuración desde el entorno, carga perezosa por color y lazo cerrado cancelable |
+| `test_catalog.py` | catálogo de modelos y checkpoints del Hub, caché y descarga de checkpoints intermedios |
 | `test_executor.py` | las dos rutas de recogida, modos `grasp`/`place`, soltado con corrección, celda vacía que se completa igual, `busy` y `stop` |
 | `test_robot_api.py` | contrato de la API: estado, poses, calibración, planes rechazados con su `code`, eventos del WebSocket |
 
