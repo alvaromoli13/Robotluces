@@ -145,7 +145,7 @@ vc.on('error', m => errs.push('console.error: ' + m));
   ok('backend ws url derived', window.smartseedBackend.ws('/progress') === 'ws://localhost:8000/progress', window.smartseedBackend.ws('/progress'));
   ok('gate shown, app hidden at boot', !$('scannerGate').hidden && $('mainApp').hidden);
   ok('box legend lists the 4 boxes', $('boxLegend').querySelectorAll('li').length === 4);
-  ok('first load seeds the original four', window.smartseedApp.seeds().map(x => x.id + ':' + x.color).join() === 'TOMATE:red,PIMIENTO:green,LIMON:yellow,BERENJENAS:purple',
+  ok('first load seeds the original four', window.smartseedApp.seeds().map(x => x.id + ':' + x.color).join() === 'TOMATE:black,PIMIENTO:white,LIMON:yellow,BERENJENAS:purple',
     JSON.stringify(window.smartseedApp.seeds()));
   ok('the sidebar palette ends with a + tile', !!$('seedSidebar').querySelector('.seed-add') && !!$('seedMobile').querySelector('.seed-add'));
   ok('seed modal starts closed', $('seedModal').hidden);
@@ -231,9 +231,9 @@ vc.on('error', m => errs.push('console.error: ' + m));
   ok('emoji grid offers 24 emojis', $('seedEmojiGrid').querySelectorAll('[data-emoji]').length === 24);
   ok('colour grid offers 9 swatches', $('seedColorGrid').querySelectorAll('[data-color]').length === 9);
   ok('colours already used are disabled with the seed that owns them',
-    ['red', 'green', 'yellow', 'purple'].every(c => colorOpt(c).getAttribute('aria-disabled') === 'true') &&
-    colorOpt('red').getAttribute('aria-label').includes('Tomate') && !!colorOpt('red').title);
-  ok('a free colour is preselected', colorOpt('orange').getAttribute('aria-checked') === 'true');
+    ['black', 'white', 'yellow', 'purple'].every(c => colorOpt(c).getAttribute('aria-disabled') === 'true') &&
+    colorOpt('black').getAttribute('aria-label').includes('Tomate') && !!colorOpt('black').title);
+  ok('a free colour is preselected', colorOpt('red').getAttribute('aria-checked') === 'true');
 
   submit();
   ok('an empty name is refused', !$('seedModal').hidden && $('seedError').textContent.includes('nombre'), $('seedError').textContent);
@@ -250,8 +250,8 @@ vc.on('error', m => errs.push('console.error: ' + m));
   ok('the custom emoji field refuses plain text', $('seedError').textContent.includes('emoji'));
   typeInto($('seedEmojiCustom'), '🥑');
   ok('a pasted emoji becomes the choice', $('seedPreview').textContent.includes('🥑') && $('seedError').textContent === '');
-  colorOpt('red').click();
-  ok('a used colour cannot be picked', colorOpt('red').getAttribute('aria-checked') === 'false' && colorOpt('orange').getAttribute('aria-checked') === 'true');
+  colorOpt('black').click();
+  ok('a used colour cannot be picked', colorOpt('black').getAttribute('aria-checked') === 'false' && colorOpt('red').getAttribute('aria-checked') === 'true');
   colorOpt('blue').click();
   ok('a free colour can be picked', colorOpt('blue').getAttribute('aria-checked') === 'true');
   submit();
@@ -273,10 +273,10 @@ vc.on('error', m => errs.push('console.error: ' + m));
   addTile().click();
   typeInto($('seedName'), '<b>Fresa</b>');
   emojiOpt('🍓').click();
-  colorOpt('white').click();
+  colorOpt('pink').click();
   submit();
   ok('names are escaped, not injected', !!tileOf('<b>Fresa</b>') && !$('seedSidebar').querySelector('.seed-name b'));
-  const white = seedTiles().find(t => t.querySelector('.seed-name').textContent === '<b>Fresa</b>');
+  const white = tileOf('Pimiento');
   ok('a white bowl gets a visible edge and a darker strong shade', /--box-edge:#[0-9a-f]{6}/.test(white.getAttribute('style')) &&
     !/--box:#fff/i.test(white.getAttribute('style')), white.getAttribute('style'));
   cellNodes()[1].click();
@@ -375,6 +375,29 @@ vc.on('error', m => errs.push('console.error: ' + m));
   ok('a corrupt seed list falls back to the original four', broken.window.smartseedApp.seeds().length === 4);
   broken.window.close();
 
+  // Built-in Tomate/Pimiento used to default to red/green: stored copies move to black/white,
+  // but a seed the user made or recoloured is never touched and a colour is never duplicated.
+  const oldDefaults = [
+    { id: 'TOMATE', name: 'Tomate', emoji: '🍅', color: 'red' },
+    { id: 'PIMIENTO', name: 'Pimiento', emoji: '🫑', color: 'green' },
+    { id: 'LIMON', name: 'Limón', emoji: '🍋', color: 'yellow' },
+    { id: 'SABC', name: 'Albahaca', emoji: '🥑', color: 'blue' },
+  ];
+  const colours = w => w.smartseedApp.seeds().map(x => x.id + ':' + x.color).join();
+  const migrated = await boot({ 'smartseed.seeds': JSON.stringify(oldDefaults) });
+  await sleep(200);
+  ok('stored Tomate/Pimiento with the old defaults move to black/white', colours(migrated.window) === 'TOMATE:black,PIMIENTO:white,LIMON:yellow,SABC:blue', colours(migrated.window));
+  ok('the migration is persisted', JSON.parse(migrated.window.localStorage.getItem('smartseed.seeds')).slice(0, 2).map(x => x.color).join() === 'black,white');
+  migrated.window.close();
+  const recoloured = await boot({ 'smartseed.seeds': JSON.stringify([{ ...oldDefaults[0], color: 'orange' }, oldDefaults[1], oldDefaults[3]]) });
+  await sleep(200);
+  ok('a Tomate the user recoloured keeps its colour', colours(recoloured.window) === 'TOMATE:orange,PIMIENTO:white,SABC:blue', colours(recoloured.window));
+  recoloured.window.close();
+  const taken = await boot({ 'smartseed.seeds': JSON.stringify([oldDefaults[0], oldDefaults[1], { id: 'SXYZ', name: 'Sal', emoji: '🧂', color: 'white' }]) });
+  await sleep(200);
+  ok('a colour already owned by another seed is not duplicated', colours(taken.window) === 'TOMATE:black,PIMIENTO:green,SXYZ:white', colours(taken.window));
+  taken.window.close();
+
   // ── Planting run ────────────────────────────────────────────────────────────
   // Without a camera the plan has no pixel centres. With a backend answering, the page
   // must refuse to plant instead of pretending; with none, it simulates.
@@ -398,7 +421,7 @@ vc.on('error', m => errs.push('console.error: ' + m));
     ok('plan cell shape matches smartseed_robot',
       plan.cells.every(c => ['cell_index', 'row', 'col', 'color', 'u', 'v'].every(k => k in c)),
       JSON.stringify(plan.cells[0]));
-    ok('plan cells carry the box colour', plan.cells[0].color === 'red', JSON.stringify(plan.cells[0]));
+    ok('plan cells carry the box colour', plan.cells[0].color === 'black', JSON.stringify(plan.cells[0]));
     ok('a custom seed sends its own colour id', plan.cells[2].color === 'blue', JSON.stringify(plan.cells[2]));
     ok('plan cell row/col match the index',
       plan.cells.every(c => c.row === Math.floor(c.cell_index / 4) && c.col === c.cell_index % 4),
@@ -427,7 +450,7 @@ vc.on('error', m => errs.push('console.error: ' + m));
     ok('robot mode labelled from /robot/status', $('runMode').textContent === 'ROBOT SIMULADO (fake)', $('runMode').textContent);
     ok('progress socket opened on /robot/progress', window.__ws && window.__ws.url === 'ws://localhost:8000/robot/progress', window.__ws && window.__ws.url);
     window.__ws.push({ type: 'plan_started', plan_id: 'p1', total: 3, message: '3 cells' });
-    window.__ws.push({ type: 'cell_started', cell_index: 0, row: 0, col: 0, color: 'red', total: 3 });
+    window.__ws.push({ type: 'cell_started', cell_index: 0, row: 0, col: 0, color: 'black', total: 3 });
     ok('cell marked as being planted', klass(cellNodes()[0], 'planting'));
     window.__ws.push({ type: 'cell_done', cell_index: 0 });
     ok('cell marked done', klass(cellNodes()[0], 'done') && !klass(cellNodes()[0], 'planting'));

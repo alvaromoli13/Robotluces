@@ -191,6 +191,7 @@ class Executor:
                 else:
                     self._emit("cell_done", c["cell_index"])
             self._current = None
+            self._go_home(plan)
             self._emit("finished", message=f"{len(self._done)} done, {len(self._failed)} failed")
             self._state = "idle"
         except Stopped:
@@ -200,6 +201,12 @@ class Executor:
         except Exception as exc:  # the arm holds position: never cut torque mid-air on our own
             self._emit("error", self._current, f"{type(exc).__name__}: {exc}")
             self._state = "error"
+
+    def _go_home(self, plan) -> None:
+        """A full plan with ACT cells ends at the taught home (gripper open), not at the grasp start pose."""
+        home = self.poses.get("home")
+        if home and self._mode == "full" and any(self._acts(c["color"]) for c in plan):
+            self._move({**home, "gripper": self.cfg.gripper_open})
 
     def _acts(self, color: str) -> bool:
         return self.act is not None and self.act.has(color)

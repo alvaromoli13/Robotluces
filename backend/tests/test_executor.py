@@ -254,15 +254,50 @@ def test_act_cell_goes_start_policy_cell_open_start(tmp_path, kin):
     at_drop = [s for s in after if kin.tool_xyz(arm_of(s)) == pytest.approx(target, abs=0.003)]
     assert at_drop and CONFIG.empty_below < at_drop[0]["gripper"] < CONFIG.gripper_open  # closed on the seed
     assert max(s["gripper"] for s in at_drop) == CONFIG.gripper_open  # released above the cell
-    assert arm_of(robot.read_joints()) == pytest.approx(arm_of(ACT_START))  # back at act_start
+    assert arm_of(robot.read_joints()) == pytest.approx(arm_of(HOME))  # the plan ends home
     assert not any(h == pytest.approx(ex.poses.get("above_box_red") or {}) for h in robot.history)
+
+
+def test_full_plan_with_two_colours_grasps_with_each_policy_then_drops_cell_by_cell_then_goes_home(tmp_path, kin):
+    log = []
+
+    class Tagged(FakePolicy):
+        def __init__(self, tag):
+            super().__init__()
+            self.tag = tag
+
+        def step(self, observation):
+            if not log or log[-1] != ("grasp", self.tag):
+                log.append(("grasp", self.tag))
+            return super().step(observation)
+
+    policies = {"black": Tagged("black"), "white": Tagged("white")}
+    robot = FakeRobot(initial=HOME)
+    poses = make_poses(tmp_path, colors=())
+    poses.set("act_start", ACT_START)
+    act = ActGrasp(ActConfig(policies={"black": "black", "white": "white"}, duration_s=3 / CONFIG.hz),
+                   lambda spec: policies[spec])
+    ex = Executor(robot, poses, make_calibration(), kin, config=CONFIG, act=act)
+    ex.run([cell(0, "white", 100, 300), cell(1, "black", 500, 200)], SIZE)
+
+    assert types(ex) == ["plan_started", "cell_started", "drop_pose", "cell_done", "cell_started", "drop_pose",
+                         "cell_done", "finished"]
+    assert log == [("grasp", "white"), ("grasp", "black")]  # each colour's own policy, in plan order
+    assert policies["white"].calls == 3 and policies["black"].calls == 3
+    runs = policy_commands(robot)
+    first_drop = [e for e in ex.events if e["type"] == "drop_pose"]
+    assert [e["cell_index"] for e in first_drop] == [0, 1]
+    # the white cell was dropped (gripper opened over it) before the black policy started
+    between = robot.history[runs[2] + 1:runs[3]]
+    assert max(s["gripper"] for s in between) == CONFIG.gripper_open
+    assert robot.read_joints() == pytest.approx(HOME)  # and the arm ends home
 
 
 def test_act_falls_back_to_the_mean_start_pose_when_untaught(tmp_path, kin):
     robot, _, ex = make_act_executor(tmp_path, kin, taught_start=False)
     ex.run([cell(0)], SIZE)
     assert arm_of(robot.history[policy_commands(robot)[0] - 1]) == pytest.approx(arm_of(ACT_START_FALLBACK))
-    assert arm_of(robot.read_joints()) == pytest.approx(arm_of(ACT_START_FALLBACK))
+    assert arm_of(robot.read_joints()) == pytest.approx(arm_of(HOME))
 
 
 def test_stop_during_the_policy_loop_ends_within_one_step(tmp_path, kin):

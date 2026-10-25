@@ -11,11 +11,12 @@ WEB_PORT="${SMARTSEED_WEB_PORT:-8080}"
 export SMARTSEED_ROBOT="${SMARTSEED_ROBOT:-real}"
 export SMARTSEED_ROBOT_PORT="${SMARTSEED_ROBOT_PORT:-/dev/tty.usbmodem5B8E1124861}"
 
-# Bowl colour id used in the web -> policy repo (or local path). The trained policy grasps
-# from the black bowl; override to add colours, e.g. '{"black":"...","red":"..."}'.
-# act-smartseed-grasp-merged: 152 episodes of 10-15 s, 100k steps, so it runs for 15 s per cell.
-DEFAULT_POLICIES='{"black":"RafaelJaime/act-smartseed-grasp-merged"}'
-export SMARTSEED_ACT_DURATION_S="${SMARTSEED_ACT_DURATION_S:-15}"
+# Bowl colour id used in the web -> policy repo (or local path). Tomate sows from the black
+# bowl (d1) and Pimiento from the white one (d2); override to add colours, e.g.
+# '{"black":"...","white":"...","red":"..."}'.
+# act-smartseed-d{1,2}-c100 were trained on 10 s episodes, so each cell runs the policy for 10 s.
+DEFAULT_POLICIES='{"black":"RafaelJaime/act-smartseed-d1-c100","white":"RafaelJaime/act-smartseed-d2-c100"}'
+export SMARTSEED_ACT_DURATION_S="${SMARTSEED_ACT_DURATION_S:-10}"
 if [ "$SMARTSEED_ROBOT" = real ]; then
   export SMARTSEED_ACT_POLICIES="${SMARTSEED_ACT_POLICIES:-$DEFAULT_POLICIES}"
 elif [ -n "${SMARTSEED_ACT_POLICIES:-}" ]; then

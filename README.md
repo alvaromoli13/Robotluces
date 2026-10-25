@@ -152,7 +152,7 @@ espera `settle_s`, lee las articulaciones, calcula con FK dónde está la punta 
 
 Un color con policy ACT no usa `above_box_<color>`: por celda el ejecutor va a `act_start`,
 corre la policy a 30 Hz durante `SMARTSEED_ACT_DURATION_S` (va al cuenco, coge la semilla y
-vuelve con ella), sube con IK a la celda, abre la pinza y vuelve a `act_start`. Los colores
+vuelve con ella), sube con IK a la celda, abre la pinza y vuelve a `act_start`; al acabar la última celda va a `home`. Los colores
 sin policy siguen con las poses enseñadas.
 
 1. **Enseñar `act_start`**: con el par quitado, colocar el brazo como al empezar los
@@ -176,7 +176,7 @@ sin policy siguen con las poses enseñadas.
    ```bash
    cd backend
    SMARTSEED_ROBOT=real SMARTSEED_ROBOT_PORT=/dev/tty.usbmodem5B8E1124861 \
-   SMARTSEED_ACT_DURATION_S=15 SMARTSEED_ACT_POLICIES='{"<color>":"RafaelJaime/act-smartseed-grasp-merged"}' ./run.sh
+   SMARTSEED_ACT_DURATION_S=10 SMARTSEED_ACT_POLICIES='{"black":"RafaelJaime/act-smartseed-d1-c100","white":"RafaelJaime/act-smartseed-d2-c100"}' ./run.sh
    ```
 
    Si el color de la política no coincide con el de la web, ese color se rechaza con `409`
@@ -186,7 +186,7 @@ sin policy siguen con las poses enseñadas.
 
 Con el brazo conectado y las policies publicadas:
 
-1. Desde **Terminal.app** (permiso de cámara): `scripts/stack.sh`. Por defecto usa la policy `RafaelJaime/act-smartseed-grasp` para el cuenco negro (`black`); para otra configuración, `SMARTSEED_ACT_POLICIES='{"<color>":"<repo>"}' scripts/stack.sh`.
+1. Desde **Terminal.app** (permiso de cámara): `scripts/stack.sh`. Por defecto usa `RafaelJaime/act-smartseed-d1-c100` para el cuenco negro (`black`, Tomate) y `RafaelJaime/act-smartseed-d2-c100` para el blanco (`white`, Pimiento), 10 s por celda; para otra configuración, `SMARTSEED_ACT_POLICIES='{"<color>":"<repo>"}' scripts/stack.sh`.
    Arranca el backend en modo real (solo `127.0.0.1:8000`) y la web en `http://localhost:8080/`;
    `Ctrl-C` cierra los dos. Se niega a arrancar si el puerto 8000 ya está ocupado.
 2. Abre la web y pulsa **Escanear** → **Calibrar robot**: «Soltar brazo», lleva la punta de la

@@ -48,8 +48,8 @@
   const SEED_ID = /^[A-Z0-9_-]{1,40}$/;
 
   const DEFAULT_SEEDS = [
-    { id: 'TOMATE', name: 'Tomate', emoji: '🍅', color: 'red' },
-    { id: 'PIMIENTO', name: 'Pimiento', emoji: '🫑', color: 'green' },
+    { id: 'TOMATE', name: 'Tomate', emoji: '🍅', color: 'black' },
+    { id: 'PIMIENTO', name: 'Pimiento', emoji: '🫑', color: 'white' },
     { id: 'LIMON', name: 'Limón', emoji: '🍋', color: 'yellow' },
     { id: 'BERENJENAS', name: 'Berenjena', emoji: '🍆', color: 'purple' },
   ];
@@ -147,6 +147,20 @@
     catch (e) { return fallback; }
   }
 
+  // Tomate and Pimiento used to default to red/green. Stored copies that still carry the old
+  // default move to the new bowl (black/white); a recoloured or user-made seed is left alone,
+  // and a colour another seed already owns is never taken twice.
+  const LEGACY_DEFAULT_COLORS = { TOMATE: ['red', 'black'], PIMIENTO: ['green', 'white'] };
+
+  function migrateDefaultColors(list) {
+    let changed = false;
+    list.forEach(seed => {
+      const m = LEGACY_DEFAULT_COLORS[seed.id];
+      if (m && seed.color === m[0] && !list.some(o => o !== seed && o.color === m[1])) { seed.color = m[1]; changed = true; }
+    });
+    return changed;
+  }
+
   function writeJSON(key, value) {
     try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) { /* storage full or blocked */ }
   }
@@ -176,7 +190,9 @@
       typeof r.name === 'string' && r.name.trim() && typeof r.emoji === 'string' && r.emoji &&
       typeof r.color === 'string' && COLOR_ID.test(r.color))
       .map(r => ({ id: r.id, name: r.name.trim().slice(0, MAX_NAME), emoji: r.emoji, color: r.color }));
-    return list.length ? list : DEFAULT_SEEDS;
+    if (!list.length) return DEFAULT_SEEDS;
+    if (migrateDefaultColors(list)) writeJSON(SEEDS_KEY, list);
+    return list;
   }
 
   const saveSeeds = () => writeJSON(SEEDS_KEY, seedList());

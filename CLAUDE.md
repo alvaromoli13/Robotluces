@@ -5,7 +5,7 @@ Guidance for agents and contributors working in this repository.
 ## Project
 
 SmartSeed: an SO-101 arm (LeRobot) plants seeds into a cell tray following a layout the
-customer designs in a cinema-seat-style web UI. Seeds are user-defined in the UI (name + emoji + bowl colour; 4 by default), one coloured box each.
+customer designs in a cinema-seat-style web UI. Seeds are user-defined in the UI (name + emoji + bowl colour; 4 by default, Tomate = black and Pimiento = white; stored built-in seeds with the old red/green colours migrate), one coloured box each.
 Full idea, flow and roadmap: see `guide.md`. Resolved criteria and the steps to
 reproduce the result: see `README.md`.
 

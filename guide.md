@@ -427,7 +427,7 @@ homografía:
 `color` es el id del color de la **caja** de la que hay que coger, no el nombre de la variedad.
 Lo elige el usuario al crear la semilla (`red`, `orange`, `yellow`, `green`, `blue`, `purple`,
 `pink`, `white`; el backend acepta cualquier id `^[a-z][a-z_-]{0,19}$`). Por defecto:
-tomate → `red`, pimiento → `green`, limón → `yellow`, berenjena → `purple`. Un color sin
+tomate → `black`, pimiento → `white`, limón → `yellow`, berenjena → `purple`. Un color sin
 pose enseñada responde `409 missing_pose`. `cell_index`
 es el índice de la casilla en el mapa (`fila * columnas + columna`) y vuelve tal cual en
 los eventos de progreso, así que la web sabe qué casilla pintar.
