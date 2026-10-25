@@ -418,8 +418,22 @@ vc.on('error', m => errs.push('console.error: ' + m));
   // Pretend the tray was scanned: every cell has a pixel centre in a 1280x720 frame.
   window.smartseedScan.__fakeScan(1280, 720);
 
+  // Spy on the freeze contract: Sembrar snapshots the holes and the scanner stops following them.
+  window.eval(`(() => {
+    const scan = window.smartseedScan;
+    window.__freezes = 0; window.__unfreezes = 0;
+    const freeze = scan.freeze, unfreeze = scan.unfreeze;
+    scan.freeze = () => { window.__freezes++; const real = freeze(); return window.__freezeSnap || real; };
+    scan.unfreeze = () => { window.__unfreezes++; return unfreeze(); };
+  })();`);
+  ok('scanner is not frozen before Sembrar', window.smartseedScan.frozen === false);
+  // The snapshot taken at Sembrar is what the plan must carry, whatever the live scan says later.
+  window.__freezeSnap = { cells: window.smartseedScan.lastLayout.cells.map(c => ({ ...c, x: 7 + c.col, y: 9 + c.row })), imageSize: [1280, 720] };
+
   $('mapPlantBtn').click();
   await sleep(200);
+  window.__freezeSnap = null;
+  ok('Sembrar freezes the scanner', window.smartseedScan.frozen === true && window.__freezes === 1, window.__freezes);
   ok('run panel replaces the actions', !$('runPanel').hidden && $('trayActions').hidden);
   if (MODE === 'robot') {
     ok('plan was POSTed', window.__planned.length === 1, window.__planned.length);
@@ -434,6 +448,7 @@ vc.on('error', m => errs.push('console.error: ' + m));
     ok('plan cell row/col match the index',
       plan.cells.every(c => c.row === Math.floor(c.cell_index / 4) && c.col === c.cell_index % 4),
       JSON.stringify(plan.cells));
+    ok('plan uses the positions frozen at Sembrar', plan.cells.every(c => c.u === 7 + c.col && c.v === 9 + c.row), JSON.stringify(plan.cells[0]));
     ok('plan carries pixel centres', plan.cells.every(c => c.u > 0 && c.v > 0), JSON.stringify(plan.cells[0]));
   } else {
     ok('nothing is POSTed with no backend', window.__planned.length === 0, window.__planned.length);
@@ -461,6 +476,7 @@ vc.on('error', m => errs.push('console.error: ' + m));
     window.__ws.push({ type: 'cell_started', cell_index: 0, row: 0, col: 0, color: 'black', total: 3 });
     ok('cell marked as being planted', klass(cellNodes()[0], 'planting'));
     window.__ws.push({ type: 'cell_done', cell_index: 0 });
+    ok('progress updates keep the scanner frozen', window.smartseedScan.frozen === true);
     ok('cell marked done', klass(cellNodes()[0], 'done') && !klass(cellNodes()[0], 'planting'));
     ok('counter follows the robot', $('runCount').textContent.includes('1'), $('runCount').textContent);
     window.__ws.push({ type: 'cell_failed', cell_index: 5, message: 'gripper stayed empty after retry' });
@@ -471,6 +487,7 @@ vc.on('error', m => errs.push('console.error: ' + m));
     ok('run reported as finished', $('runTitle').textContent.includes('terminada'), $('runTitle').textContent);
     ok('progress bar full', $('runFill').style.width === '100%', $('runFill').style.width);
     ok('socket closed on finish', window.__ws.closed);
+    ok('the scanner is unfrozen when the run finishes', window.smartseedScan.frozen === false && window.__unfreezes >= 1, window.__unfreezes);
     $('stopRunBtn').click();
     ok('back to the editable map', $('runPanel').hidden && !$('trayActions').hidden);
     ok('editing works again', (() => { const b = filled().length; cellNodes()[1].click(); return filled().length === b + 1; })());
@@ -493,6 +510,7 @@ vc.on('error', m => errs.push('console.error: ' + m));
     $('mapPlantBtn').click();
     await sleep(200);
     ok('a refused plan closes the run panel', $('runPanel').hidden && !$('trayActions').hidden);
+    ok('a refused plan unfreezes the scanner', window.smartseedScan.frozen === false);
     ok('the refusal is explained in Spanish, keeping the detail',
       $('toast').textContent.includes('fuera del alcance') && $('toast').textContent.includes('[11]'),
       $('toast').textContent);
@@ -521,6 +539,7 @@ vc.on('error', m => errs.push('console.error: ' + m));
   $('stopRunBtn').click();
   await sleep(100);
   ok('stop finishes the run', $('runTitle').textContent.includes('terminada'), $('runTitle').textContent);
+  ok('stop unfreezes the scanner', window.smartseedScan.frozen === false);
   if (MODE === 'robot') ok('stop asked the backend to stop', window.__stopped === true);
   $('stopRunBtn').click();
   ok('closing after a stop restores the map', $('runPanel').hidden && !$('trayActions').hidden);

@@ -39,6 +39,9 @@
   let modelFound = false;
   let lastFoundAt = -Infinity;
   let userSetSize = false;
+  // While the robot plants, the holes stay where they were when Sembrar was pressed: no
+  // detection requests, no overlay moves, no corner drags. Set by freeze(), cleared by unfreeze().
+  let frozen = false;
   let mapMode = false;
   // Holes found by the depth model, row-major, normalized x/y and area. They place the
   // cells directly, no corners needed; markers or a size typed by hand take over.
@@ -245,6 +248,7 @@
       const res = await backend.fetch('/vision/tray', { method: 'POST', body: form }, 8000);
       if (!res.ok) throw new Error('HTTP ' + res.status);
       const data = await res.json();
+      if (frozen) return;  // Sembrar was pressed while the request was in flight: drop the result
       recordTray(data);
       modelFound = !!data.found;
       if (data.found || (Array.isArray(data.holes) && data.holes.length)) lastFoundAt = performance.now();
@@ -361,6 +365,7 @@
 
   function loop(t) {
     if (!stream) return;
+    if (frozen) { draw(); rafId = requestAnimationFrame(loop); return; }
     if (t - lastDetect > DETECT_EVERY_MS) { lastDetect = t; detectMarkers(); }
     if (!backendOk && t - lastHealth > HEALTH_RETRY_MS) { lastHealth = t; checkBackend(); }
     if (backendOk && !locked && dragIndex < 0 && !modelBusy && video.videoWidth && t - lastModel > MODEL_EVERY_MS) {
@@ -377,7 +382,7 @@
   }
 
   overlay.addEventListener('pointerdown', e => {
-    if (locked || holesActive()) return;
+    if (frozen || locked || holesActive()) return;
     const [x, y] = pointerPos(e);
     const rect = overlay.getBoundingClientRect();
     let best = -1, bestDist = Infinity;
@@ -452,7 +457,21 @@
 
   window.addEventListener('pagehide', stopCamera);
 
+  // Snapshot of the cell centres and frame size at this instant (null without a live camera),
+  // then stop following the tray. The catch in askModel drops a result that lands after this.
+  function freeze() {
+    const snap = stream
+      ? { cells: cellCenters().map(c => ({ ...c })), imageSize: [video.videoWidth, video.videoHeight] }
+      : null;
+    frozen = true;
+    return snap;
+  }
+  function unfreeze() { frozen = false; }
+
   window.smartseedScan = {
+    freeze,
+    unfreeze,
+    get frozen() { return frozen; },
     cellCenters,
     layoutCells,
     source,

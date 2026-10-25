@@ -425,13 +425,26 @@
   function cellPixels() {
     const scan = window.smartseedScan;
     if (!scan) return null;
-    const live = scan.cameraActive();
-    const centers = live ? scan.cellCenters() : (scan.lastLayout || {}).cells;
-    const size = live ? scan.imageSize() : (scan.lastLayout || {}).imageSize;
+    // A frozen snapshot (taken when Sembrar was pressed) wins over the live scan.
+    const snap = frozenLayout;
+    const live = !snap && scan.cameraActive();
+    const centers = snap ? snap.cells : live ? scan.cellCenters() : (scan.lastLayout || {}).cells;
+    const size = snap ? snap.imageSize : live ? scan.imageSize() : (scan.lastLayout || {}).imageSize;
     if (!Array.isArray(centers) || !centers.length || !size || !size[0]) return null;
     const byIndex = new Map();
     centers.forEach(c => byIndex.set(c.row * cols + c.col, { u: c.x, v: c.y }));
     return { byIndex, size };
+  }
+
+  // Cell centres captured by smartseedScan.freeze() for the whole run; null outside a run.
+  let frozenLayout = null;
+  function freezeScan() {
+    const scan = window.smartseedScan;
+    frozenLayout = scan && scan.freeze ? scan.freeze() : null;
+  }
+  function unfreezeScan() {
+    frozenLayout = null;
+    if (window.smartseedScan && window.smartseedScan.unfreeze) window.smartseedScan.unfreeze();
   }
 
   const order = () => cells.map((key, i) => (key ? i : -1)).filter(i => i >= 0);
@@ -522,6 +535,7 @@
   function finishRun(message, detail) {
     if (!run) return;
     run.finished = true;
+    unfreezeScan();
     run.detail = detail || '';
     clearTimeout(run.timer);
     if (run.ws) { run.ws.onclose = null; run.ws.close(); run.ws = null; }
@@ -531,6 +545,7 @@
 
   function closeRun() {
     if (!run) return;
+    unfreezeScan();
     clearTimeout(run.timer);
     if (run.ws) { run.ws.onclose = null; run.ws.close(); }
     run = null;
@@ -753,6 +768,7 @@
     setMode('Conectando…', false);
     renderRun();
 
+    freezeScan();  // the holes stay where they are until the run ends (finishRun / closeRun)
     let plan = test === 'grasp' ? buildGraspPlan() : buildPlan(queue);
     if (plan) plan = { ...plan, mode: test || 'full', drop_z: dropZ };
     if (!plan) {
