@@ -9,8 +9,8 @@
 </p>
 
 <p align="center">
-  <a href="docs/media/smartseed-video.mp4"><img src="docs/media/smartseed-video.jpg" alt="SmartSeed project video" width="720"></a><br>
-  <sub>▶ <a href="docs/media/smartseed-video.mp4">Watch the project video</a> (46 s, Spanish audio) ·
+  <a href="docs/media/smartseed-video.mp4"><img src="docs/media/smartseed-video.gif" alt="SmartSeed project video" width="720"></a><br>
+  <sub>🔇 Silent preview · ▶ <a href="docs/media/smartseed-video.mp4">watch with sound</a> (46 s, Spanish audio) ·
   🤗 <a href="https://huggingface.co/collections/RafaelJaime/smartseed-so-101-act-seed-sowing-6adf0632f7e93bb112d73e8c">All models and datasets on Hugging Face</a></sub>
 </p>
 
