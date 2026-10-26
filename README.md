@@ -336,6 +336,12 @@ corrections), then tilts the wrist +5° and opens. The final error travels in th
 (`unreachable`, `no_calibration`, `missing_pose`, `torque_off`, `busy`). Body: `image_size` plus a
 list of `{cell_index,row,col,color,u,v}`.
 
+## Simulation (roadmap)
+
+Replicating the experiment in a simulator (MuJoCo with the SO-101 model, a `SimRobot` behind the
+same `RobotPort`, scripted demos and evaluation) is planned but **not implemented**:
+[docs/simulation.md](docs/simulation.md).
+
 ## Tests
 
 No hardware needed: a fake robot and synthetic trays/depth maps stand in.
