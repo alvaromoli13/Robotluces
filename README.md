@@ -211,8 +211,8 @@ lerobot-edit-dataset \
 The flags above were checked against `src/lerobot/scripts/lerobot_edit_dataset.py` at `e595b79`;
 `--root` / `--new_root` select exact folders instead of `$HF_LEROBOT_HOME/<repo_id>`, and giving
 the same `--repo_id` and `--new_repo_id` edits in place after making a backup. The tool also
-supports `split`, `merge`, `remove_feature`, `modify_tasks` and more (`--help`). The 100-episode
-source sizes are inferred from the final counts (96 + 4, 91 + 9).
+supports `split`, `merge`, `remove_feature`, `modify_tasks` and more (`--help`). Both source
+datasets have 100 episodes (`meta/info.json` on the Hub).
 
 ## Train
 
