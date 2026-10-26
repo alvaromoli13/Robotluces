@@ -19,3 +19,6 @@ lerobot/.env
 lerobot/.venv/
 lerobot/vendor/
 !lerobot/.env.example
+
+# MuJoCo twin (sim/): renders, replays and exported episodes
+sim/out/
