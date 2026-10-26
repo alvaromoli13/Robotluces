@@ -9,6 +9,9 @@ BACKEND_PORT=8000
 WEB_PORT="${SMARTSEED_WEB_PORT:-8080}"
 
 export SMARTSEED_ROBOT="${SMARTSEED_ROBOT:-real}"
+# Follower serial port. The default is the one from the event machine: find yours with
+#   ls /dev/tty.usbmodem*   (unplug/replug the follower to see which entry appears)
+# and override it: SMARTSEED_ROBOT_PORT=/dev/tty.usbmodemXXXX scripts/stack.sh
 export SMARTSEED_ROBOT_PORT="${SMARTSEED_ROBOT_PORT:-/dev/tty.usbmodem5B8E1124861}"
 
 # Bowl colour id used in the web -> policy repo (or local path). Tomate sows from the black

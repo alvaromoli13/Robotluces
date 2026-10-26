@@ -3,3 +3,13 @@ __pycache__/
 .pytest_cache/
 *.pyc
 backend/data/
+.venv/
+node_modules/
+.env
+.env.*
+.DS_Store
+*.log
+outputs/
+data/
+shots/
+.cache/
