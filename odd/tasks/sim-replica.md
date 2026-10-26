@@ -25,6 +25,8 @@ Strict TDD (session config). Runner: `cd backend && uv run pytest` (via `~/.clau
       Evidence: replay of episode 0: tool vs FK 0.0016 mm max; top overlay chamfer 5.5 px; `sim/README.md`
 - [x] T2 `SimRobot(RobotPort)` + `SMARTSEED_ROBOT=sim` + viewer/recording of runs (route: delegated, same writer)
       Evidence: `uv run pytest` 297 passed (sim tests included, mujoco in default uv group); web `npm test` 196/196; a `place` plan runs through the executor on the sim arm (tool within 3 mm of target) and writes an mp4
+- [ ] T2b Contact-physics grasp: jaws close on a seed and hold it while lifting (real-like stop at gripper ~12),
+      no weld/attach trick; the user chose physics tuning over attach (route: delegated)
 - [ ] T3 Run the real-trained ACT in sim and save a video per policy (route: delegated)
 - [ ] T4 Scripted IK grasp demos -> LeRobotDataset (randomised seed/box positions, lighting) (route: delegated)
 - [ ] T5 Train ACT on sim demos + `sim/eval.py` success metric (seed lifted > 3 cm, lands in target hole) (route: delegated)
