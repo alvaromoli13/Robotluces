@@ -61,7 +61,7 @@
     const line = q('calStatus');
     try {
       const st = await call('/robot/status');
-      line.textContent = (st.robot === 'real' ? 'Robot real' : 'Robot simulado (fake)') +
+      line.textContent = (st.robot === 'real' ? 'Robot real' : `Robot simulado (${st.robot || 'fake'})`) +
         ' · par ' + (st.torque ? 'activado' : 'desactivado') +
         ' · ' + (st.calibrated ? 'calibrado' : 'sin calibrar') +
         ' · políticas ACT: ' + ((st.policies || []).join(', ') || 'ninguna');

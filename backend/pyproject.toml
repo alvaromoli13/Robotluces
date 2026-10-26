@@ -18,13 +18,16 @@ dependencies = [
 
 [dependency-groups]
 dev = ["pytest", "httpx"]
+# MuJoCo twin of the arm (SMARTSEED_ROBOT=sim); installed by default so the sim tests run in `uv run pytest`
+sim = ["mujoco>=3.2", "imageio", "imageio-ffmpeg"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = [".", "tests"]
+pythonpath = [".", "tests", ".."]  # ".." exposes the repo-level `sim` package (layout + scene.xml)
 
 [tool.uv]
 package = false
+default-groups = ["dev", "sim"]
 
 # lerobot's own pyproject routes torch to the CUDA index; on macOS that has no wheels.
 [[tool.uv.index]]

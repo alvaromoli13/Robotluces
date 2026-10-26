@@ -94,16 +94,36 @@ placeholders or auto-detected (`HF_USER` comes from `hf auth whoami` when empty)
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `SMARTSEED_ROBOT` | `fake` (`real` in `scripts/stack.sh`) | `fake` opens no serial port or camera; `real` moves the arm |
+| `SMARTSEED_ROBOT` | `fake` (`real` in `scripts/stack.sh`) | `fake` opens no serial port or camera; `real` moves the arm; `sim` drives the MuJoCo twin of the arm and scene (see [Simulator](#simulator-no-arm-needed)) |
 | `SMARTSEED_ROBOT_PORT` | none (event port in `stack.sh`) | follower serial port, required when `real`. Find yours: `ls /dev/tty.usbmodem*` (macOS) or `/dev/ttyACM*` (Linux), unplug/replug the follower to see which entry changes |
 | `SMARTSEED_ACT_POLICIES` | empty (no ACT) | JSON `{"<colour>": "<HF repo or local path>"}`, e.g. `{"black":"RafaelJaime/act-smartseed-d1-c100","white":"RafaelJaime/act-smartseed-d2-c100"}` |
 | `SMARTSEED_ACT_DURATION_S` | `10` | seconds of policy per cell (match the episode length used for training) |
 | `SMARTSEED_ACT_DEBUG_DIR` | none | if set, the ACT loop logs timing and first frames there |
 | `SMARTSEED_CAM_TOP` / `SMARTSEED_CAM_WRIST` | `0` / `1` | OpenCV index or path of each camera |
 | `SMARTSEED_POLICY_DEVICE` | `mps` if available, else `cpu` | inference device |
-| `SMARTSEED_DATA_DIR` | `backend/data/` | where `poses.json` and `calibration.json` live (git-ignored) |
+| `SMARTSEED_DATA_DIR` | `backend/data/` (`sim/config/` when `sim`) | where `poses.json` and `calibration.json` live (git-ignored) |
+| `SMARTSEED_SIM_VIEWER` | none | `1` opens the live MuJoCo window in `sim` mode (macOS: `backend/run.sh` then uses `mjpython`) |
+| `SMARTSEED_SIM_RECORD_DIR` | none | in `sim` mode, saves one `plan-<id>.mp4` of the top camera per plan there |
+| `SMARTSEED_SIM_SCENE` | `sim/scene.xml` | alternative MJCF scene for `sim` mode |
 | `SMARTSEED_DISABLE_MODEL` | none | `1` skips OWLv2 and depth (contour only), for quick tests |
 | `SMARTSEED_WEB_PORT` | `8080` | web port used by `scripts/stack.sh` |
+
+## Simulator (no arm needed)
+
+`SMARTSEED_ROBOT=sim` replaces the arm with a MuJoCo replica of the arm, mat, tray, seed boxes and the `top` and
+`wrist` cameras (`sim/`, details and accuracy in `sim/README.md`). The executor, the ACT loop and the web run
+unchanged against it. Works on Apple Silicon and Linux, no GPU or display needed:
+
+```bash
+cd backend && uv sync                          # installs the `sim` group (mujoco, imageio) by default
+SMARTSEED_ROBOT=sim SMARTSEED_SIM_RECORD_DIR=/tmp/smartseed-sim ./run.sh   # backend on 127.0.0.1:8000
+SMARTSEED_ROBOT=sim ../scripts/stack.sh        # same, plus the web on :8080 (add SMARTSEED_ACT_POLICIES=... for ACT)
+SMARTSEED_ROBOT=sim SMARTSEED_SIM_VIEWER=1 ./run.sh                        # live MuJoCo window (macOS: mjpython)
+```
+
+Without `SMARTSEED_DATA_DIR` it uses the committed `sim/config/` (a camera-robot calibration made from the sim
+camera plus the real `home`/`act_start` poses), so a fresh clone can run it. Calibrating in the web in this mode
+rewrites those files.
 
 ## Quick start
 

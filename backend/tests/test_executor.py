@@ -544,3 +544,32 @@ def test_release_tilts_the_wrist_down_slightly_before_opening(tmp_path, kin):
     assert drop and before
     assert robot.history[opened]["wrist_flex"] == pytest.approx(before[0]["wrist_flex"] + tilt, abs=0.5)
     assert kin.tool_xyz(arm_of(robot.history[opened])) == pytest.approx(target, abs=0.015)  # still over the cell
+
+
+class HookedRobot(FakeRobot):
+    """Optional robot hooks (the sim films each plan): called around every plan, however it ends."""
+
+    def __init__(self, **kw):
+        super().__init__(**kw)
+        self.hooks = []
+
+    def begin_plan(self, plan_id):
+        self.hooks.append(("begin", plan_id))
+
+    def end_plan(self):
+        self.hooks.append(("end",))
+
+
+def test_robot_plan_hooks_wrap_the_run_when_the_robot_has_them(tmp_path, kin):
+    robot = HookedRobot(initial=HOME)
+    ex = Executor(robot, make_poses(tmp_path), make_calibration(), kin, config=CONFIG)
+    plan_id = ex.run([cell(0, "red")], SIZE)
+    assert robot.hooks == [("begin", plan_id), ("end",)]
+
+
+def test_robot_plan_hooks_also_close_when_the_plan_errors(tmp_path, kin):
+    robot = HookedRobot(initial=HOME)
+    ex = Executor(robot, make_poses(tmp_path), make_calibration(), kin, config=CONFIG)
+    robot.send_joints = lambda target: (_ for _ in ()).throw(RuntimeError("boom"))
+    ex.run([cell(0, "red")], SIZE)
+    assert robot.hooks[-1] == ("end",) and ex.status()["state"] == "error"

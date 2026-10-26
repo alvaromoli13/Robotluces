@@ -66,7 +66,7 @@ in English (the web UI copy stays in Spanish).
   `CHROME_PATH=... npm run camera` walks the whole scan flow with Chromium's synthetic
   webcam. Run all three after any change to `web/`.
 - `lerobot/` — LeRobot toolchain: `scripts/` (install, verify, hardware discovery, calibrate, teleop, record, replay, train, rollout; English comments), `Makefile` shortcuts and `.env.example`. Own venv (`lerobot/.venv`), `.env` is git-ignored. `scripts/lib.sh` resolves everything relative to `lerobot/`.
-- `docs/simulation.md` — roadmap (not implemented) for a simulator replication.
+- `sim/` — MuJoCo twin of the arm and scene (`layout.py` generates `scene.xml`; fits, replay, `config/`); `backend/smartseed_robot/sim_robot.py` is `SimRobot` (`SMARTSEED_ROBOT=sim`, optional uv group `sim`, installed by default). Docs: `sim/README.md`, plan in `docs/simulation.md`.
 - `odd/tasks/` — per-feature task documents.
 - `.github/workflows/pages.yml` — older Actions deployment of `web/` (see below).
 - Root `README.md` — replication guide. `guide.md` — project

@@ -1,8 +1,10 @@
 # Replicating the experiment in a simulator
 
-> **Status: not implemented yet. This is a roadmap.** Nothing in this document exists in the
-> repository except where it says "verified in this repo". Claims about third-party projects come
-> from a desk survey and are marked **(unverified)** unless we checked them.
+> **Status: steps 1-5 are implemented** (scene, cameras, joint mapping, `SimRobot`, `SMARTSEED_ROBOT=sim`;
+> see `sim/README.md` for what was measured, how accurate it is and how to run it). Steps 6 onward and the
+> experiments are still a roadmap. Claims about third-party projects come from a desk survey and are marked
+> **(unverified)** unless we checked them. Where the layout below differs from `sim/`, `sim/` wins:
+> `SimRobot` lives in `backend/smartseed_robot/sim_robot.py` so the backend factory can import it.
 
 Goal: run the SmartSeed pick-and-sow experiment in simulation, so that our ACT policies (or
 policies retrained on simulated data) can be tried without the arm, and so others can replicate

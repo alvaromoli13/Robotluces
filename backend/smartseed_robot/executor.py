@@ -177,6 +177,18 @@ class Executor:
             raise Stopped
 
     def _execute(self, plan, image_size, plan_id) -> None:
+        self._robot_hook("begin_plan", plan_id)  # optional: the sim robot films each plan
+        try:
+            self._run_plan(plan, image_size, plan_id)
+        finally:
+            self._robot_hook("end_plan")
+
+    def _robot_hook(self, name: str, *args) -> None:
+        hook = getattr(self.robot, name, None)
+        if hook is not None:
+            hook(*args)
+
+    def _run_plan(self, plan, image_size, plan_id) -> None:
         self.plan_start_index = len(self.events)
         self._emit("plan_started", message=f"{len(plan)} cells", total=len(plan), mode=self._mode)
         try:

@@ -620,12 +620,12 @@
     ws.onclose = () => { if (run && !run.finished) finishRun('Se ha perdido la conexión con el robot.', 'Conexión cerrada'); };
   }
 
-  // "fake" is the default robot mode: say so, nobody should mistake it for the arm.
+  // "fake" is the default robot mode ("sim" is the MuJoCo twin): say so, nobody should mistake it for the arm.
   async function labelRobotMode() {
     try {
       const res = await window.smartseedBackend.fetch('/robot/status', {}, 1500);
       const st = await res.json();
-      setMode(st.robot === 'real' ? 'ROBOT CONECTADO' : 'ROBOT SIMULADO (fake)', st.robot !== 'real');
+      setMode(st.robot === 'real' ? 'ROBOT CONECTADO' : `ROBOT SIMULADO (${st.robot || 'fake'})`, st.robot !== 'real');
     } catch (e) { setMode('ROBOT CONECTADO', false); }
   }
 

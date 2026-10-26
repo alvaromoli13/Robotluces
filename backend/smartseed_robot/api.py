@@ -21,6 +21,7 @@ from .poses import PoseError, PoseStore
 from .robot import FakeRobot, RobotPort
 
 DEFAULT_DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+SIM_DATA_DIR = Path(__file__).resolve().parents[2] / "sim" / "config"  # committed, self-consistent data for sim mode
 
 
 @dataclass
@@ -41,10 +42,11 @@ def build_runtime(mode: str | None = None, port: str | None = None, data_dir=Non
                   catalog: ModelCatalog | None = None,
                   spec_resolver: Callable[[str, str | None], str] | None = None) -> Runtime:
     """`fake` (default) never opens a serial port; `real` needs SMARTSEED_ROBOT_PORT. With ACT policies configured
-    the real follower also opens the top/wrist cameras (fake mode never does)."""
+    the real follower also opens the top/wrist cameras (fake mode never does). `sim` drives the MuJoCo twin
+    (`pip`/uv group `sim`; SMARTSEED_SIM_VIEWER=1, SMARTSEED_SIM_RECORD_DIR, SMARTSEED_SIM_SCENE)."""
     mode = mode or os.environ.get("SMARTSEED_ROBOT", "fake")
     act = act or ActConfig.from_env()
-    data = Path(data_dir or os.environ.get("SMARTSEED_DATA_DIR") or DEFAULT_DATA_DIR)
+    data = Path(data_dir or os.environ.get("SMARTSEED_DATA_DIR") or (SIM_DATA_DIR if mode == "sim" else DEFAULT_DATA_DIR))
     if robot is None:
         if mode == "real":
             port = port or os.environ.get("SMARTSEED_ROBOT_PORT")
@@ -55,8 +57,14 @@ def build_runtime(mode: str | None = None, port: str | None = None, data_dir=Non
             robot = LeRobotFollower(port, {"top": act.cam_top, "wrist": act.cam_wrist} if act.enabled else None)
         elif mode == "fake":
             robot = FakeRobot()
+        elif mode == "sim":
+            from .sim_robot import SimRobot
+
+            robot = SimRobot(initial=PoseStore(data / "poses.json").get("home"),
+                             record_dir=os.environ.get("SMARTSEED_SIM_RECORD_DIR") or None,
+                             viewer=os.environ.get("SMARTSEED_SIM_VIEWER") == "1")
         else:
-            raise ValueError(f"SMARTSEED_ROBOT must be 'fake' or 'real', got '{mode}'")
+            raise ValueError(f"SMARTSEED_ROBOT must be 'fake', 'real' or 'sim', got '{mode}'")
     kin = kin or LazyKinematics()
     poses, cal_path = PoseStore(data / "poses.json"), data / "calibration.json"
     calibration = Calibration.load(cal_path)
