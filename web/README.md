@@ -1,92 +1,93 @@
-# SmartSeed 🌱 — interfaz de siembra
+# SmartSeed 🌱 — seeding interface
 
-Interfaz del proyecto, en español, sin framework ni compilación: abre `index.html` y ya
-está. Es la raíz del sitio de GitHub Pages.
+The project's interface. The UI is in Spanish by design, with no framework and no build
+step: open `index.html` and it runs. It is the root of the GitHub Pages site.
 
-La idea completa y el plan están en [guide.md](../guide.md); aquí solo va lo de esta
-carpeta.
+The full idea and the plan are in [guide.md](../guide.md); this file only covers what is in
+this folder.
 
-## Qué hace
+## What it does
 
-1. **Escanear.** Al abrir, la web pide enfocar el semillero con la cámara. Localiza la
-   bandeja y sus huecos (marcadores ArUco, profundidad o el modelo de visión, ver
-   `scanner.js`) y pinta el mapa de alveolos **encima de la imagen en directo**.
-2. **Diseñar.** Mapa tipo butacas de cine: cada alveolo es una casilla y se pinta del
-   color de la caja de la que saldrá su semilla. Las variedades son tuyas: «+» abre el modal (nombre, emoji y color de la caja, uno por semilla;
-   el lápiz de cada una la edita o la borra). Vienen cuatro por defecto.
-   Arrastra una variedad desde la paleta o toca las casillas. "Rellenar todo el mapa"
-   pone la variedad seleccionada en todos los huecos.
-3. **Guardar.** El diseño se guarda como plantilla con nombre, y la última fórmula usada
-   se restaura sola la próxima vez.
-4. **Sembrar.** Manda el plan al backend local y pinta en el mismo mapa qué hueco se está
-   sembrando, cuáles ya están y cuáles han fallado, con un botón de **Parar el robot**.
+1. **Scan.** On open, the page asks you to point the camera at the seed tray (button
+   **Escanear**, "Scan"). It locates the tray and its cells (ArUco markers, depth, or the
+   vision model; see `scanner.js`) and draws the cell map **over the live image**.
+2. **Design.** A cinema-seat-style map: each cell is a square, painted the color of the box
+   its seed will come from. The varieties are yours: "+" opens the modal (name, emoji and
+   box color, one per seed; the pencil on each one edits or deletes it). Four come by
+   default. Drag a variety from the palette or tap the squares. "Rellenar todo el mapa"
+   ("Fill the whole map") puts the selected variety in every cell.
+3. **Save.** The design is saved as a named template, and the last formula used is
+   restored automatically next time.
+4. **Seed.** The button **Sembrar** ("Seed") sends the plan to the local backend and
+   paints on the same map which cell is being seeded, which are done and which have
+   failed, with a **Parar el robot** ("Stop the robot") button.
 
-## Ficheros
+## Files
 
-| Fichero | Qué es |
+| File | What it is |
 |---|---|
-| `index.html` | Marcado: pantalla de escaneo, mapa del semillero, panel de siembra |
-| `app.css` | Todos los estilos, una sola cascada |
-| `app.js` | Paleta, mapa, plantillas y la siembra contra el backend |
-| `scanner.js` | Cámara en directo, rejilla superpuesta y localización de la bandeja |
-| `vendor/` | `js-aruco2` (`cv.js`, `aruco.js`), servido desde aquí |
-| `fonts/` | DM Sans y Manrope en local |
+| `index.html` | Markup: scan screen, tray map, seeding panel |
+| `app.css` | All the styles, a single cascade |
+| `app.js` | Palette, map, templates and the seeding run against the backend |
+| `scanner.js` | Live camera, overlaid grid and tray localization |
+| `vendor/` | `js-aruco2` (`cv.js`, `aruco.js`), served from here |
+| `fonts/` | DM Sans and Manrope, local |
 
-**Nada se carga de un CDN.** En el evento el wifi puede fallar y la detección de
-marcadores es la vía más fiable para localizar la bandeja: si `aruco.js` viniera de
-internet, desaparecería sin avisar. Si añades una dependencia, déjala también aquí.
+**Nothing is loaded from a CDN.** At the event the wifi may fail, and marker detection is
+the most reliable way to locate the tray: if `aruco.js` came from the internet, it would
+disappear without warning. If you add a dependency, keep it here too.
 
-## Conexión con el robot
+## Connection to the robot
 
-Solo el portátil conectado al brazo alcanza el backend
-(`backend/smartseed_robot`, `http://localhost:8000`). La web publicada en Pages no puede
-llegar a él, así que la siembra se simula y se marca **MODO DEMO** en pantalla.
+Only the laptop connected to the arm can reach the backend
+(`backend/smartseed_robot`, `http://localhost:8000`). The web page published on Pages
+cannot reach it, so seeding is simulated and **MODO DEMO** ("DEMO MODE") is shown on screen.
 
-- `POST /plan` — `image_size` y un `{cell_index, row, col, color, u, v}` por alveolo con
-  semilla. `u` y `v` son píxeles del fotograma de la cámara.
-  Opcionales: `mode` (`full` | `grasp` | `place`) y `drop_z` (m); los mandan **Ajustes** →
-  «Probar coger (ACT)», «Probar dejar» y «Altura al soltar».
+- `POST /plan` — `image_size` and one `{cell_index, row, col, color, u, v}` per cell with a
+  seed. `u` and `v` are pixels of the camera frame.
+  Optional: `mode` (`full` | `grasp` | `place`) and `drop_z` (m); they are sent by
+  **Ajustes** ("Settings") → "Probar coger (ACT)" ("Test grasp (ACT)"), "Probar dejar"
+  ("Test release") and "Altura al soltar" ("Release height").
 - `WS /robot/progress` — `plan_started`, `cell_started`, `cell_done`, `cell_failed`,
   `finished`, `stopped`, `error`.
-- `POST /stop` — para la secuencia; el brazo se queda donde está, con par.
+- `POST /stop` — stops the sequence; the arm stays where it is, with torque on.
 
-El formato exacto y la tabla de eventos están en
-[guide.md § Formato del plan](../guide.md#formato-del-plan).
+The exact format and the event table are in
+[guide.md § Plan format](../guide.md#plan-format).
 
-Si el backend está en otra dirección, en la consola del navegador:
+If the backend is at another address, in the browser console:
 
 ```js
 localStorage.setItem('smartseed.backendUrl', 'http://IP:8000')
 ```
 
-Un plan que el backend rechaza (sin calibrar, alveolo fuera de alcance, siembra en curso)
-muestra el motivo y **no** anima nada: nunca debe parecer una siembra correcta.
+A plan that the backend rejects (not calibrated, cell out of reach, seeding in progress)
+shows the reason and animates **nothing**: it must never look like a successful seeding.
 
-## Datos guardados
+## Stored data
 
-Todo en `localStorage` del navegador, nada sale de la máquina:
+Everything is in the browser's `localStorage`; nothing leaves the machine:
 
-| Clave | Qué guarda |
+| Key | What it stores |
 |---|---|
-| `smartseed.lastLayout` | Última fórmula usada (`{rows, cols, cells}`) |
-| `smartseed.templates` | Plantillas con nombre |
-| `smartseed.seeds` | Semillas (`[{id, name, emoji, color}]`); `color` es el id de caja que recibe `/plan` |
-| `smartseed.cameraId` | Última cámara elegida |
-| `smartseed.scanCorners` | Esquinas de la bandeja ajustadas a mano |
-| `smartseed.backendUrl` | Dirección del backend, si no es la de por defecto |
+| `smartseed.lastLayout` | Last formula used (`{rows, cols, cells}`) |
+| `smartseed.templates` | Named templates |
+| `smartseed.seeds` | Seeds (`[{id, name, emoji, color}]`); `color` is the box id that `/plan` receives |
+| `smartseed.cameraId` | Last camera chosen |
+| `smartseed.scanCorners` | Tray corners adjusted by hand |
+| `smartseed.backendUrl` | Backend address, if it is not the default one |
 
-Las claves de las variedades (`TOMATE`, `PIMIENTO`, `LIMON`, `BERENJENAS`) van dentro de
-los diseños guardados: no las cambies sin migrar lo almacenado.
+The variety keys (`TOMATE`, `PIMIENTO`, `LIMON`, `BERENJENAS`) are stored inside the saved
+designs: do not change them without migrating what is stored.
 
-## Probar
+## Testing
 
 ```bash
 cd ../tests/web
-npm install     # la primera vez
-npm test        # jsdom: sin backend (modo demo) y con el robot simulado
+npm install     # first time only
+npm test        # jsdom: no backend (demo mode) and with the simulated robot
 CHROME_PATH="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" npm run render
 ```
 
-`npm run render` abre la página en un Chromium real a tamaño escritorio y móvil, guarda
-capturas en `tests/web/shots/` y falla si hay errores de consola o desbordamiento
-horizontal.
+`npm run render` opens the page in a real Chromium at desktop and mobile size, saves
+screenshots to `tests/web/shots/` and fails on console errors or horizontal overflow.

@@ -6,26 +6,14 @@ Guidance for agents and contributors working in this repository.
 
 SmartSeed: an SO-101 arm (LeRobot) plants seeds into a cell tray following a layout the
 customer designs in a cinema-seat-style web UI. Seeds are user-defined in the UI (name + emoji + bowl colour; 4 by default, Tomate = black and Pimiento = white; built-in seeds are always forced to those colours on load), one coloured box each.
-Full idea, flow and roadmap: see `guide.md`. Resolved criteria and the steps to
-reproduce the result: see `README.md`.
+Full idea, flow and roadmap: see `guide.md`. Steps to reproduce the result: see `README.md`.
 
-## Deliverables and judging (drive every decision)
+## Status
 
-Deadline: Sunday 2026-10-25 13:00. Deliverables: live demo, **video of at most 1 minute**,
-dataset on the Hugging Face Hub, reproducible repo, and the pitch with Q&A.
-
-Scoring (average of the judges): live demo 30 (5 consecutive full-task attempts without
-touching the robot, 6 points each), data & training 20, task difficulty 15, usefulness 15,
-innovation 10, presentation 10, bonus +5 (HF dataset +3, reproducible repo +2).
-
-Implications for any work here:
-- Reliability of the demo task beats feature breadth. Do not add scope that puts the
-  5-in-a-row demo at risk.
-- Log failures and fixes per iteration; the judges score how the team iterated.
-- Keep record/train/rollout commands and configs in the repo so it stays reproducible.
-- Upload every dataset to the Hub as soon as it is recorded.
-- The scoring table lives in both `README.md` (with how each criterion is resolved) and
-  `guide.md` (with its implications); update all three files if it changes.
+The hackathon (23-25 Oct 2026, team BraboRobots) is over; the repo is kept as a finished,
+replicable project. `README.md` is the replication guide, `guide.md` the original idea and plan.
+Keep record/train/run commands and configs in the repo so it stays reproducible, and keep docs
+in English (the web UI copy stays in Spanish).
 
 ## Layout
 
@@ -67,8 +55,8 @@ Implications for any work here:
   `calibration.py` (pixel→robot homography), `poses.py`, `motion.py`, `act.py` (per-colour ACT policy closed loop, `ActConfig` from `SMARTSEED_ACT_*`/`SMARTSEED_CAM_*` env; `select` swaps a colour's policy at runtime), `catalog.py` (Hub model/checkpoint catalog, cached; `GET /robot/act/models`, `POST /robot/act/select`), `executor.py`, `api.py`
   (`POST /plan`, `/stop`, `GET /robot/status`, `WS /robot/progress`, poses, calibration). `SMARTSEED_ROBOT=fake`
   (default) or `real` + `SMARTSEED_ROBOT_PORT`. Tests use `FakeRobot`; never open a serial port in tests.
-  lerobot is pinned to commit `e595b79` (same as `vendor/lerobot`). Setup steps: `guide.md` "Ejecutor del robot"
-  and `README.md` step 3.
+  lerobot is pinned to commit `e595b79` (same as `vendor/lerobot`). Setup steps: `README.md` ("One-time robot setup")
+  and `guide.md`.
 - `tests/web/` — smoke tests for the UI (dev only; `node_modules/` and `shots/` are
   gitignored, and Pages serving the whole repo only exposes the sources). `npm install`
   once, then: `npm test` drives the real page in jsdom twice (no backend → demo mode;
@@ -79,7 +67,7 @@ Implications for any work here:
   webcam. Run all three after any change to `web/`.
 - `odd/tasks/` — per-feature task documents.
 - `.github/workflows/pages.yml` — older Actions deployment of `web/` (see below).
-- Root `README.md` — resolved criteria and reproduction steps. `guide.md` — project
+- Root `README.md` — replication guide. `guide.md` — project
   idea, architecture and plan. `web/README.md` — notes on the UI prototype.
 
 ## GitHub Pages deployment
