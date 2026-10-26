@@ -65,6 +65,7 @@ in English (the web UI copy stays in Spanish).
   sizes, saving screenshots and failing on console errors or horizontal overflow;
   `CHROME_PATH=... npm run camera` walks the whole scan flow with Chromium's synthetic
   webcam. Run all three after any change to `web/`.
+- `lerobot/` — LeRobot toolchain: `scripts/` (install, verify, hardware discovery, calibrate, teleop, record, replay, train, rollout; English comments), `Makefile` shortcuts and `.env.example`. Own venv (`lerobot/.venv`), `.env` is git-ignored. `scripts/lib.sh` resolves everything relative to `lerobot/`.
 - `odd/tasks/` — per-feature task documents.
 - `.github/workflows/pages.yml` — older Actions deployment of `web/` (see below).
 - Root `README.md` — replication guide. `guide.md` — project

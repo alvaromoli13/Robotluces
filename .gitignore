@@ -13,3 +13,9 @@ outputs/
 data/
 shots/
 .cache/
+
+# LeRobot toolchain (lerobot/): local config, its own venv and the vendored lerobot clone
+lerobot/.env
+lerobot/.venv/
+lerobot/vendor/
+!lerobot/.env.example
