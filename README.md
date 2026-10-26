@@ -1,5 +1,7 @@
 # SmartSeed 🌱
 
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+
 An **SO-101** robot arm sows seeds into a seedling tray. The grower designs the tray in a
 cinema-seat-style web UI on top of a live camera image, and the robot sows every cell with the
 chosen seed.
@@ -295,12 +297,18 @@ strings; that is expected. Details: [guide.md](guide.md#automated-tests).
   wrappers).
 - **GitHub Pages** is set to deploy from `main`, so every push publishes the whole repo: never
   commit secrets. `.github/workflows/pages.yml` is an older, competing deployment of `web/` only.
-- **No LICENSE file yet**: the owner has not chosen one, so reuse terms are undefined.
 
 ## Safety
 
 The published web never controls the robot. Only the local backend on the laptop connected to
 the arm sends motion. Keep the follower's power cable at hand the first time you test any change.
+
+## License
+
+MIT, see [LICENSE](LICENSE). Copyright (c) 2026 BraboRobots (SmartSeed team). Third-party material
+keeps its own terms: the SO-101 URDF and meshes (`backend/assets/so101/SOURCE.md`), js-aruco2
+(`web/vendor/`) and the fonts (`web/fonts/LICENSE.txt`). Models and datasets on the Hub carry the
+license shown on their cards.
 
 ## Credits
 
