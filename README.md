@@ -1,6 +1,20 @@
-# SmartSeed 🌱
+<p align="center">
+  <img src="docs/media/smartseed-logo.svg" alt="SmartSeed" width="420">
+</p>
 
-[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+<p align="center">
+  <a href="https://huggingface.co/collections/RafaelJaime/smartseed-so-101-act-seed-sowing-6adf0632f7e93bb112d73e8c"><img src="https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-models%20%26%20datasets-ffcc4d.svg" alt="Hugging Face collection"></a>
+  <a href="docs/media/smartseed-video.mp4"><img src="https://img.shields.io/badge/%E2%96%B6-project%20video-197647.svg" alt="Project video"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License: MIT"></a>
+</p>
+
+<p align="center">
+  <a href="docs/media/smartseed-video.mp4"><img src="docs/media/smartseed-video.jpg" alt="SmartSeed project video" width="720"></a><br>
+  <sub>▶ <a href="docs/media/smartseed-video.mp4">Watch the project video</a> (46 s, Spanish audio) ·
+  🤗 <a href="https://huggingface.co/collections/RafaelJaime/smartseed-so-101-act-seed-sowing-6adf0632f7e93bb112d73e8c">All models and datasets on Hugging Face</a></sub>
+</p>
+
+# SmartSeed 🌱
 
 An **SO-101** robot arm sows seeds into a seedling tray. The grower designs the tray in a
 cinema-seat-style web UI on top of a live camera image, and the robot sows every cell with the
@@ -8,10 +22,6 @@ chosen seed.
 
 Built by team **BraboRobots** at the Robotekin LeRobot hackathon (Vitoria-Gasteiz, 23-25 October
 2026). The event is over; this repository is the finished, replicable result.
-
-[![SmartSeed project video](docs/media/smartseed-video.jpg)](docs/media/smartseed-video.mp4)
-
-▶ [Watch the project video](docs/media/smartseed-video.mp4) (46 s, Spanish audio).
 
 > **The web UI is in Spanish.** It is the product UI used at the event, so labels such as
 > *Escanear* (scan), *Sembrar* (sow), *Parar* (stop) and *Ajustes* (settings) are kept as they
