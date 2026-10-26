@@ -9,6 +9,10 @@ chosen seed.
 Built by team **BraboRobots** at the Robotekin LeRobot hackathon (Vitoria-Gasteiz, 23-25 October
 2026). The event is over; this repository is the finished, replicable result.
 
+[![SmartSeed project video](docs/media/smartseed-video.jpg)](docs/media/smartseed-video.mp4)
+
+▶ [Watch the project video](docs/media/smartseed-video.mp4) (46 s, Spanish audio).
+
 > **The web UI is in Spanish.** It is the product UI used at the event, so labels such as
 > *Escanear* (scan), *Sembrar* (sow), *Parar* (stop) and *Ajustes* (settings) are kept as they
 > were. Everything else (code, docs, API) is in English. Project idea, architecture and the
