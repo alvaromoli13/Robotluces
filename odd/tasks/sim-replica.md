@@ -40,6 +40,13 @@ Strict TDD (session config). Runner: `cd backend && uv run pytest` (via `~/.clau
       https://huggingface.co/datasets/RafaelJaime/smartseed-sim-grasp-black and `-white` (public, BraboRobots, in the HF
       collection); features identical to real d1/d2 `info.json` (checked from the Hub), `docs/media/sim-dataset-preview.png`,
       `docs/media/sim-dataset-coverage.png`. Commits: 5e748db, 5472152 and the docs commit after it.
+- [ ] T4b Collision-correct demos (reopens T4): the user saw the jaw pass through a seed-box wall (episode 0). Cause:
+      the moving jaw hull has `contype="0"` and the pads only touch seeds, and the planner never checks walls. Make every
+      jaw geom collide with box/tray walls (not the floors), make the planner choose a jaw yaw/approach that clears walls
+      or redraw the scene, and discard any episode in which an arm geom penetrates a wall; regenerate both datasets as
+      `-v2` Hub repos (route: delegated)
+- [ ] T4c Brev hardening after the 2026-10-27 failed run (box idle ~2.5 h): fix root-owned `~/.cache` on hyperstack,
+      watcher deletes the box on setup failure or stalled training, check the Brev session before delete (route: inline)
 - [ ] T5 Train ACT on sim demos + `sim/eval.py` success metric (seed lifted > 3 cm, lands in target hole) (route: delegated)
       To train on Brev (do not start it from this task): upload with `ssh <host> 'cat > ~/train_pair.sh' < scripts/brev/train_pair.sh`
       (not scp), then per colour `ssh <host> 'chmod +x ~/train_pair.sh && tmux new -d -s train "~/train_pair.sh RafaelJaime/smartseed-sim-grasp-black sim-black"'`
