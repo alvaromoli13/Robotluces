@@ -6,8 +6,16 @@ set -uo pipefail
 DS_A="$1"; NAME_A="$2"; DS_B="$3"; NAME_B="$4"; HF_USER="${HF_USER:-RafaelJaime}"
 export PATH="$HOME/.local/bin:$PATH"
 exec > >(tee -a "$HOME/setup.log") 2>&1
+# Any exit before training starts (failed install, unreadable dataset...) must still end the run, so the watcher
+# deletes the box instead of waiting on an idle GPU.
+trap '[ -e "$HOME/TRAIN_DONE" ] || { touch "$HOME/FAILED-setup" "$HOME/TRAIN_DONE"; echo "== $(date) setup FAILED"; }' EXIT
 
 echo "== $(date) setup"
+# Hyperstack boxes link ~/.cache to a root-owned /ephemeral/cache: the dataset download then fails with
+# PermissionError. Take ownership of the cache before anything writes to it.
+cache="$(readlink -f "$HOME/.cache" 2>/dev/null || echo "$HOME/.cache")"
+sudo mkdir -p "$cache" && sudo chown -R "$(id -u):$(id -g)" "$cache" || exit 1
+mkdir -p "$HOME/.cache/huggingface" && [ -w "$HOME/.cache/huggingface" ] || exit 1
 nvidia-smi --query-gpu=name,memory.total --format=csv
 command -v uv >/dev/null || curl -LsSf https://astral.sh/uv/install.sh | sh
 export PATH="$HOME/.local/bin:$PATH"
@@ -25,7 +33,7 @@ done
 
 run() {  # gpu dataset name
   local gpu="$1" ds="$2" job="act-$3"
-  cd "$HOME"
+  cd "$HOME" || return 1
   CUDA_VISIBLE_DEVICES="$gpu" lerobot-train \
     --dataset.repo_id="$ds" \
     --policy.type=act \

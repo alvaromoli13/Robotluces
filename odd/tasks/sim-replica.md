@@ -45,8 +45,13 @@ Strict TDD (session config). Runner: `cd backend && uv run pytest` (via `~/.clau
       jaw geom collide with box/tray walls (not the floors), make the planner choose a jaw yaw/approach that clears walls
       or redraw the scene, and discard any episode in which an arm geom penetrates a wall; regenerate both datasets as
       `-v2` Hub repos (route: delegated)
-- [ ] T4c Brev hardening after the 2026-10-27 failed run (box idle ~2.5 h): fix root-owned `~/.cache` on hyperstack,
+- [x] T4c Brev hardening after the 2026-10-27 failed run (box idle ~2.5 h): fix root-owned `~/.cache` on hyperstack,
       watcher deletes the box on setup failure or stalled training, check the Brev session before delete (route: inline)
+      Evidence: `scripts/brev/launch_two.sh` (chown cache before the token, upload check, tmux check), `train_two.sh`
+      (cache chown, EXIT trap writes FAILED-setup + TRAIN_DONE), `watch_pair.sh` (deletes on setup failure, failed run,
+      no step in 40 min, step stalled 20 min, unreachable 10 min; exit 3 LOGIN NEEDED if the Brev session expired; saves
+      logs to ~/brev-logs). Watcher paths exercised with fake ssh/brev: setup failed, logged out, run failed, no step,
+      stalled -> all delete except logged out (exit 3). shellcheck clean on the three scripts.
 - [ ] T5 Train ACT on sim demos + `sim/eval.py` success metric (seed lifted > 3 cm, lands in target hole) (route: delegated)
       To train on Brev (do not start it from this task): upload with `ssh <host> 'cat > ~/train_pair.sh' < scripts/brev/train_pair.sh`
       (not scp), then per colour `ssh <host> 'chmod +x ~/train_pair.sh && tmux new -d -s train "~/train_pair.sh RafaelJaime/smartseed-sim-grasp-black sim-black"'`
