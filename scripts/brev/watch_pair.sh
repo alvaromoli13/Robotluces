@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Usage: [PYTHON=<python with huggingface_hub>] watch_pair.sh <host> <model name prefix> [final step]
-# Watches a train_pair.sh box and deletes it once both act-<prefix>-c100 and -c50 have their final checkpoint
+# Usage: [PYTHON=<python with huggingface_hub>] [STEP=040000] watch_pair.sh <host> <model repo>...
+# Watches a train_pair.sh / train_two.sh box and deletes it once every given model repo has its final checkpoint
 # on the Hub. A failed run keeps the box for inspection; a box unreachable for 10 min ends the watch.
 PY="${PYTHON:-python3}"  # needs huggingface_hub, e.g. PYTHON=backend/.venv/bin/python
-HOST="$1"; NAME="$2"; STEP="${3:-040000}"; HF_USER="${HF_USER:-RafaelJaime}"; miss=0
+HOST="$1"; shift; REPOS="$*"; STEP="${STEP:-040000}"; miss=0
 caffeinate -i -w $$ &
 while :; do
   st=$(ssh -o ConnectTimeout=20 "$HOST" 'ls ~ | grep -E "^(DONE-|FAILED-|TRAIN_DONE)" | tr "\n" " "' 2>/dev/null) || st=UNREACHABLE
@@ -21,9 +21,9 @@ while :; do
 done
 if "$PY" -c "
 from huggingface_hub import HfApi
-for v in ('c100', 'c50'):
-    f = {s.rfilename for s in HfApi().model_info('$HF_USER/act-$NAME-' + v).siblings}
-    assert 'model.safetensors' in f and 'checkpoints/$STEP/pretrained_model/model.safetensors' in f, v
+for r in '$REPOS'.split():
+    f = {s.rfilename for s in HfApi().model_info(r).siblings}
+    assert 'model.safetensors' in f and 'checkpoints/$STEP/pretrained_model/model.safetensors' in f, r
 print('hub ok')"; then
   # brev delete may wait for a confirmation; answer it so the box is not left running.
   yes | brev delete "$HOST" && echo "DELETED $HOST $(date +%H:%M)"
