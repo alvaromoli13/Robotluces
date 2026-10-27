@@ -123,8 +123,8 @@ Results, 10 episodes each, nothing tuned toward the policies (`shoulder_lift` ra
 Reading: the policies recognise the box of their colour from the rendered images and move there, so the top camera,
 joint units and action path work. The d1 policies, whose black seeds on a cardboard floor are the highest-contrast
 target, get within 8-30 mm; the white-seed policies stay 36-47 mm away. The visual gap (flat colours, no WOWROBO print,
-no seed highlights, different wrist-camera exposure and mount; the real wrist view at t = 0 sees a bright wall and no
-seeds, `docs/media/sim-vs-real-obs.png`) is the most likely reason they do not commit to a grasp, but this run does not
+no seed highlights, different wrist-camera exposure and mount; the real wrist view at t = 0 shows a grey mat and a cardboard edge, the twin a darker mat;
+`docs/media/sim-vs-real-obs.png`) is the most likely reason they do not commit to a grasp, but this run does not
 isolate it from the physics, seed layout (the real box held 2 white seeds, the twin has 4) or the missing inference
 latency. One episode in 40 is not a measured rate; the lone success is a genuine grasp-and-lift that did not hold.
 
