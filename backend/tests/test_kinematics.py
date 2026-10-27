@@ -100,3 +100,22 @@ def test_position_only_fallback_when_no_pitch_is_tried(kin):
 def test_solve_with_no_pitch_and_no_reach_still_raises(kin):
     with pytest.raises(IKError):
         kin.solve_with_pitch(0.9, 0.0, 0.1, seed=SEED, pitches=())
+
+
+def test_spin_turns_the_pose_about_the_approach_axis_and_defaults_to_none():
+    base = pose_pitched(0.2, 0.1, 0.05, 0.0)
+    assert pose_pitched(0.2, 0.1, 0.05, 0.0, 0.0) == pytest.approx(base)
+    spun = pose_pitched(0.2, 0.1, 0.05, 0.0, 90.0)
+    assert spun[:3, 2] == pytest.approx(base[:3, 2])  # approach axis unchanged
+    assert spun[:3, 0] == pytest.approx(base[:3, 1])  # x now where y was
+    assert spun[:3, 3] == pytest.approx(base[:3, 3])
+
+
+def test_solve_with_spin_reaches_the_same_point_with_a_different_wrist_roll(kin):
+    plain = kin.solve(*XYZ_FOR_SPIN, seed=SEED)
+    spun = kin.solve(*XYZ_FOR_SPIN, seed=SEED, spin_deg=40.0)
+    assert kin.tool_xyz(spun) == pytest.approx(XYZ_FOR_SPIN, abs=0.003)
+    assert abs(spun["wrist_roll"] - plain["wrist_roll"]) > 20.0
+
+
+XYZ_FOR_SPIN = (0.25, 0.0, 0.06)

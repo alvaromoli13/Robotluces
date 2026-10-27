@@ -31,15 +31,19 @@ def pose_above(x: float, y: float, z: float) -> np.ndarray:
     return pose
 
 
-def pose_pitched(x: float, y: float, z: float, pitch_deg: float) -> np.ndarray:
+def pose_pitched(x: float, y: float, z: float, pitch_deg: float, spin_deg: float = 0.0) -> np.ndarray:
     """Like `pose_above`, with the approach axis tilted `pitch_deg` from straight down, radially away from the
-    pan axis (in the vertical plane through that axis and (x, y)): 0 = straight down, 90 = horizontal."""
+    pan axis (in the vertical plane through that axis and (x, y)): 0 = straight down, 90 = horizontal.
+    `spin_deg` then turns the frame about its approach axis (the wrist roll); 0 by default, so callers are unchanged."""
     yaw, pitch = math.atan2(y, x - PAN_AXIS_X), math.radians(pitch_deg)
     c, s = math.cos(yaw), math.sin(yaw)
     approach = np.array([math.sin(pitch) * c, math.sin(pitch) * s, -math.cos(pitch)])
     side = np.array([-s, c, 0.0])  # horizontal, perpendicular to that plane
     pose = np.eye(4)
     pose[:3, :3] = np.column_stack([np.cross(side, approach), side, approach])
+    if spin_deg:
+        cs, sn = math.cos(math.radians(spin_deg)), math.sin(math.radians(spin_deg))
+        pose[:3, :3] = pose[:3, :3] @ np.array([[cs, -sn, 0.0], [sn, cs, 0.0], [0.0, 0.0, 1.0]])
     pose[:3, 3] = (x, y, z)
     return pose
 
@@ -73,11 +77,12 @@ class Kinematics:
                         )[: len(ARM_JOINTS)]
 
     def solve(self, x: float, y: float, z: float, seed: dict[str, float], max_rounds: int = 6,
-              pitches: tuple[float, ...] = PITCHES_DEG) -> dict[str, float]:
-        return self.solve_with_pitch(x, y, z, seed, max_rounds, pitches)[0]
+              pitches: tuple[float, ...] = PITCHES_DEG, spin_deg: float = 0.0) -> dict[str, float]:
+        return self.solve_with_pitch(x, y, z, seed, max_rounds, pitches, spin_deg)[0]
 
     def solve_with_pitch(self, x: float, y: float, z: float, seed: dict[str, float], max_rounds: int = 6,
-                         pitches: tuple[float, ...] = PITCHES_DEG) -> tuple[dict[str, float], float | None]:
+                         pitches: tuple[float, ...] = PITCHES_DEG, spin_deg: float = 0.0
+                         ) -> tuple[dict[str, float], float | None]:
         """Joints for the tool at (x, y, z) plus the pitch used, or None for the position-only fallback.
 
         The gripper points as far down as the arm allows: straight down first, then tilted outwards in
@@ -88,7 +93,7 @@ class Kinematics:
         position = np.array([x, y, z])
         with self._lock:
             for pitch in pitches:
-                target = pose_pitched(x, y, z, pitch)
+                target = pose_pitched(x, y, z, pitch, spin_deg)
                 for start in starts:
                     current = start
                     for _ in range(max_rounds):
