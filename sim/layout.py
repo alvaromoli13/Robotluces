@@ -51,8 +51,10 @@ BOARD_YAW = math.atan2(TOP_CAMERA_XYAXES[4], TOP_CAMERA_XYAXES[3])
 CARDBOARD = (0.78, 0.60, 0.40, 1)
 CARDBOARD_DARK = (0.62, 0.46, 0.30, 1)
 MAT_RGBA = (0.20, 0.19, 0.27, 1)
-SEED_RADIUS = 0.005  # ESTIMATED from the wrist frames (a black seed is about 1 cm across)
-SEED_MASS = 0.0005
+# ESTIMATED from the real wrist frames (d1 black, d2 white) against the jaw tip width (about 12 mm) and the
+# gripper reading: the real jaws stop at about 6.9 on a black seed and 7.4 on a white one, against 6.0 closed empty.
+SEED_RADIUS = {"white": 0.0074, "black": 0.0068}
+SEED_MASS = 0.001
 
 
 @dataclass(frozen=True)
@@ -63,7 +65,7 @@ class OpenBox:
     outer_half: tuple[float, float]  # half extents along x and y of the outside
     height: float
     wall: float = 0.004
-    floor: float = 0.003
+    floor: float = 0.0015  # thin cardboard: with the seed radius this puts the seed centre at the measured tool height
     rim_rgba: tuple = CARDBOARD
     floor_rgba: tuple = CARDBOARD
 
@@ -94,9 +96,12 @@ TRAY_TOP_Z = MAT_TOP_Z + 0.045
 CELL_FLOOR_Z = MAT_TOP_Z + 0.008
 MAT_CENTER, MAT_HALF = (0.291, 0.007), (0.224, 0.249)  # ESTIMATED: 44.7 x 49.8 cm, bottom edge guessed
 
-# MEASURED from the top frame for the first two of each colour (black seed 0: the point the recorded grasp closes on, from FK: base xy (0.150, -0.132)) (board frame, metres); the rest are ESTIMATED extras
+# Black seed 0 is MEASURED: the recorded grasp (episode 0 of d1-clean) closes with the tool frame at base xy
+# (0.1503, -0.1320); the jaws open along the tool z axis (0.844, -0.524) there, so the seed sits one black radius
+# beyond the tool along it, between the pads: (0.1560, -0.1356). The other positions are read off the top frame
+# (+-3 mm) for the first two of each colour and ESTIMATED for the extras (board frame, metres).
 _WHITE_SEEDS = ((0.217, 0.186), (0.159, 0.179), (0.200, 0.150), (0.140, 0.205))
-_BLACK_SEEDS = ((0.168, -0.107), (0.138, -0.210), (0.150, -0.140), (0.210, -0.200))
+_BLACK_SEEDS = ((0.1751, -0.1098), (0.135, -0.185), (0.150, -0.140), (0.215, -0.180))
 
 
 def to_world(xy) -> tuple[float, float]:
@@ -132,7 +137,7 @@ def cell_center(row: int, col: int) -> tuple[float, float, float]:
 def seed_positions(color: str) -> list[tuple[float, float, float]]:
     """Seed centres in the base frame, resting on their box floor."""
     box, offsets = (WHITE_BOX, _WHITE_SEEDS) if color == "white" else (BLACK_BOX, _BLACK_SEEDS)
-    return [(*to_world(xy), box.floor_z + SEED_RADIUS + 1e-4) for xy in offsets]
+    return [(*to_world(xy), box.floor_z + SEED_RADIUS[color] + 1e-4) for xy in offsets]
 
 
 def _f(values) -> str:
@@ -181,7 +186,7 @@ def _seeds() -> list[str]:
         for i, pos in enumerate(seed_positions(color)):
             out.append(f'    <body name="seed_{color}_{i}" pos="{_f(pos)}">\n'
                        f'      <freejoint name="seed_{color}_{i}_free"/>\n'
-                       f'      <geom name="seed_{color}_{i}_geom" type="sphere" size="{SEED_RADIUS}" '
+                       f'      <geom name="seed_{color}_{i}_geom" type="sphere" size="{SEED_RADIUS[color]}" '
                        f'mass="{SEED_MASS}" rgba="{_f(rgba)}" class="seed"/>\n    </body>')
     return out
 
@@ -205,7 +210,7 @@ def build_scene_xml() -> str:
         # through them, seeds do not
         '    <default class="ground"><geom contype="4" conaffinity="2" friction="0.9 0.005 0.0001"/></default>',
         '    <default class="env"><geom contype="2" conaffinity="3" friction="0.9 0.005 0.0001"/></default>',
-        '    <default class="seed"><geom contype="2" conaffinity="3" friction="1.5 0.01 0.001" condim="4" '
+        '    <default class="seed"><geom contype="2" conaffinity="10" friction="1.2 0.02 0.002" condim="4" '
         'solref="0.004 1" solimp="0.95 0.99 0.001"/></default>',
         '  </default>',
         '  <asset>',

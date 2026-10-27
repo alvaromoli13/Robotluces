@@ -25,8 +25,9 @@ Strict TDD (session config). Runner: `cd backend && uv run pytest` (via `~/.clau
       Evidence: replay of episode 0: tool vs FK 0.0016 mm max; top overlay chamfer 5.5 px; `sim/README.md`
 - [x] T2 `SimRobot(RobotPort)` + `SMARTSEED_ROBOT=sim` + viewer/recording of runs (route: delegated, same writer)
       Evidence: `uv run pytest` 297 passed (sim tests included, mujoco in default uv group); web `npm test` 196/196; a `place` plan runs through the executor on the sim arm (tool within 3 mm of target) and writes an mp4
-- [ ] T2b Contact-physics grasp: jaws close on a seed and hold it while lifting (real-like stop at gripper ~12),
+- [x] T2b Contact-physics grasp: jaws close on a seed and hold it while lifting (real-like stop at gripper ~7),
       no weld/attach trick; the user chose physics tuning over attach (route: delegated)
+      Evidence: `sim/grasp_test.py` 100/100 black, 100/100 white (+-3 mm, readings 6.88 / 7.44 vs real 6.93 / 7.37); recorded ep0 actions lift the seed; `uv run pytest` 310 passed (RED first: 9 of 11 new tests failed on the old scene). Real readings are ~7, not 12: the jaw stop is a hard stop. Weak: black seed 3 0/20
 - [ ] T3 Run the real-trained ACT in sim and save a video per policy (route: delegated)
 - [ ] T4 Scripted IK grasp demos -> LeRobotDataset (randomised seed/box positions, lighting) (route: delegated)
 - [ ] T5 Train ACT on sim demos + `sim/eval.py` success metric (seed lifted > 3 cm, lands in target hole) (route: delegated)
@@ -42,3 +43,4 @@ Strict TDD (session config). Runner: `cd backend && uv run pytest` (via `~/.clau
   Strict TDD: tests first (RED: ImportError on `sim.layout`/`sim_robot`, executor hook tests failing), then GREEN.
   Limits: jaw grasp physics is weak (seed not held), real calibration clicks disagree with the arm-fitted camera, servo
   gains untuned. Details in `sim/README.md`. Commits: see `git log` (feat(sim) scene+SimRobot, docs).
+- 2026-10-27: T2b done (pads, servo and seed tuning, `Kinematics.solve(spin_deg)`); details in `sim/README.md`.

@@ -10,7 +10,7 @@
   <default>
     <default class="ground"><geom contype="4" conaffinity="2" friction="0.9 0.005 0.0001"/></default>
     <default class="env"><geom contype="2" conaffinity="3" friction="0.9 0.005 0.0001"/></default>
-    <default class="seed"><geom contype="2" conaffinity="3" friction="1.5 0.01 0.001" condim="4" solref="0.004 1" solimp="0.95 0.99 0.001"/></default>
+    <default class="seed"><geom contype="2" conaffinity="10" friction="1.2 0.02 0.002" condim="4" solref="0.004 1" solimp="0.95 0.99 0.001"/></default>
   </default>
   <asset>
     <material name="matte" specular="0" shininess="0"/>
@@ -32,48 +32,48 @@
     <geom name="tray_div_row3" type="box" pos="0.3935 0.019 0.0145" size="0.0015 0.072 0.0225" rgba="0.62 0.46 0.3 1" class="env"/>
     <geom name="tray_div_col1" type="box" pos="0.347 -0.005 0.0145" size="0.093 0.0015 0.0225" rgba="0.62 0.46 0.3 1" class="env"/>
     <geom name="tray_div_col2" type="box" pos="0.347 0.043 0.0145" size="0.093 0.0015 0.0225" rgba="0.62 0.46 0.3 1" class="env"/>
-    <geom name="box_white_floor" type="box" pos="0.178 0.173 -0.0065" size="0.092 0.06 0.0015" rgba="0.78 0.6 0.4 1" class="env"/>
+    <geom name="box_white_floor" type="box" pos="0.178 0.173 -0.00725" size="0.092 0.06 0.00075" rgba="0.78 0.6 0.4 1" class="env"/>
     <geom name="box_white_wall_far" type="box" pos="0.268 0.173 0.0095" size="0.002 0.06 0.0175" rgba="0.78 0.6 0.4 1" class="env"/>
     <geom name="box_white_wall_near" type="box" pos="0.088 0.173 0.0095" size="0.002 0.06 0.0175" rgba="0.78 0.6 0.4 1" class="env"/>
     <geom name="box_white_wall_left" type="box" pos="0.178 0.231 0.0095" size="0.088 0.002 0.0175" rgba="0.78 0.6 0.4 1" class="env"/>
     <geom name="box_white_wall_right" type="box" pos="0.178 0.115 0.0095" size="0.088 0.002 0.0175" rgba="0.78 0.6 0.4 1" class="env"/>
-    <geom name="box_black_floor" type="box" pos="0.183 -0.158 -0.0065" size="0.085 0.065 0.0015" rgba="0.78 0.6 0.4 1" class="env"/>
+    <geom name="box_black_floor" type="box" pos="0.183 -0.158 -0.00725" size="0.085 0.065 0.00075" rgba="0.78 0.6 0.4 1" class="env"/>
     <geom name="box_black_wall_far" type="box" pos="0.266 -0.158 0.0095" size="0.002 0.065 0.0175" rgba="0.07 0.06 0.05 1" class="env"/>
     <geom name="box_black_wall_near" type="box" pos="0.1 -0.158 0.0095" size="0.002 0.065 0.0175" rgba="0.07 0.06 0.05 1" class="env"/>
     <geom name="box_black_wall_left" type="box" pos="0.183 -0.095 0.0095" size="0.081 0.002 0.0175" rgba="0.07 0.06 0.05 1" class="env"/>
     <geom name="box_black_wall_right" type="box" pos="0.183 -0.221 0.0095" size="0.081 0.002 0.0175" rgba="0.07 0.06 0.05 1" class="env"/>
     </body>
-    <body name="seed_white_0" pos="0.24317 0.15018 0.0001">
+    <body name="seed_white_0" pos="0.24317 0.15018 0.001">
       <freejoint name="seed_white_0_free"/>
-      <geom name="seed_white_0_geom" type="sphere" size="0.005" mass="0.0005" rgba="0.93 0.92 0.88 1" class="seed"/>
+      <geom name="seed_white_0_geom" type="sphere" size="0.0074" mass="0.001" rgba="0.93 0.92 0.88 1" class="seed"/>
     </body>
-    <body name="seed_white_1" pos="0.18478 0.15224 0.0001">
+    <body name="seed_white_1" pos="0.18478 0.15224 0.001">
       <freejoint name="seed_white_1_free"/>
-      <geom name="seed_white_1_geom" type="sphere" size="0.005" mass="0.0005" rgba="0.93 0.92 0.88 1" class="seed"/>
+      <geom name="seed_white_1_geom" type="sphere" size="0.0074" mass="0.001" rgba="0.93 0.92 0.88 1" class="seed"/>
     </body>
-    <body name="seed_white_2" pos="0.2208 0.11725 0.0001">
+    <body name="seed_white_2" pos="0.2208 0.11725 0.001">
       <freejoint name="seed_white_2_free"/>
-      <geom name="seed_white_2_geom" type="sphere" size="0.005" mass="0.0005" rgba="0.93 0.92 0.88 1" class="seed"/>
+      <geom name="seed_white_2_geom" type="sphere" size="0.0074" mass="0.001" rgba="0.93 0.92 0.88 1" class="seed"/>
     </body>
-    <body name="seed_white_3" pos="0.17004 0.18087 0.0001">
+    <body name="seed_white_3" pos="0.17004 0.18087 0.001">
       <freejoint name="seed_white_3_free"/>
-      <geom name="seed_white_3_geom" type="sphere" size="0.005" mass="0.0005" rgba="0.93 0.92 0.88 1" class="seed"/>
+      <geom name="seed_white_3_geom" type="sphere" size="0.0074" mass="0.001" rgba="0.93 0.92 0.88 1" class="seed"/>
     </body>
-    <body name="seed_black_0" pos="0.14942 -0.13171 0.0001">
+    <body name="seed_black_0" pos="0.156 -0.13557 0.0004">
       <freejoint name="seed_black_0_free"/>
-      <geom name="seed_black_0_geom" type="sphere" size="0.005" mass="0.0005" rgba="0.05 0.05 0.05 1" class="seed"/>
+      <geom name="seed_black_0_geom" type="sphere" size="0.0068" mass="0.001" rgba="0.05 0.05 0.05 1" class="seed"/>
     </body>
-    <body name="seed_black_1" pos="0.10384 -0.22882 0.0001">
+    <body name="seed_black_1" pos="0.10475 -0.20366 0.0004">
       <freejoint name="seed_black_1_free"/>
-      <geom name="seed_black_1_geom" type="sphere" size="0.005" mass="0.0005" rgba="0.05 0.05 0.05 1" class="seed"/>
+      <geom name="seed_black_1_geom" type="sphere" size="0.0068" mass="0.001" rgba="0.05 0.05 0.05 1" class="seed"/>
     </body>
-    <body name="seed_black_2" pos="0.12653 -0.16152 0.0001">
+    <body name="seed_black_2" pos="0.12653 -0.16152 0.0004">
       <freejoint name="seed_black_2_free"/>
-      <geom name="seed_black_2_geom" type="sphere" size="0.005" mass="0.0005" rgba="0.05 0.05 0.05 1" class="seed"/>
+      <geom name="seed_black_2_geom" type="sphere" size="0.0068" mass="0.001" rgba="0.05 0.05 0.05 1" class="seed"/>
     </body>
-    <body name="seed_black_3" pos="0.17652 -0.23009 0.0001">
+    <body name="seed_black_3" pos="0.18456 -0.2111 0.0004">
       <freejoint name="seed_black_3_free"/>
-      <geom name="seed_black_3_geom" type="sphere" size="0.005" mass="0.0005" rgba="0.05 0.05 0.05 1" class="seed"/>
+      <geom name="seed_black_3_geom" type="sphere" size="0.0068" mass="0.001" rgba="0.05 0.05 0.05 1" class="seed"/>
     </body>
   </worldbody>
 </mujoco>

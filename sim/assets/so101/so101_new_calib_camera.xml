@@ -14,6 +14,10 @@
       <default class="collision">
         <geom group="3" contype="1" conaffinity="0"/>
       </default>
+      <!-- SMARTSEED: fingertip contact pads, the only jaw geoms that touch seeds (contype 8, see sim/layout.py) -->
+      <default class="pad">
+        <geom type="box" group="3" contype="8" conaffinity="0" condim="4" friction="1.2 0.02 0.002" solref="0.004 1" solimp="0.95 0.99 0.001"/>
+      </default>
     </default>
   </default>
   <!-- Additional joints_properties.xml -->
@@ -109,6 +113,8 @@
                 <geom type="mesh" class="visual" pos="8.32667e-17 -0.000218214 0.000949706" quat="0 1 0 0" mesh="wrist_roll_follower_so101_v1" material="wrist_roll_follower_so101_v1_material"/>
                 <geom type="mesh" class="collision" pos="8.32667e-17 -0.000218214 0.000949706" quat="0 1 0 0" mesh="wrist_roll_follower_so101_v1" material="wrist_roll_follower_so101_v1_material"/>
                 <!-- Frame gripperframe -->
+                <!-- SMARTSEED: fixed fingertip pad, inner face plane fitted to the jaw mesh -->
+                <geom name="pad_fixed" class="pad" pos="-0.01185 -0.00022 -0.07781" quat="0.74805 0 0.66365 0" size="0.0245 0.0062 0.0015"/>
                 <site group="3" name="gripperframe" pos="-0.0079 -0.000218121 -0.0981274" quat="0.707107 -0 0.707107 -2.37788e-17"/>
                 <!-- SMARTSEED: virtual wrist camera, pose fitted by sim/fit_wrist_camera.py -->
                 <camera name="wrist" pos="0.0018 0.0546 -0.0571" xyaxes="0.9901 -0.0406 -0.1344 -0.0434 0.8219 -0.5680" fovy="77.85"/>
@@ -129,11 +135,13 @@
                 <!-- Link moving_jaw_so101_v1 -->
                 <body name="moving_jaw_so101_v1" pos="0.0202 0.0188 -0.0234" quat="0.707107 0.707107 -1.85362e-08 1.85362e-08">
                   <!-- Joint from gripper to moving_jaw_so101_v1 -->
-                  <joint axis="0 0 1" name="gripper" type="hinge" range="-0.0607 1.7453291995659765" class="sts3215"/>
+                  <joint axis="0 0 1" name="gripper" type="hinge" range="-0.0607 1.7453291995659765" class="sts3215" damping="0.03" frictionloss="0.01"/>
                   <inertial pos="-0.00157495 -0.0300244 0.0192755" mass="0.012" fullinertia="6.61427e-06 1.89032e-06 5.28738e-06 -3.19807e-07 -5.90717e-09 -1.09945e-07"/>
                   <!-- Part moving_jaw_so101_v1 -->
                   <geom type="mesh" class="visual" pos="-5.55112e-17 -5.55112e-17 0.0189" quat="1 -0 3.00524e-16 -2.00834e-17" mesh="moving_jaw_so101_v1" material="moving_jaw_so101_v1_material"/>
-                  <geom type="mesh" class="collision" pos="-5.55112e-17 -5.55112e-17 0.0189" quat="1 -0 3.00524e-16 -2.00834e-17" mesh="moving_jaw_so101_v1" material="moving_jaw_so101_v1_material"/>
+                  <geom type="mesh" class="collision" contype="0" pos="-5.55112e-17 -5.55112e-17 0.0189" quat="1 -0 3.00524e-16 -2.00834e-17" mesh="moving_jaw_so101_v1" material="moving_jaw_so101_v1_material"/>
+                  <!-- SMARTSEED: moving fingertip pad, inner face plane fitted to the jaw mesh (gap 10.9 mm at the tip at the joint stop) -->
+                  <geom name="pad_moving" class="pad" pos="-0.00903 -0.05512 0.01902" quat="0.47390 -0.47390 0.52480 -0.52480" size="0.0245 0.0062 0.0015"/>
                 </body>
               </body>
             </body>
@@ -180,7 +188,7 @@
     <position class="sts3215" name="elbow_flex" joint="elbow_flex" forcerange="-3.35 3.35" ctrlrange="-1.69 1.69"/>
     <position class="sts3215" name="wrist_flex" joint="wrist_flex" forcerange="-3.35 3.35" ctrlrange="-1.65806 1.65806"/>
     <position class="sts3215" name="wrist_roll" joint="wrist_roll" forcerange="-3.35 3.35" ctrlrange="-2.74385 2.84121"/>
-    <position class="sts3215" name="gripper" joint="gripper" forcerange="-3.35 3.35" ctrlrange="-0.0607 1.74533"/>
+    <position class="sts3215" name="gripper" joint="gripper" kp="3" kv="0.3" forcerange="-0.15 0.15" ctrlrange="-0.0607 1.74533"/>
   </actuator>
   <equality/>
 </mujoco>

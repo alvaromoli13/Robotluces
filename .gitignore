@@ -22,3 +22,4 @@ lerobot/vendor/
 
 # MuJoCo twin (sim/): renders, replays and exported episodes
 sim/out/
+MUJOCO_LOG.TXT

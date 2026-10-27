@@ -22,4 +22,10 @@ Everything else is byte-identical to upstream. Each change is cosmetic or scene 
 3. A `<camera name="wrist">` inside the `gripper` body, the pose is fitted in `sim/layout.py`
    (upstream has the camera *body* but no `<camera>` element).
 
-To update: copy the upstream files again, reapply the three changes, note the new commit here.
+4. Contact physics for grasping (T2b): the moving-jaw hull has `contype="0"` (its tip dragged on the box floor) and
+   two thin box geoms, `pad_fixed` (in `gripper`) and `pad_moving`, class `pad` (contype 8, friction 1.2, condim 4),
+   with the inner-face planes fitted to the jaw meshes; the seeds collide only with these pads among arm geoms.
+   The `gripper` joint gets damping 0.03 and frictionloss 0.01, its actuator kp 3, kv 0.3, forcerange +-0.15 N m
+   (ESTIMATED squeeze, about 2 N at the pads; the arm joints keep the upstream gains).
+
+To update: copy the upstream files again, reapply the four changes, note the new commit here.

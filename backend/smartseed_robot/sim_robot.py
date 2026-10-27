@@ -19,8 +19,9 @@ from .robot import ARM_JOINTS, CAMERAS, IMAGE_SHAPE, JOINTS
 
 # Jaw angle (rad) at lerobot gripper 0 and 100. The slope is the real follower's calibrated span (2034..3497 ticks =
 # 128.6 deg for 0-100), the offset is fitted against the real wrist frames (sim/fit_wrist_camera.py). The MJCF jaw
-# joint stops at 100 deg (gripper ~87) and, standing in for the missing jaw-on-jaw contact, at -3.5 deg (gripper 6.0,
-# where the real follower reads fully closed).
+# joint stops at 100 deg (gripper ~87) and at -3.5 deg (gripper 6.0): the real follower's hard stop, where it reads
+# closed empty. The jaw pads do not touch there (10.9 mm apart at the tip); a seed keeps the jaw off the stop by
+# contact alone (sim/README.md).
 GRIPPER_JAW_RAD = (-0.1954, 2.0488)
 DEFAULT_SCENE = Path(__file__).resolve().parents[2] / "sim" / "scene.xml"
 DEFAULT_HOME = dict(zip(JOINTS, (1.1, -102.7, 96.8, 47.7, -6.0, 6.3)))  # mean start of the recorded episodes
