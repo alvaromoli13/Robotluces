@@ -28,4 +28,7 @@ Everything else is byte-identical to upstream. Each change is cosmetic or scene 
    The `gripper` joint gets damping 0.03 and frictionloss 0.01, its actuator kp 3, kv 0.3, forcerange +-0.15 N m
    (ESTIMATED squeeze, about 2 N at the pads; the arm joints keep the upstream gains).
 
-To update: copy the upstream files again, reapply the four changes, note the new commit here.
+5. `shoulder_lift` range widened from +-100 to +-106 deg (joint and actuator ctrlrange): the real follower rests at
+   -103 (taught `home` -103.25, `act_start` -103.08), past the upstream limit, which clamped the sim arm at -100.
+
+To update: copy the upstream files again, reapply the five changes, note the new commit here.
