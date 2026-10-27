@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
@@ -30,8 +31,16 @@ from smartseed_robot.robot import JOINTS  # noqa: E402
 from smartseed_robot.sim_robot import SimRobot  # noqa: E402
 
 
-def audit_episode(p: md.EpisodeParams, kin, plan=None) -> tuple[collision.WallReport, bool]:
-    """(wall report, seed lifted and held) of the episode of `p`, planned by this checkout unless `plan` is given."""
+@dataclass(frozen=True)
+class Audit:
+    report: collision.WallReport  # whole episode
+    lifted: bool  # the seed was lifted and is still in the jaws
+    grasp_penetration_m: float  # deepest overlap from the descent to the end of the lift (the jaws at the seed)
+    start_penetration_m: float  # ... while resting at the start pose and moving towards the seed (the folded arm)
+
+
+def audit_episode(p: md.EpisodeParams, kin, plan=None) -> Audit:
+    """The wall audit of the episode of `p`, planned by this checkout unless `plan` is given."""
     actions, marks = plan if plan is not None else md.plan_actions(kin, p)
     robot = SimRobot(initial=dict(zip(JOINTS, map(float, actions[0]))))
     try:
@@ -41,12 +50,17 @@ def audit_episode(p: md.EpisodeParams, kin, plan=None) -> tuple[collision.WallRe
         for _ in range(md.SETTLE_STEPS):
             robot.send_joints(hold)
         seed_rest, peak = grasp_test.seed_xyz(robot, p.color, p.target), 0.0
-        for row in actions:
+        lo, hi, grasp, early = marks["descend_start"], marks["retract_start"], 0.0, 0.0
+        for t, row in enumerate(actions):
             robot.send_joints(dict(zip(JOINTS, map(float, row))))
             monitor(robot._model, robot._data)
+            if lo <= t < hi:
+                grasp = max(grasp, monitor.last_penetration_m)
+            elif t < lo:
+                early = max(early, monitor.last_penetration_m)
             peak = max(peak, float(grasp_test.seed_xyz(robot, p.color, p.target)[2] - seed_rest[2]))
         ok = md.episode_success(seed_rest, grasp_test.seed_xyz(robot, p.color, p.target), grasp_test.tool_xyz(robot), peak)
-        return monitor.report(), ok
+        return Audit(monitor.report(), ok, grasp, early)
     finally:
         robot.close()
 
@@ -59,16 +73,20 @@ def main() -> None:
     log = [json.loads(line) for line in Path(args.log).read_text().splitlines() if line.strip()]
     scenes = md.logged_scenes(log)[:args.limit]
     kin = md.Kinematics()
-    pens, lifted = [], 0
+    pens, grasp, lifted = [], [], 0
     for i, p in enumerate(scenes):
-        report, ok = audit_episode(p, kin)
-        lifted += ok
-        pens.append(1000 * report.max_penetration_m)
-        print(f"{p.color} attempt {p.attempt:3d} seed {p.target}: lifted {ok}, max penetration {pens[-1]:6.1f} mm, "
-              f"{report.contact_steps} overlapping control steps -> {'valid' if report.valid else 'REJECTED'}", flush=True)
-    pens = np.array(pens)
+        a = audit_episode(p, kin)
+        lifted += a.lifted
+        pens.append(1000 * a.report.max_penetration_m)
+        grasp.append(1000 * a.grasp_penetration_m)
+        print(f"{p.color} attempt {p.attempt:3d} seed {p.target}: lifted {a.lifted}, max penetration {pens[-1]:6.1f} mm "
+              f"(grasp {grasp[-1]:5.1f} mm, start {1000 * a.start_penetration_m:5.1f} mm), "
+              f"{a.report.contact_steps} overlapping control steps -> {'valid' if a.report.valid else 'REJECTED'}", flush=True)
+    pens, grasp = np.array(pens), np.array(grasp)
     rejected = int((pens > 1000 * collision.MAX_PENETRATION_M).sum())
+    limit = 1000 * collision.MAX_PENETRATION_M
     print(json.dumps({"episodes": len(pens), "replayed_lifted": lifted, "rejected": rejected,
+                      "rejected_in_grasp": int((grasp > limit).sum()),
                       "rejected_pct": round(100 * rejected / max(len(pens), 1), 1),
                       "over_5mm_pct": round(100 * float((pens > 5).mean()), 1),
                       "median_mm": round(float(np.median(pens)), 2), "p90_mm": round(float(np.percentile(pens, 90)), 2),

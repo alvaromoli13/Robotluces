@@ -89,6 +89,7 @@ class WallMonitor:
 
     def reset(self) -> None:
         self._pen, self._force, self._steps, self._contacts, self._calls, self._checks = 0.0, 0.0, 0, 0, 0, 0
+        self.last_penetration_m = 0.0  # of the latest measuring call (geometry mode)
 
     def __call__(self, model, data) -> None:
         self._calls += 1
@@ -97,6 +98,7 @@ class WallMonitor:
                 return
             self._checks += 1
             dist = min_wall_distance(model, data, self._arm, self._walls, cull=0.0)
+            self.last_penetration_m = max(0.0, -dist)
             if dist < 0:
                 self._pen, self._steps, self._contacts = max(self._pen, -dist), self._steps + 1, self._contacts + 1
             return

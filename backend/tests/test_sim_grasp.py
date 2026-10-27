@@ -92,3 +92,19 @@ def test_replaying_the_recorded_grasp_actions_lifts_the_black_seed_it_was_record
         top = max(top, robot._data.qpos[adr + 2] - z0)
     robot.close()
     assert top > 0.03
+
+
+@pytest.mark.parametrize("color", ["black", "white"])
+def test_the_scripted_grasp_touches_no_wall(kin, color):
+    """The jaws open between the walls and the neighbouring seeds: the wall monitor sees no contact in the grasp."""
+    trial = grasp(kin, color)
+    assert trial.wall_contact_steps == 0 and trial.wall_penetration_mm == 0.0
+
+
+def test_a_seed_the_open_jaws_cannot_reach_without_a_wall_is_reported_as_touching_it(kin):
+    """Nominal black seed 0 is 13 mm from its box wall: no jaw axis clears it, so the grasp touches the wall (v1 flew
+    the jaw through it)."""
+    trial = grasp(kin, "black", index=0)
+    assert trial.wall_contact_steps > 0
+    assert grasp_test.grasp_candidates(grasp_test.seed_xyz(SimRobot(), "black", 0), layout.SEED_RADIUS["black"],
+                                       layout.BLACK_BOX, [p for k, p in enumerate(layout.seed_positions("black")) if k != 0]) == []

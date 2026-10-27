@@ -21,7 +21,7 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT)), sys.path.insert(0, str(ROOT / "backend"))
 
-from sim import layout  # noqa: E402
+from sim import collision, layout  # noqa: E402
 from smartseed_robot.kinematics import Kinematics  # noqa: E402
 from smartseed_robot.robot import JOINTS  # noqa: E402
 from smartseed_robot.sim_robot import SimRobot  # noqa: E402
@@ -52,6 +52,9 @@ class Trial:
     lift_mm: float = 0.0
     slip_mm: float = 0.0
     gripper: float = 0.0  # reading while holding, after the lift
+    wall_penetration_mm: float = 0.0  # deepest arm-wall contact over the trial (`sim/collision.py`)
+    wall_force_n: float = 0.0
+    wall_contact_steps: int = 0  # physics steps with any arm-wall contact
     frames: list = field(default_factory=list, repr=False)
 
 
@@ -186,6 +189,7 @@ def run_trial(robot: SimRobot, kin: Kinematics, color: str, jitter=(0.0, 0.0), i
     """One grasp on `seed_<color>_<index>` shifted by `jitter` (x, y metres). The robot is used as is."""
     trial = Trial(color, tuple(jitter))
     frames = trial.frames if record else None
+    monitor = robot.step_hook = collision.WallMonitor(robot._model)
     adr, dof = seed_joint(robot, color, index)
     nominal = seed_xyz(robot, color, index)  # where the planner believes the seed is
     robot._data.qpos[adr:adr + 2] += np.asarray(jitter)  # where it actually is: a perception error of up to 3 mm
@@ -212,6 +216,9 @@ def run_trial(robot: SimRobot, kin: Kinematics, color: str, jitter=(0.0, 0.0), i
     trial.lift_mm = float(seed1[2] - seed0[2]) * 1000
     trial.slip_mm = float(np.linalg.norm(seed1 - tool_xyz(robot) - held_at)) * 1000
     trial.gripper = robot.read_joints()["gripper"]
+    report = monitor.report()
+    trial.wall_penetration_mm, trial.wall_force_n, trial.wall_contact_steps = (
+        1000 * report.max_penetration_m, report.max_force_n, report.contact_steps)
     trial.success = trial.lift_mm > LIFT_MIN * 1000 and trial.slip_mm < SLIP_MAX * 1000
     return trial
 
@@ -253,7 +260,8 @@ def main() -> None:
                 saved = True
             t.frames = []
             print(f"{color} {i:2d} jitter {t.jitter[0]*1000:+.1f},{t.jitter[1]*1000:+.1f} mm lift {t.lift_mm:6.1f} mm "
-                  f"slip {t.slip_mm:5.1f} mm grip {t.gripper:5.2f} {'OK' if t.success else 'FAIL'}")
+                  f"slip {t.slip_mm:5.1f} mm grip {t.gripper:5.2f} wall {t.wall_penetration_mm:4.2f} mm/{t.wall_force_n:4.1f} N "
+                  f"{'OK' if t.success else 'FAIL'}")
         ok = [t for t in results if t.success]
         print(f"{color} seed {args.index}: {len(ok)}/{len(results)} succeeded; holding reading "
               f"{np.mean([t.gripper for t in ok]) if ok else float('nan'):.2f}, lift "

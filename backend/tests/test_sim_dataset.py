@@ -556,8 +556,9 @@ def test_the_wall_audit_flags_a_pass_through_plan_and_passes_a_planned_episode(k
     from sim import audit_walls
 
     bad = next(scenes_where_the_radial_jaw_cuts_a_wall(kin))
-    report, _ = audit_walls.audit_episode(bad[0], kin, plan=bad[1:])
+    report = audit_walls.audit_episode(bad[0], kin, plan=bad[1:]).report
     assert report.contact_steps > 0  # in v2 physics the wall stops the jaw (<1 mm), but the arm did run into it
     good, actions, marks = reachable(kin, "black", 0, 1)
-    report, lifted = audit_walls.audit_episode(good, kin, plan=(actions, marks))
-    assert report.valid and report.contact_steps == 0 and lifted
+    audit = audit_walls.audit_episode(good, kin, plan=(actions, marks))
+    assert audit.report.valid and audit.report.contact_steps == 0 and audit.lifted
+    assert audit.grasp_penetration_m == audit.start_penetration_m == 0.0

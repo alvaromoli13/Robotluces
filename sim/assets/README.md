@@ -22,13 +22,16 @@ Everything else is byte-identical to upstream. Each change is cosmetic or scene 
 3. A `<camera name="wrist">` inside the `gripper` body, the pose is fitted in `sim/layout.py`
    (upstream has the camera *body* but no `<camera>` element).
 
-4. Contact physics for grasping (T2b): the moving-jaw hull has `contype="0"` (its tip dragged on the box floor) and
-   two thin box geoms, `pad_fixed` (in `gripper`) and `pad_moving`, class `pad` (contype 8, friction 1.2, condim 4),
-   with the inner-face planes fitted to the jaw meshes; the seeds collide only with these pads among arm geoms.
+4. Contact physics for grasping (T2b): two thin box geoms, `pad_fixed` (in `gripper`) and `pad_moving`, class `pad`
+   (friction 1.2, condim 4), with the inner-face planes fitted to the jaw meshes; the seeds collide only with these
+   pads among arm geoms. Collision bits (T4b, see `sim/README.md`, "Collision model"): the pads have `contype="24"`
+   (bit 8 = seeds, bit 16 = box and tray walls) and the moving-jaw hull has `contype="16"` (walls only; it was `"0"`
+   in T2b because its tip dragged on the box floor, which let the open jaw pass through walls). The fixed-jaw hull and
+   the rest of the arm keep `contype="1"` and already hit walls.
    The `gripper` joint gets damping 0.03 and frictionloss 0.01, its actuator kp 3, kv 0.3, forcerange +-0.15 N m
    (ESTIMATED squeeze, about 2 N at the pads; the arm joints keep the upstream gains).
 
 5. `shoulder_lift` range widened from +-100 to +-106 deg (joint and actuator ctrlrange): the real follower rests at
    -103 (taught `home` -103.25, `act_start` -103.08), past the upstream limit, which clamped the sim arm at -100.
 
-To update: copy the upstream files again, reapply the five changes, note the new commit here.
+To update: copy the upstream files again, reapply the changes above, note the new commit here.
