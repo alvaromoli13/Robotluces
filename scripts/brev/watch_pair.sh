@@ -25,7 +25,10 @@ delete_box() {  # exit code
     echo "LOGIN NEEDED: Brev session expired, $HOST is still running. Run 'brev login', then rerun this script."
     exit 3
   fi
-  yes | brev delete "$HOST"
+  # Plain stdin: `yes | brev delete` hung (killed after 5 min) on 2026-10-27. Cap the call at 2 min.
+  brev delete "$HOST" </dev/null & local pid=$!
+  for _ in $(seq 1 24); do kill -0 "$pid" 2>/dev/null || break; /bin/sleep 5; done
+  kill "$pid" 2>/dev/null
   for _ in $(seq 1 20); do
     brev ls </dev/null 2>&1 | grep -E "^ *$HOST " | grep -qv DELETING || { echo "DELETED (or DELETING) $HOST $(date +%H:%M)"; exit "$1"; }
     /bin/sleep 15
@@ -46,6 +49,10 @@ while :; do
       ssh "$HOST" 'for f in ~/setup.log ~/train-*.log; do echo "== $f"; tail -c 1500 "$f" | tr "\r" "\n" | tail -15; done' 2>/dev/null
       delete_box 1;;
     *TRAIN_DONE*) echo "TRAIN_DONE $HOST $(date +%H:%M): $st"; break;;
+    *DONE-*DONE-*)
+      # Every run finished even if TRAIN_DONE is missing (count the DONE- markers against the repos watched).
+      [ "$(grep -o 'DONE-' <<<"$st" | wc -l)" -ge "$(wc -w <<<"$REPOS")" ] && { echo "ALL RUNS DONE $HOST $(date +%H:%M): $st"; break; }
+      miss=0;;
     *)
       miss=0
       steps=$(ssh -o ConnectTimeout=20 "$HOST" 'for f in ~/train-*.log; do [ -f "$f" ] && tr "\r" "\n" < "$f" | grep -o "step:[0-9.]*K*" | tail -1; done | tr "\n" " "' 2>/dev/null)

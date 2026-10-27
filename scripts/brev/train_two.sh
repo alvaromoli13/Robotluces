@@ -55,8 +55,10 @@ run() {  # gpu dataset name
 echo "== $(date) train"
 # Two GPUs: one run each. One GPU: both runs share it (an ACT run needs well under half of an 80 GB card).
 ngpu="$(nvidia-smi -L | wc -l)"
-run 0 "$DS_A" "$NAME_A" &
-run "$(( ngpu > 1 ? 1 : 0 ))" "$DS_B" "$NAME_B" &
-wait
+run 0 "$DS_A" "$NAME_A" & pid_a=$!
+run "$(( ngpu > 1 ? 1 : 0 ))" "$DS_B" "$NAME_B" & pid_b=$!
+# Wait on the two runs only: a bare `wait` (bash >= 5.1) also waits on the `tee` process substitution above,
+# which never ends, so TRAIN_DONE was never written.
+wait "$pid_a" "$pid_b"
 echo "== $(date) all done"
 touch "$HOME/TRAIN_DONE"
