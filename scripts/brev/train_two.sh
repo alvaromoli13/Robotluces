@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Runs on a 2-GPU Brev box: installs lerobot at the pinned commit, then trains one ACT (chunk 100) per dataset,
-# one per GPU. Usage: train_two.sh <dataset A> <model name A> <dataset B> <model name B>
+# Runs on a 1- or 2-GPU Brev box: installs lerobot at the pinned commit, then trains one ACT (chunk 100) per dataset,
+# one per GPU (both on GPU 0 when there is only one). Usage: train_two.sh <dataset A> <model name A> <dataset B> <model name B>
 # (models go to $HF_USER/act-<name>; HF_USER defaults to RafaelJaime). Writes DONE-<name>/FAILED-<name>, then TRAIN_DONE.
 set -uo pipefail
 DS_A="$1"; NAME_A="$2"; DS_B="$3"; NAME_B="$4"; HF_USER="${HF_USER:-RafaelJaime}"
@@ -53,8 +53,10 @@ run() {  # gpu dataset name
 }
 
 echo "== $(date) train"
+# Two GPUs: one run each. One GPU: both runs share it (an ACT run needs well under half of an 80 GB card).
+ngpu="$(nvidia-smi -L | wc -l)"
 run 0 "$DS_A" "$NAME_A" &
-run 1 "$DS_B" "$NAME_B" &
+run "$(( ngpu > 1 ? 1 : 0 ))" "$DS_B" "$NAME_B" &
 wait
 echo "== $(date) all done"
 touch "$HOME/TRAIN_DONE"
