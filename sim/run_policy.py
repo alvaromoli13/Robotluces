@@ -49,6 +49,7 @@ class EpisodeResult:
     steps: int = 0
     sim_seconds: float = 0.0
     max_lift_mm: float = 0.0
+    min_tool_seed_mm: float = float("inf")  # closest approach of the tool frame to a seed of the colour
     final_gripper: float = 0.0
     in_jaws: bool = False
     success: bool = False
@@ -118,6 +119,9 @@ def run_episode(robot: SimRobot, policy: PolicyRunner, color: str, *, duration_s
         robot.send_joints(action)
         lift = max(seed_xyz(robot, color, i)[2] - rest[i] for i in range(SEEDS_PER_BOX)) * 1000
         result.max_lift_mm = max(result.max_lift_mm, lift)
+        tool = _tool_xyz(robot)
+        result.min_tool_seed_mm = min(result.min_tool_seed_mm, 1000 * min(
+            np.linalg.norm(seed_xyz(robot, color, i) - tool) for i in range(SEEDS_PER_BOX)))
         if record or on_frame:
             frame = np.hstack([observation["observation.images.top"], observation["observation.images.wrist"]])
             if record:
@@ -228,13 +232,15 @@ def main(argv=None) -> None:
             finally:
                 robot.close()
             results.append(r)
-            print(f"{name} ep {ep}: max lift {r.max_lift_mm:6.1f} mm  gripper {r.final_gripper:5.1f}  "
+            print(f"{name} ep {ep}: max lift {r.max_lift_mm:6.1f} mm  closest {r.min_tool_seed_mm:5.0f} mm  gripper {r.final_gripper:5.1f}  "
                   f"in jaws {r.in_jaws}  {'SUCCESS' if r.success else 'fail'}", flush=True)
     save_strip([strip[k] for k in sorted(strip)], Path(args.media_dir) / f"sim-act-{name}.png")
     ok = sum(r.success for r in results)
     print(f"{name} ({args.color}): {ok}/{len(results)} succeeded; max lift mean "
           f"{np.mean([r.max_lift_mm for r in results]):.1f} mm, best {max(r.max_lift_mm for r in results):.1f} mm; "
-          f"final gripper mean {np.mean([r.final_gripper for r in results]):.1f}; in jaws "
+          f"closest tool-seed approach {min(r.min_tool_seed_mm for r in results):.0f} mm (mean "
+          f"{np.mean([r.min_tool_seed_mm for r in results]):.0f}); final gripper mean "
+          f"{np.mean([r.final_gripper for r in results]):.1f}; in jaws "
           f"{sum(r.in_jaws for r in results)}/{len(results)}\nvideo {video}")
 
 

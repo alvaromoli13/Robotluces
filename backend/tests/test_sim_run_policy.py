@@ -193,3 +193,17 @@ def test_the_png_strip_stacks_top_over_wrist_for_each_picked_frame(tmp_path):
     run_policy.save_strip(result.frames[:6], out)
     strip = imageio.imread(str(out))
     assert strip.shape == (2 * 160, 6 * 214, 3)
+
+
+def test_the_closest_approach_of_the_tool_to_a_seed_of_the_colour_is_reported():
+    idle, _ = episode(Stub(), duration_s=0.5)
+    assert idle.min_tool_seed_mm > 50.0  # act_start hovers well away from the box
+
+    def carry(robot, n):
+        adr = robot._model.joint("seed_black_0_free").qposadr[0]
+        robot._data.qpos[adr:adr + 3] = robot._data.site_xpos[robot._model.site("gripperframe").id] + [0, 0, 0.002]
+        robot._data.qvel[:] = 0
+        return ACT_START
+
+    near, _ = episode(Stub(carry), duration_s=0.5)
+    assert near.min_tool_seed_mm < 20.0
