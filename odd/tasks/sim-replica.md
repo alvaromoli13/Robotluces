@@ -32,8 +32,19 @@ Strict TDD (session config). Runner: `cd backend && uv run pytest` (via `~/.clau
       Evidence: `sim/run_policy.py` (stub-policy tests, RED first); 40 episodes: d1-c100 0/10, d1-c100-80k 1/10 (a real
       grasp-and-lift to 11.5 cm held 0.8 s, then dropped), d2-c100 0/10, d2-c50 0/10; policies reach the right box but do not close
       on a seed; table, videos, `docs/media/sim-vs-real-obs.png` in `sim/README.md`. Side fix: `shoulder_lift` range widened to -103
-- [ ] T4 Scripted IK grasp demos -> LeRobotDataset (randomised seed/box positions, lighting) (route: delegated)
+- [x] T4 Scripted IK grasp demos -> LeRobotDataset (randomised seed/box positions, lighting) (route: delegated)
+      Evidence: `sim/make_dataset.py`; RED first (ImportError on `sim.make_dataset`, later the box-yaw `geom_xmat` test
+      caught MuJoCo ignoring runtime `geom_quat`); 100 episodes per colour kept of 132 (black) / 136 (white) attempts
+      (generator success 75.8 % / 73.5 %), 29,497 / 29,502 frames; scope change: boxes, tray and seeds anywhere in the top
+      view (placement: geometry 1.95 % / 1.77 % of drawn objects, planner reaches 29 % / 28.5 % of valid scenes). Hub:
+      https://huggingface.co/datasets/RafaelJaime/smartseed-sim-grasp-black and `-white` (public, BraboRobots, in the HF
+      collection); features identical to real d1/d2 `info.json` (checked from the Hub), `docs/media/sim-dataset-preview.png`,
+      `docs/media/sim-dataset-coverage.png`. Commits: 5e748db, 5472152 and the docs commit after it.
 - [ ] T5 Train ACT on sim demos + `sim/eval.py` success metric (seed lifted > 3 cm, lands in target hole) (route: delegated)
+      To train on Brev (do not start it from this task): upload with `ssh <host> 'cat > ~/train_pair.sh' < scripts/brev/train_pair.sh`
+      (not scp), then per colour `ssh <host> 'chmod +x ~/train_pair.sh && tmux new -d -s train "~/train_pair.sh RafaelJaime/smartseed-sim-grasp-black sim-black"'`
+      (and `.../smartseed-sim-grasp-white sim-white`); it trains `act-sim-black-c100` / `-c50` (40k steps, batch 32, one per GPU)
+      and pushes them under `RafaelJaime`; check `tmux ls; tail -5 ~/setup.log`, then `scripts/brev/watch_one.sh <host> RafaelJaime/act-sim-black-c100 40000`.
 
 ## Acceptance
 - `SMARTSEED_ROBOT=sim ./scripts/stack.sh` runs the web + executor against the simulated arm.
@@ -48,3 +59,4 @@ Strict TDD (session config). Runner: `cd backend && uv run pytest` (via `~/.clau
   gains untuned. Details in `sim/README.md`. Commits: see `git log` (feat(sim) scene+SimRobot, docs).
 - 2026-10-27: T2b done (pads, servo and seed tuning, `Kinematics.solve(spin_deg)`); details in `sim/README.md`.
 - 2026-10-27: T3 done: real ACT policies run in the twin (1/40 episodes lifted a seed); see `sim/README.md`.
+- 2026-10-27: T4 done: 100 sim episodes per colour on the Hub; see `sim/README.md`, "Generating sim datasets".

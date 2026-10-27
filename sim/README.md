@@ -31,6 +31,7 @@ the executor's own 30 Hz sleeps make plans run in real time. Torque off holds th
 | `replay.py` | replays the episode, prints residuals, writes `out/replay_overlay.png` |
 | `run_policy.py` | closed-loop real-trained ACT in the twin: obs like `act.py`, success = seed lifted > 3 cm, mp4 + PNG strip per policy |
 | `grasp_test.py` | scripted IK grasp by contact physics, N jittered trials per colour, mp4 + PNG strip of a success |
+| `make_dataset.py` | scripted demos with randomised scenes -> LeRobotDatasets in the real schema, Hub push, previews (see "Generating sim datasets") |
 
 ## Measured, fitted, estimated
 
@@ -127,6 +128,71 @@ no seed highlights, different wrist-camera exposure and mount; the real wrist vi
 `docs/media/sim-vs-real-obs.png`) is the most likely reason they do not commit to a grasp, but this run does not
 isolate it from the physics, seed layout (the real box held 2 white seeds, the twin has 4) or the missing inference
 latency. One episode in 40 is not a measured rate; the lone success is a genuine grasp-and-lift that did not hold.
+
+## Generating sim datasets (T4)
+
+```bash
+backend/.venv/bin/python sim/make_dataset.py --color black --episodes 100 --seed 0 \
+    --out sim/out/datasets/smartseed-sim-grasp-black --push-repo RafaelJaime/smartseed-sim-grasp-black
+backend/.venv/bin/python sim/make_dataset.py --color white --episodes 100 --seed 0 --push-repo RafaelJaime/smartseed-sim-grasp-white
+backend/.venv/bin/python sim/make_dataset.py --coverage docs/media/sim-dataset-coverage.png   # redraw from the logs
+```
+
+Scripted demonstrations recorded with `LeRobotDataset.create` / `add_frame` / `save_episode` (lerobot at the pinned
+commit `e595b79`; `lerobot[dataset]` is now part of the backend dependencies). The schema is the real one, key for key:
+`sim/config/real_features.json` is `meta/info.json` of `smartseed-grasp-d1-clean` and `-d2-clean` (identical in both)
+and a test compares the generator's features against it. Same task string, 30 fps, `robot_type` `so_follower`,
+codebase `v3.0`, AV1 video, `observation.state` and `action` float32 degrees (gripper 0-100), `observation.images.top` and
+`.wrist` 480x640x3. `action` is the commanded (leader) target, `observation.state` what the simulated follower measured
+before it.
+
+**One episode** follows the real ones (their action traces: rest at `act_start`, open while moving over a seed, descend,
+close, then fold back to the rest pose *with the seed in the jaws* and hold until the 300 frame cap; real length 278-300,
+mean 288): idle 24-45 frames, joint-space transit while the gripper opens (18-31), Cartesian descent with `Kinematics.solve`
+(the wrist is spun so the jaws clear the walls, `grasp_test.grasp_pose`), settle, close (command 4.2-5.0, the seed stalls
+the jaw at ~7), 7 cm lift, min-jerk joint move to the folded rest pose (lift -103, elbow 97, wrist -80..-100, pan 3..13,
+as in the real episodes). Min-jerk with a random speed skew per phase, random phase lengths, a 0.25 deg hand wobble outside
+the grasp and a 1.5 mm aiming error. Frames per episode 272-300. Success = the grasped seed rose over 3 cm and is
+within 2 cm of the tool at the end (held through the fold); failures are discarded and logged.
+
+**Randomisation** (all bounds in `Randomisation` in `make_dataset.py`; seeded by `(seed, attempt, colour, resample)`, so a
+dataset is a function of `(colour, seed)` and a stopped run resumes where it stopped):
+
+| What | Range |
+|---|---|
+| Black box, white box, 3x4 tray | uniform position anywhere on the table area the top camera sees, any yaw, no overlap (1 cm gap), 1.5 cm inside the view, centre within 36 cm of the arm and 10 cm clear of its base; placements the planner cannot grasp in are redrawn |
+| Seeds | 2-4 per box (the box keeps its colour), uniform on the floor 22 mm off the inner walls, at least 25 mm apart; one of the colour's seeds is grasped |
+| Light | ceiling light and headlight x0.7-1.3, direction tilted up to 25 deg |
+| Colours | per-channel gain +-8 % on table/paper, mat and cardboard (no textures exist in the twin) |
+| Top camera | +-5 mm position, +-1 deg orientation per axis |
+| Wrist camera | +-2 mm on the gripper |
+| Start pose | `act_start` plus noise (pan +-4, wrist flex and roll +-3 deg, others +-0.5) |
+
+A placement is only accepted when the scripted planner can grasp into it: IK reaches the pre-grasp pose and the seed with the
+jaws about horizontal (pitch up to 15 deg; a tilted wrist puts the seed outside the pads) and inside the joint ranges
+(the MJCF wrist flex stops at +-95). The boxes' turn reaches the physics: MuJoCo ignores a runtime `geom_quat` on geoms
+whose compiled frame was the identity unless `geom_sameframe` is cleared (a test reads `geom_xmat`).
+
+**Results** (seed 0):
+
+| | black (`smartseed-sim-grasp-black`) | white (`smartseed-sim-grasp-white`) |
+|---|---|---|
+| Kept episodes / attempts | 100 / 132 (generator success 75.8 %) | 100 / 136 (73.5 %) |
+| Frames | 29,497 | 29,502 |
+| Placements drawn / reachable | geometry accepted 1.95 % of drawn object placements; the planner could grasp into 29.0 % of the geometrically valid scenes (323 redraws); 0.57 % of drawn object placements end in a kept scene | 1.77 %, 28.5 % (342 redraws), 0.50 % |
+| Seed grasped (index 0-3) | 22 / 23 / 28 / 27 | 27 / 31 / 23 / 19 |
+| Generation time | about 45 min on the M5 (two colours in parallel, no GPU) | |
+
+The 24-26 % of attempts that fail after a reachable placement mostly drop the seed during the fold-back or miss it (the arm lags
+the open-loop command, seeds close to a wall). Hub: https://huggingface.co/datasets/RafaelJaime/smartseed-sim-grasp-black and
+https://huggingface.co/datasets/RafaelJaime/smartseed-sim-grasp-white (public, tag `BraboRobots`, in the collection
+`smartseed-so-101-act-seed-sowing`). Loading them back from the Hub gives the same feature dict as the real `info.json`.
+Previews: `docs/media/sim-dataset-preview.png` (episodes 0, 50, 99 per colour: top over wrist at the first, middle and last
+frame) and `docs/media/sim-dataset-coverage.png` (every kept scene drawn on the top view).
+
+Limits: the demos only show scenes the scripted planner can solve (the placements and seeds it cannot reach are never
+recorded, so the data under-represents the far corners of the table); the scene is the twin, see "What is weak"; the real
+white-seed episodes command the gripper to ~6.7 at the end, the sim uses 4.2-5.0 (a harder squeeze is needed for the sim servo).
 
 ## What is weak
 

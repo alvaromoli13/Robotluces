@@ -312,6 +312,8 @@ All under <https://huggingface.co/RafaelJaime>, tagged `BraboRobots`. Collection
 |---|---|---|
 | [`smartseed-grasp-d1-clean`](https://huggingface.co/datasets/RafaelJaime/smartseed-grasp-d1-clean) | 96 × 10 s | `smartseed-grasp-d_20261025_002427` without episodes 1, 15, 26, 34 |
 | [`smartseed-grasp-d2-clean`](https://huggingface.co/datasets/RafaelJaime/smartseed-grasp-d2-clean) | 91 × 10 s | `smartseed-grasp-d_20261025_010641` without episodes 0-4, 18, 66, 84, 96 |
+| [`smartseed-sim-grasp-black`](https://huggingface.co/datasets/RafaelJaime/smartseed-sim-grasp-black) | 100 × ~9.8 s (29,497 frames) | **simulated**: scripted demos in the MuJoCo twin, black seeds, randomised scenes, same schema as `d1-clean` (`sim/make_dataset.py`) |
+| [`smartseed-sim-grasp-white`](https://huggingface.co/datasets/RafaelJaime/smartseed-sim-grasp-white) | 100 × ~9.8 s (29,502 frames) | **simulated**: same for white seeds, same schema as `d2-clean` |
 
 ## Run
 

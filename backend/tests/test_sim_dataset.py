@@ -263,6 +263,19 @@ def test_wall_clearance_does_not_depend_on_how_the_box_is_turned():
             assert turned == pytest.approx(straight, abs=1e-9)
 
 
+def test_the_coverage_plot_redraws_every_kept_scene_from_the_log(tmp_path):
+    from PIL import Image
+
+    kept = [{"attempt": a, "ok": a % 2 == 0, "ik_rejections": a % 3, "color": "black", "seed": 5} for a in range(8)]
+    scenes = md.logged_scenes(kept)
+    assert [s.attempt for s in scenes] == [0, 2, 4, 6]  # only kept episodes, redrawn with the same resample
+    assert scenes[1] == md.sample_params("black", 5, 2, 2)
+    out = tmp_path / "coverage.png"
+    md.coverage_plot({"black": scenes, "white": [md.sample_params("white", 0, a) for a in range(3)]}, out)
+    image = Image.open(out)
+    assert image.size[0] > 800 and image.size[1] > 400
+
+
 # -- success --------------------------------------------------------------------------------------------------
 def test_an_episode_succeeds_only_if_the_seed_rose_over_3_cm_and_is_still_in_the_jaws():
     rest = np.array([0.15, -0.13, 0.0])

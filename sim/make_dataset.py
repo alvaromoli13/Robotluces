@@ -675,6 +675,61 @@ def build_dataset(root: str | Path, color: str, episodes: int, seed: int, *, rep
     return result | summarise(log)
 
 
+def logged_scenes(log: list[dict]) -> list[EpisodeParams]:
+    """The parameters of every kept episode in a generation log (redrawn: they are a function of the log line)."""
+    return [sample_params(r["color"], r["seed"], r["attempt"], r.get("ik_rejections", 0)) for r in log
+            if r["ok"] and r.get("reason") != "recovered"]
+
+
+def coverage_plot(scenes: dict[str, list[EpisodeParams]], out: Path, size: tuple[int, int] = (720, 880)) -> None:
+    """PNG with one top-view panel per colour: the camera footprint, the mat, the arm base and, for every kept episode,
+    the outlines of the tray and the two boxes plus a dot per seed (a ring marks the grasped one)."""
+    from PIL import Image, ImageDraw
+
+    board_view = np.array([layout.to_board(pt) for pt in view_polygon()])
+    lo, hi = board_view.min(axis=0), board_view.max(axis=0)
+    w, h = size
+    scale = min((w - 40) / (hi[1] - lo[1]), (h - 90) / (hi[0] - lo[0]))
+
+    def px(point):  # board frame (x' up, y' left) -> pixel, like the top image
+        return (20 + (hi[1] - point[1]) * scale, 50 + (hi[0] - point[0]) * scale)
+
+    panels = []
+    for color, plist in scenes.items():
+        img = Image.new("RGBA", (w, h), (245, 245, 245, 255))
+        base = ImageDraw.Draw(img)
+        base.polygon([px(pt) for pt in board_view], fill=(255, 255, 255, 255), outline=(60, 60, 60, 255))
+        mat = footprint(layout.MAT_CENTER, 0.0, layout.MAT_HALF)
+        base.polygon([px(c) for c in mat], outline=(120, 120, 150, 255))
+        bx, by = px(layout.to_board((layout.BASE_PAN_AXIS[0], 0.0)))
+        base.ellipse([bx - 8, by - 8, bx + 8, by + 8], fill=(220, 120, 20, 255))
+        layer = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(layer)
+        for p in plist:
+            draw.polygon([px(c) for c in footprint(p.tray.center, p.tray.yaw_deg, layout.TRAY_OUTER_HALF)],
+                         outline=(200, 140, 40, 70))
+            for name, state, box in (("black", p.black, layout.BLACK_BOX), ("white", p.white, layout.WHITE_BOX)):
+                mine = name == color
+                draw.polygon([px(c) for c in footprint(state.center, state.yaw_deg, box.outer_half)],
+                             outline=(0, 0, 0, 80) if mine else (150, 150, 150, 40))
+            for i, _, _ in p.box.seeds:
+                x, y = px(layout.to_board(p.seed_xy(color, i)))
+                dot = (0, 0, 0, 200) if color == "black" else (110, 110, 110, 200)
+                draw.ellipse([x - 2, y - 2, x + 2, y + 2], fill=dot)
+                if i == p.target:
+                    draw.ellipse([x - 5, y - 5, x + 5, y + 5], outline=(210, 40, 40, 160))
+        img = Image.alpha_composite(img, layer)
+        ImageDraw.Draw(img).text((20, 14), f"{color} dataset: {len(plist)} episodes. Top view: camera footprint (box), mat, "
+                                           "arm base (orange), tray (tan), boxes (black outline = this colour), seeds "
+                                           "(red ring: grasped)", fill=(20, 20, 20, 255))
+        panels.append(img.convert("RGB"))
+    sheet = Image.new("RGB", (w * len(panels), h), (255, 255, 255))
+    for i, img in enumerate(panels):
+        sheet.paste(img, (i * w, 0))
+    out.parent.mkdir(parents=True, exist_ok=True)
+    sheet.save(out)
+
+
 def generator_commit() -> str:
     """Last commit that touched the twin or the robot code the generator drives (docs-only commits do not count)."""
     try:
@@ -792,12 +847,21 @@ def make_contact_sheet(roots: dict[str, Path], out: Path, episodes: int = 3) -> 
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("--color", choices=["black", "white"], required=True)
+    ap.add_argument("--color", choices=["black", "white"], default=None)
     ap.add_argument("--episodes", type=int, default=100)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--out", default=None, help="dataset folder (default sim/out/datasets/smartseed-sim-grasp-<colour>)")
+    ap.add_argument("--coverage", default=None, metavar="PNG", help="only draw the placement coverage plot of the "
+                    "black and white datasets under sim/out/datasets (from their logs) and exit")
     ap.add_argument("--push-repo", default=None, help="Hub dataset repo to upload to when done (existing HF login)")
     args = ap.parse_args()
+    if args.coverage:
+        base = ROOT / "sim" / "out" / "datasets"
+        coverage_plot({c: logged_scenes(_read_log(base / f"smartseed-sim-grasp-{c}")) for c in ("black", "white")},
+                      Path(args.coverage))
+        return
+    if not args.color:
+        ap.error("--color is required")
     root = Path(args.out or ROOT / "sim" / "out" / "datasets" / f"smartseed-sim-grasp-{args.color}")
     repo_id = args.push_repo or f"{HF_USER}/smartseed-sim-grasp-{args.color}"
     summary = build_dataset(root, args.color, args.episodes, args.seed, repo_id=repo_id,

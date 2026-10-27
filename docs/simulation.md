@@ -94,7 +94,9 @@ and joint conventions, it replaces most of steps 2 and 3 below.
   dropped the seed after 0.8 s); the other three policies 0/10. The policies do move to the right box and hover over
   the seeds, but never close on one: the visual gap is real. Table, videos and the real-vs-sim frame comparison
   (`docs/media/sim-vs-real-obs.png`) are in `sim/README.md`, "Running the real ACT in sim".
-- **B. Sim-trained policy.** Write scripted IK demonstrations (`sim/scripted_demo.py`, using
+- **B. Sim-trained policy.** **Demos done (T4, `sim/make_dataset.py`):** 100 scripted episodes per colour with
+  randomised box, tray and seed placement, lighting and cameras, on the Hub as `RafaelJaime/smartseed-sim-grasp-black` and
+  `-white` (generator success 76 % / 74 %, details in `sim/README.md`). Training is T5. Original plan: write scripted IK demonstrations (`sim/scripted_demo.py`, using
   `Kinematics.solve` against the simulated tool frame), record them as a `LeRobotDataset` with the
   same keys and fps, train ACT with the existing scripts (`lerobot/scripts/20_train_local.sh`, or
   `scripts/brev/train_pair.sh` on a cloud GPU), and evaluate. Metric: a seed is lifted more than
