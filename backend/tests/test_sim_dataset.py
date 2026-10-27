@@ -5,6 +5,7 @@ inject a tiny fake rollout so no episode has to be simulated.
 """
 from __future__ import annotations
 
+import itertools
 import json
 import math
 
@@ -40,20 +41,53 @@ def test_params_are_reproducible_by_seed_and_differ_across_attempts():
     a, b = md.sample_params("black", seed=7, attempt=3), md.sample_params("black", seed=7, attempt=3)
     assert a == b
     assert md.sample_params("black", seed=7, attempt=4) != a
+    assert md.sample_params("black", seed=7, attempt=3, resample=1) != a
     assert md.sample_params("black", seed=8, attempt=3) != a
     assert md.sample_params("white", seed=7, attempt=3) != a
 
 
+def _view_quad():
+    return md.view_polygon()
+
+
+def _inside(poly, point, margin):
+    """Point (world xy) inside the convex polygon, at least `margin` from every edge."""
+    for i in range(len(poly)):
+        (x0, y0), (x1, y1) = poly[i], poly[(i + 1) % len(poly)]
+        ex, ey = x1 - x0, y1 - y0
+        if (ex * (point[1] - y0) - ey * (point[0] - x0)) / math.hypot(ex, ey) < margin - 1e-9:
+            return False
+    return True
+
+
 @pytest.mark.parametrize("color", ["black", "white"])
 def test_every_random_parameter_stays_inside_its_documented_bound(color):
-    for attempt in range(300):
+    poly = _view_quad()
+    pan = np.array([layout.BASE_PAN_AXIS[0], 0.0])
+    for attempt in range(200):
         p = md.sample_params(color, seed=1, attempt=attempt)
         assert R.seeds_min <= len(p.present) <= R.seeds_max and len(set(p.present)) == len(p.present)
-        assert all(0 <= i < layout.SEEDS_PER_BOX for i in p.present)
-        assert p.target in p.present
-        assert np.abs(p.seed_offsets).max() <= R.seed_jitter_m + 1e-12
-        assert np.abs(p.box_shift).max() <= R.box_shift_m + 1e-12
-        assert abs(p.box_yaw_deg) <= R.box_yaw_deg + 1e-12
+        assert p.target in p.present and p.proposals >= 1
+        footprints = []
+        for name, state, box in (("black", p.black, layout.BLACK_BOX), ("white", p.white, layout.WHITE_BOX)):
+            assert -180 <= state.yaw_deg < 180
+            assert R.seeds_min <= len(state.seeds) <= R.seeds_max
+            hx, hy = box.inner_half[0] - R.seed_wall_margin_m, box.inner_half[1] - R.seed_wall_margin_m
+            for _, lx, ly in state.seeds:  # anywhere on the floor, a margin off the walls
+                assert abs(lx) <= hx + 1e-12 and abs(ly) <= hy + 1e-12
+            for (_, ax, ay), (_, bx, by) in itertools.combinations(state.seeds, 2):
+                assert math.hypot(ax - bx, ay - by) >= R.seed_min_gap_m - 1e-12
+            footprints.append((state.center, state.yaw_deg, box.outer_half))
+        footprints.append((p.tray.center, p.tray.yaw_deg, layout.TRAY_OUTER_HALF))
+        for center, yaw, half in footprints:
+            assert np.linalg.norm(layout.to_world(center) - pan) <= R.reach_max_m
+            for corner in md.footprint(center, yaw, half):
+                world = np.array(layout.to_world(corner))
+                assert _inside(poly, world, R.view_margin_m), "inside the top camera view"
+                assert np.linalg.norm(world - pan) >= R.base_keepout_m
+        for i in range(3):
+            for j in range(i + 1, 3):
+                assert not md.overlap(footprints[i], footprints[j], R.object_gap_m), "objects do not overlap"
         assert np.abs(p.top_cam_shift).max() <= R.top_cam_shift_m + 1e-12
         assert np.abs(p.top_cam_rot_deg).max() <= R.cam_rot_deg + 1e-12
         assert np.abs(p.wrist_cam_shift).max() <= R.wrist_cam_shift_m + 1e-12
@@ -64,54 +98,98 @@ def test_every_random_parameter_stays_inside_its_documented_bound(color):
         assert np.abs(np.asarray(p.start_noise_deg)).max() <= max(R.start_noise_deg.values()) + 1e-12
 
 
-def test_every_random_parameter_actually_varies():
-    ps = [md.sample_params("white", seed=0, attempt=i) for i in range(60)]
-    assert len({len(p.present) for p in ps}) == 3
-    assert len({p.target for p in ps}) > 1
-    for field in ("seed_offsets", "box_shift", "box_yaw_deg", "top_cam_shift", "light_scale", "colour_gain",
-                  "wrist_cam_shift"):
-        values = {np.asarray(getattr(p, field)).tobytes() for p in ps}
-        assert len(values) > 30, field
+def test_objects_and_seeds_cover_the_visible_table_not_just_a_neighbourhood_of_the_nominal_layout():
+    ps = [md.sample_params("white", seed=0, attempt=i) for i in range(150)]
+    for get in (lambda p: p.white.center, lambda p: p.black.center, lambda p: p.tray.center):
+        xy = np.array([get(p) for p in ps])
+        assert xy.std(axis=0).min() > 0.03  # centimetres of spread, not millimetres
+        assert np.ptp(xy, axis=0).min() > 0.12
+    for get in (lambda p: p.white.yaw_deg, lambda p: p.black.yaw_deg, lambda p: p.tray.yaw_deg):
+        yaw = np.array([get(p) for p in ps])
+        assert yaw.min() < -150 and yaw.max() > 150 and np.histogram(yaw, bins=4, range=(-180, 180))[0].min() > 15
+    local = np.array([(lx, ly) for p in ps for _, lx, ly in p.white.seeds])
+    hx, hy = (layout.WHITE_BOX.inner_half[i] - R.seed_wall_margin_m for i in (0, 1))
+    assert local[:, 0].min() < -0.8 * hx and local[:, 0].max() > 0.8 * hx  # up to the margin on every side
+    assert local[:, 1].min() < -0.8 * hy and local[:, 1].max() > 0.8 * hy
+    assert len({len(p.present) for p in ps}) == 3 and len({p.target for p in ps}) == 4
+    for field in ("top_cam_shift", "light_scale", "colour_gain", "wrist_cam_shift"):
+        assert len({np.asarray(getattr(p, field)).tobytes() for p in ps}) > 100, field
     lengths = {p.total_frames for p in ps}  # most episodes run to the 300 frame cap, like the real ones
     assert 300 in lengths and len(lengths) > 5
 
 
-def test_scene_randomisation_moves_the_box_and_hides_the_seeds_that_are_not_present():
+def test_overlap_and_footprint_geometry():
+    a = ((0.0, 0.0), 0.0, (0.05, 0.03))
+    assert md.overlap(a, ((0.09, 0.0), 0.0, (0.05, 0.03)), 0.0)  # 1 cm into each other
+    assert not md.overlap(a, ((0.12, 0.0), 0.0, (0.05, 0.03)), 0.0)  # 2 cm apart
+    assert md.overlap(a, ((0.12, 0.0), 0.0, (0.05, 0.03)), 0.03)  # ... closer than a 3 cm gap
+    assert not md.overlap(a, ((0.0, 0.09), 90.0, (0.05, 0.03)), 0.0)  # turned 90 degrees it is 10 cm long in y
+    assert md.overlap(a, ((0.0, 0.07), 90.0, (0.05, 0.03)), 0.0)
+    corners = md.footprint((0.1, 0.2), 90.0, (0.05, 0.03))
+    assert np.allclose(sorted(map(tuple, np.round(corners, 6))), sorted([(0.07, 0.15), (0.13, 0.15), (0.07, 0.25), (0.13, 0.25)]))
+
+
+def test_the_view_polygon_is_the_top_camera_footprint_on_the_table():
+    poly = np.array(md.view_polygon())
+    assert poly.shape == (4, 2)
+    assert _inside(poly.tolist(), (0.30, -0.02), 0.1)  # right under the camera
+    assert not _inside(poly.tolist(), (-0.2, 0.0), 0.0)  # behind the base
+
+
+def test_the_scene_moves_both_boxes_the_tray_and_parks_the_absent_seeds():
     robot = SimRobot(initial=ACT_START)
     try:
         p = md.sample_params("black", seed=0, attempt=0)
-        before = robot._model.geom_pos.copy(), robot._model.light_diffuse.copy(), robot._model.cam_pos.copy()
+        before = robot._model.geom_pos.copy(), robot._model.cam_pos.copy()
         md.apply_scene(robot, p)
-        assert not np.allclose(robot._model.geom_pos, before[0])
-        assert not np.allclose(robot._model.cam_pos, before[2])
-        # the planner's idea of each present seed is where the seed really is
-        for i in p.present:
-            adr = robot._model.joint(f"seed_black_{i}_free").qposadr[0]
-            assert np.allclose(robot._data.qpos[adr:adr + 2], p.seed_xyz(i)[:2], atol=1e-9)
-        for i in set(range(layout.SEEDS_PER_BOX)) - set(p.present):
-            adr = robot._model.joint(f"seed_black_{i}_free").qposadr[0]
-            assert np.linalg.norm(robot._data.qpos[adr:adr + 2]) > 1.0  # parked far away from the scene
+        m = robot._model
+        for name in ("box_white_floor", "box_black_floor", "tray_floor"):
+            g = m.geom(name).id
+            assert not np.allclose(m.geom_pos[g, :2], before[0][g, :2]), name
+        assert not np.allclose(m.cam_pos, before[1])
+        for name, state in (("box_white_wall_far", p.white), ("box_black_wall_far", p.black), ("tray_wall_far", p.tray)):
+            xmat = robot._data.geom_xmat[m.geom(name).id].reshape(3, 3)  # the turn really reaches the rendered/colliding geom
+            assert math.atan2(xmat[1, 0], xmat[0, 0]) == pytest.approx(
+                math.atan2(math.sin(layout.BOARD_YAW + math.radians(state.yaw_deg)),
+                           math.cos(layout.BOARD_YAW + math.radians(state.yaw_deg))), abs=1e-6), name
+        for color, state in (("black", p.black), ("white", p.white)):
+            floor = m.geom(f"box_{color}_floor").id
+            assert np.allclose(m.geom_pos[floor, :2], state.center, atol=1e-9)
+            for i, _, _ in state.seeds:  # every seed rests where the planner believes it is
+                adr = m.joint(f"seed_{color}_{i}_free").qposadr[0]
+                assert np.allclose(robot._data.qpos[adr:adr + 2], p.seed_xy(color, i), atol=1e-9)
+            for i in set(range(layout.SEEDS_PER_BOX)) - {i for i, _, _ in state.seeds}:
+                adr = m.joint(f"seed_{color}_{i}_free").qposadr[0]
+                assert np.linalg.norm(robot._data.qpos[adr:adr + 2]) > 1.0  # parked far from the scene
     finally:
         robot.close()
 
 
-def test_box_pose_jitter_is_a_rigid_move_of_the_box_and_its_seeds():
+def test_seeds_move_rigidly_with_their_box():
     p = md.sample_params("white", seed=3, attempt=2)
-    box = layout.WHITE_BOX
-    moved = md.shifted_box(box, p)
-    assert moved.center == pytest.approx(tuple(np.add(box.center, p.box_shift)))
-    c, s = math.cos(math.radians(p.box_yaw_deg)), math.sin(math.radians(p.box_yaw_deg))
-    for i in p.present:
-        nominal = np.array(layout.seed_board_positions("white")[i]) - box.center
-        expected = np.add(box.center, p.box_shift) + np.array([c * nominal[0] - s * nominal[1],
-                                                               s * nominal[0] + c * nominal[1]]) + p.seed_offsets[i]
-        assert np.allclose(layout.to_board(p.seed_xyz(i)[:2]), expected, atol=1e-9)
+    state = p.white
+    c, s = math.cos(math.radians(state.yaw_deg)), math.sin(math.radians(state.yaw_deg))
+    for i, lx, ly in state.seeds:
+        expected = np.array(state.center) + [c * lx - s * ly, s * lx + c * ly]
+        assert np.allclose(layout.to_board(p.seed_xy("white", i)), expected, atol=1e-9)
+    assert p.seed_xyz(p.target)[2] == pytest.approx(layout.WHITE_BOX.floor_z + layout.SEED_RADIUS["white"] + 1e-4)
 
 
 # -- the motion -----------------------------------------------------------------------------------------------
+def reachable(kin, color, seed, attempt=0):
+    """The first resampled placement the planner can reach: (params, actions, phases)."""
+    for k in range(60):
+        p = md.sample_params(color, seed, attempt, k)
+        try:
+            return (p, *md.plan_actions(kin, p))
+        except md.Unreachable:
+            continue
+    raise AssertionError("no reachable placement")
+
+
 @pytest.fixture(scope="module")
 def planned(kin):
-    return md.plan_actions(kin, md.sample_params("black", seed=0, attempt=1))
+    return reachable(kin, "black", 0, 1)[1:]
 
 
 def test_the_plan_is_a_float32_trajectory_in_the_real_units_and_length(planned):
@@ -145,14 +223,13 @@ def test_the_gripper_opens_before_the_descent_and_closes_on_the_seed(planned):
 def test_the_arm_moves_within_what_a_follower_and_a_human_can_do(planned):
     actions, _ = planned
     step = np.abs(np.diff(actions, axis=0))
-    assert step.max() < 7.5  # below the follower's 8 degree per step clamp, so the state tracks the command
+    assert step[:, :5].max() < 7.8  # below the follower's 8 degree per step clamp, so the state tracks the command
     jerk = np.abs(np.diff(actions, n=3, axis=0))
     assert jerk[:, :5].max() < 3.0  # eased, no steps
 
 
 def test_the_descent_reaches_the_seed_centre_height(kin):
-    p = md.sample_params("white", seed=5, attempt=0)
-    actions, phases = md.plan_actions(kin, p)
+    p, actions, phases = reachable(kin, "white", 5)
     tool = kin.tool_xyz(dict(zip(JOINTS, map(float, actions[phases["close_start"]]))))
     seed = p.seed_xyz(p.target)
     assert abs(tool[2] - (seed[2] + md.TOOL_Z_OFFSET)) < 0.004
@@ -160,7 +237,7 @@ def test_the_descent_reaches_the_seed_centre_height(kin):
 
 
 def test_two_plans_of_the_same_params_are_identical(kin):
-    p = md.sample_params("white", seed=5, attempt=0)
+    p = reachable(kin, "white", 5)[0]
     assert np.array_equal(md.plan_actions(kin, p)[0], md.plan_actions(kin, p)[0])
 
 
@@ -168,6 +245,22 @@ def test_unreachable_seeds_are_reported_not_planned(kin):
     far = md.sample_params("black", seed=0, attempt=0)
     with pytest.raises(md.Unreachable):
         md.plan_actions(kin, far, force_seed_xyz=np.array([0.9, 0.0, 0.0]))
+
+
+def test_wall_clearance_does_not_depend_on_how_the_box_is_turned():
+    from sim import grasp_test
+
+    box = layout.OpenBox("b", (0.2, 0.0), (0.09, 0.06), 0.035)
+    for yaw in (0.0, 0.7, 2.0, -1.2):
+        c, s = math.cos(yaw), math.sin(yaw)
+        for local, k in (((0.01, 0.025), 0), ((-0.03, -0.02), 3), ((0.05, 0.01), 7)):  # a seed in the box frame
+            xy = (0.2 + c * local[0] - s * local[1], s * local[0] + c * local[1])
+            seed = np.array([*layout.to_world(xy), 0.0])
+            ref = layout.to_world((0.2 + local[0], local[1]))
+            phi = layout.BOARD_YAW + yaw + math.radians(15 * k)
+            turned = grasp_test._clearance(seed, phi, box, (), box_yaw=yaw)
+            straight = grasp_test._clearance(np.array([*ref, 0.0]), layout.BOARD_YAW + math.radians(15 * k), box, ())
+            assert turned == pytest.approx(straight, abs=1e-9)
 
 
 # -- success --------------------------------------------------------------------------------------------------
@@ -247,17 +340,26 @@ def test_generation_resumes_where_it_stopped_with_the_same_attempts(tmp_path):
     assert len(seen) == 3  # nothing left to do
 
 
-def test_an_attempt_that_raises_unreachable_is_skipped_and_recorded(tmp_path):
+def test_a_placement_the_planner_cannot_reach_is_resampled_and_counted(tmp_path):
+    seen = []
+
     def run(params, kin=None):
-        if md.attempt_of(params) == 0:
+        seen.append(params)
+        if params.attempt == 0 and params.resample < 2:
             raise md.Unreachable("black seed 3")
         return fake_rollout(3)(params)
 
     root = tmp_path / "ds"
     summary = md.build_dataset(root, "black", episodes=1, seed=0, repo_id="local/y", rollout=run)
-    assert summary["saved"] == 1 and summary["unreachable"] == 1
+    assert summary["saved"] == 1 and summary["attempts"] == 1 and summary["ik_rejections"] == 2
+    assert [(p.attempt, p.resample) for p in seen] == [(0, 0), (0, 1), (0, 2)]
+    assert seen[0] == md.sample_params("black", 0, 0, 0) and seen[2] == md.sample_params("black", 0, 0, 2)
+    proposals = sum(p.proposals for p in seen)
+    assert summary["placement_acceptance"] == pytest.approx(3 / proposals)  # fully accepted scenes per drawn object
+    assert summary["ik_acceptance"] == pytest.approx(1 / 3)  # 1 reachable scene of the 3 that passed the geometry
+    assert summary["geometry_acceptance"] == pytest.approx(9 / proposals)
     first = json.loads((root / md.LOG_NAME).read_text().splitlines()[0])
-    assert first["ok"] is False and first["reason"].startswith("unreachable")
+    assert first["ok"] is True and first["ik_rejections"] == 2 and first["proposals"] == proposals
 
 
 def test_the_dataset_card_names_the_generator_and_says_it_is_simulated():

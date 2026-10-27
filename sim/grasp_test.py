@@ -73,15 +73,18 @@ def _wrap_deg(a: float) -> float:
     return (a + 180.0) % 360.0 - 180.0
 
 
-def _clearance(seed: np.ndarray, phi: float, box: layout.OpenBox, others=()) -> float:
+def _clearance(seed: np.ndarray, phi: float, box: layout.OpenBox, others=(), box_yaw: float = 0.0) -> float:
     """Smallest distance from the open jaws' footprint (a rectangle along the jaw axis `phi`) to the inner box walls
-    and to the other seeds (negative: the footprint overlaps one)."""
+    and to the other seeds (negative: the footprint overlaps one). `box_yaw` turns the box about its centre."""
     bx, by = layout.to_board(seed[:2])
     c, s = math.cos(phi - layout.BOARD_YAW), math.sin(phi - layout.BOARD_YAW)  # jaw axis in the board frame
     margin = np.inf
     for along, across in ((-FOOT_NEAR, -FOOT_SIDE), (-FOOT_NEAR, FOOT_SIDE), (FOOT_FAR, -FOOT_SIDE), (FOOT_FAR, FOOT_SIDE)):
         x, y = bx + c * along - s * across, by + s * along + c * across
-        margin = min(margin, box.inner_half[0] - abs(x - box.center[0]), box.inner_half[1] - abs(y - box.center[1]))
+        dx, dy = x - box.center[0], y - box.center[1]
+        cy, sy = math.cos(box_yaw), math.sin(box_yaw)
+        dx, dy = cy * dx + sy * dy, -sy * dx + cy * dy  # into the box frame
+        margin = min(margin, box.inner_half[0] - abs(dx), box.inner_half[1] - abs(dy))
     for other in others:
         ox, oy = layout.to_board(other[:2])
         a, b = c * (ox - bx) + s * (oy - by), -s * (ox - bx) + c * (oy - by)  # the other seed in the jaw frame
@@ -91,20 +94,22 @@ def _clearance(seed: np.ndarray, phi: float, box: layout.OpenBox, others=()) -> 
     return margin
 
 
-def grasp_pose(seed: np.ndarray, radius: float, box: layout.OpenBox, others=()) -> tuple[np.ndarray, float]:
+def grasp_pose(seed: np.ndarray, radius: float, box: layout.OpenBox, others=(), box_yaw: float = 0.0
+               ) -> tuple[np.ndarray, float]:
     """Tool target and wrist spin (deg) for a seed. The jaws open along the radial line from the shoulder (spin 0) or,
     when the open jaws would hit a box wall, along the nearest axis of the board that clears it (the recorded grasp of
     episode 0 does the same, with its wrist rolled 20 degrees), the moving jaw on the far side. The tool frame sits on
-    the fixed-jaw face, so the seed is one radius (plus `FACE_GAP`) beyond the tool along the jaw axis."""
+    the fixed-jaw face, so the seed is one radius (plus `FACE_GAP`) beyond the tool along the jaw axis. A box turned
+    by `box_yaw` (radians, board frame) has its own axes as candidates."""
     radial = math.atan2(seed[1], seed[0] - layout.BASE_PAN_AXIS[0])
-    candidates = [radial] + [layout.BOARD_YAW + math.radians(15 * k) for k in range(24)]
+    candidates = [radial] + [layout.BOARD_YAW + box_yaw + math.radians(15 * k) for k in range(24)]
     scored = []
     for phi in candidates:
         u = np.array([math.cos(phi), math.sin(phi)])
         tool_xy = np.asarray(seed[:2]) - u * (radius + FACE_GAP)
         radial_tool = math.degrees(math.atan2(tool_xy[1], tool_xy[0] - layout.BASE_PAN_AXIS[0]))
         spin = _wrap_deg(radial_tool - math.degrees(phi))  # the jaw axis follows the radial one minus the spin
-        scored.append((_clearance(seed, phi, box, others), spin, tool_xy))
+        scored.append((_clearance(seed, phi, box, others, box_yaw), spin, tool_xy))
     free = [c for c in scored if c[0] > WALL_MARGIN]
     margin, spin, tool_xy = min(free, key=lambda c: abs(c[1])) if free else max(scored, key=lambda c: c[0])
     return np.array([*tool_xy, seed[2] + TOOL_Z_OFFSET]), spin

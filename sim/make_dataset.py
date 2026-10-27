@@ -63,11 +63,14 @@ PARK_XY = (3.0, 3.0)  # seeds that are not part of an episode wait here, far out
 @dataclass(frozen=True)
 class Randomisation:
     """Every per-episode random bound of the generator, in one place."""
-    seeds_min: int = 2  # seeds present in the box of the colour (of the 4 of the twin)
+    seeds_min: int = 2  # seeds present in each box (of the 4 of the twin)
     seeds_max: int = 4
-    seed_jitter_m: float = 0.005  # each seed, x and y, board frame
-    box_shift_m: float = 0.01  # the colour's box (and its seeds), x and y, board frame
-    box_yaw_deg: float = 5.0  # ... turned about its centre
+    seed_wall_margin_m: float = 0.022  # seeds are uniform on the box floor, this far from the inner walls so the jaws fit
+    seed_min_gap_m: float = 0.025  # ... and at least this far from each other
+    view_margin_m: float = 0.015  # boxes and tray lie fully inside the top camera's footprint, this far from its edge
+    object_gap_m: float = 0.01  # free space between the two boxes and the tray
+    base_keepout_m: float = 0.10  # nothing closer than this to the shoulder pan axis (the arm's own footprint)
+    reach_max_m: float = 0.36  # box and tray centres within this of the pan axis (IK rejects the rest)
     light_scale: tuple[float, float] = (0.7, 1.3)  # multiplies the ceiling light and the headlight
     light_tilt_deg: float = 25.0  # ceiling light direction tilted off vertical by up to this
     colour_jitter: float = 0.08  # per-channel gain of the table/paper, the mat and the cardboard, (1 +- this)
@@ -82,14 +85,14 @@ class Randomisation:
     close_g: tuple[float, float] = (4.2, 5.0)  # commanded closing level, below the ~7 stall on the seed
     wobble_deg: float = 0.25  # amplitude of the slow hand wobble added to the arm joints outside the grasp
     # frames per phase (inclusive ranges), the rest of the 300 frames is the hold at the fold
-    idle: tuple[int, int] = (30, 55)
-    transit: tuple[int, int] = (38, 58)
-    descend: tuple[int, int] = (24, 36)
-    settle: tuple[int, int] = (8, 16)
-    close: tuple[int, int] = (10, 16)
+    idle: tuple[int, int] = (24, 45)
+    transit: tuple[int, int] = (36, 52)
+    descend: tuple[int, int] = (30, 42)
+    settle: tuple[int, int] = (20, 30)
+    close: tuple[int, int] = (10, 14)
     hold: tuple[int, int] = (8, 12)
-    lift: tuple[int, int] = (18, 28)
-    retract: tuple[int, int] = (42, 62)
+    lift: tuple[int, int] = (18, 26)
+    retract: tuple[int, int] = (40, 56)
     p_full_length: float = 0.65  # share of episodes that run to exactly the 300-frame cap
     rest_pan: tuple[float, float] = (3.0, 13.0)  # where the real episodes end folded (action space, degrees)
     rest_wrist_flex: tuple[float, float] = (-100.0, -80.0)
@@ -97,6 +100,7 @@ class Randomisation:
 
 
 RANDOM = Randomisation()
+MAX_PLACEMENT_DRAWS = 100_000
 
 
 class Unreachable(Exception):
@@ -104,15 +108,29 @@ class Unreachable(Exception):
 
 
 @dataclass(frozen=True)
+class Placement:
+    center: tuple[float, float]  # board frame (x' up in the top image, y' left)
+    yaw_deg: float
+
+
+@dataclass(frozen=True)
+class BoxState:
+    center: tuple[float, float]
+    yaw_deg: float
+    seeds: tuple[tuple[int, float, float], ...]  # (seed index, x, y) in the box frame, relative to its centre
+
+
+@dataclass(frozen=True)
 class EpisodeParams:
     color: str
     seed: int
     attempt: int
-    present: tuple[int, ...]
-    target: int
-    seed_offsets: tuple[tuple[float, float], ...]  # per seed index (board frame)
-    box_shift: tuple[float, float]
-    box_yaw_deg: float
+    resample: int  # 0, or how many unreachable placements were thrown away before this one
+    proposals: int  # object placements drawn for this one (3 are accepted)
+    black: BoxState
+    white: BoxState
+    tray: Placement
+    target: int  # seed index in the box of `color`
     light_scale: float
     light_tilt_deg: tuple[float, float]
     colour_gain: tuple[tuple[float, float, float], ...]  # table+paper, mat, cardboard
@@ -128,14 +146,25 @@ class EpisodeParams:
     rest_pose: tuple[float, float, float, float, float]  # arm joints at the fold (action space)
     wobble_seed: int
 
+    @property
+    def box(self) -> BoxState:
+        return self.white if self.color == "white" else self.black
+
+    @property
+    def present(self) -> tuple[int, ...]:
+        return tuple(i for i, _, _ in self.box.seeds)
+
+    def seed_xy(self, color: str, index: int) -> np.ndarray:
+        """World (base frame) xy of a seed: its box-frame spot turned and moved with the box."""
+        state = self.white if color == "white" else self.black
+        _, lx, ly = next(t for t in state.seeds if t[0] == index)
+        c, s = math.cos(math.radians(state.yaw_deg)), math.sin(math.radians(state.yaw_deg))
+        return np.array(layout.to_world((state.center[0] + c * lx - s * ly, state.center[1] + s * lx + c * ly)))
+
     def seed_xyz(self, index: int) -> np.ndarray:
-        """Where seed `index` rests, base frame: the box's rigid jitter applied to its nominal board position."""
-        box = box_of(self.color)
-        c, s = math.cos(math.radians(self.box_yaw_deg)), math.sin(math.radians(self.box_yaw_deg))
-        nx, ny = np.subtract(layout.seed_board_positions(self.color)[index], box.center)
-        x = box.center[0] + self.box_shift[0] + c * nx - s * ny + self.seed_offsets[index][0]
-        y = box.center[1] + self.box_shift[1] + s * nx + c * ny + self.seed_offsets[index][1]
-        return np.array([*layout.to_world((x, y)), box.floor_z + layout.SEED_RADIUS[self.color] + 1e-4])
+        """Where seed `index` of the colour being grasped rests, base frame."""
+        return np.array([*self.seed_xy(self.color, index),
+                         box_of(self.color).floor_z + layout.SEED_RADIUS[self.color] + 1e-4])
 
 
 def attempt_of(params: EpisodeParams) -> int:
@@ -146,27 +175,107 @@ def box_of(color: str) -> layout.OpenBox:
     return layout.WHITE_BOX if color == "white" else layout.BLACK_BOX
 
 
-def shifted_box(box: layout.OpenBox, p: EpisodeParams) -> layout.OpenBox:
-    """The box as the planner sees it: moved by the jitter, and slightly smaller so the wall clearance stays honest
-    although the planner's walls are axis-aligned while the real ones are turned by `box_yaw_deg`."""
-    slack = math.sin(math.radians(abs(p.box_yaw_deg)))
-    return replace(box, center=(box.center[0] + p.box_shift[0], box.center[1] + p.box_shift[1]),
-                   outer_half=(box.outer_half[0] - box.outer_half[1] * slack,
-                               box.outer_half[1] - box.outer_half[0] * slack))
+def placed_box(p: EpisodeParams) -> layout.OpenBox:
+    """The box being grasped from, where this episode put it (its yaw is `p.box.yaw_deg`)."""
+    return replace(box_of(p.color), center=p.box.center)
+
+
+# -- placement geometry ---------------------------------------------------------------------------------------
+@functools.lru_cache(maxsize=1)
+def view_polygon() -> tuple[tuple[float, float], ...]:
+    """The top camera's footprint on the mat plane (base-frame xy, counter-clockwise): where the policy can see."""
+    pos = np.array(layout.TOP_CAMERA_POS)
+    xa, ya = np.array(layout.TOP_CAMERA_XYAXES[:3]), np.array(layout.TOP_CAMERA_XYAXES[3:])
+    za = np.cross(xa, ya)
+    t = math.tan(math.radians(layout.TOP_CAMERA_FOVY / 2))
+    pts = []
+    for u, v in ((-1, -1), (1, -1), (1, 1), (-1, 1)):
+        d = xa * u * t * IMAGE_SHAPE[1] / IMAGE_SHAPE[0] + ya * v * t - za
+        pts.append(tuple(map(float, (pos + (layout.MAT_TOP_Z - pos[2]) / d[2] * d)[:2])))
+    area = sum(a[0] * b[1] - b[0] * a[1] for a, b in zip(pts, pts[1:] + pts[:1]))
+    return tuple(pts if area > 0 else pts[::-1])
+
+
+def footprint(center, yaw_deg: float, half) -> np.ndarray:
+    """Corners (4, 2) of a rectangle of half extents `half` turned by `yaw_deg` about `center`."""
+    c, s = math.cos(math.radians(yaw_deg)), math.sin(math.radians(yaw_deg))
+    return np.array([(center[0] + c * sx * half[0] - s * sy * half[1], center[1] + s * sx * half[0] + c * sy * half[1])
+                     for sx, sy in ((-1, -1), (1, -1), (1, 1), (-1, 1))])
+
+
+def overlap(a, b, gap: float) -> bool:
+    """Two (center, yaw_deg, half) rectangles are closer than `gap` (separating-axis test, `gap` split between them)."""
+    ra, rb = footprint(a[0], a[1], np.add(a[2], gap / 2)), footprint(b[0], b[1], np.add(b[2], gap / 2))
+    for rect in (ra, rb):
+        for i in range(2):
+            edge = rect[i + 1] - rect[i]
+            axis = np.array([-edge[1], edge[0]]) / np.linalg.norm(edge)
+            pa, pb = ra @ axis, rb @ axis
+            if pa.max() <= pb.min() or pb.max() <= pa.min():
+                return False
+    return True
+
+
+def _inside_view(point_world, margin: float) -> bool:
+    poly = view_polygon()
+    for i in range(len(poly)):
+        (x0, y0), (x1, y1) = poly[i], poly[(i + 1) % len(poly)]
+        ex, ey = x1 - x0, y1 - y0
+        if (ex * (point_world[1] - y0) - ey * (point_world[0] - x0)) / math.hypot(ex, ey) < margin:
+            return False
+    return True
+
+
+def _place(rng, half, others, r: Randomisation) -> tuple[Placement, int]:
+    """Draw (centre, yaw) uniformly until the rectangle is in view, within reach, clear of the arm and of `others`;
+    returns it with the number of draws it took."""
+    board = np.array([layout.to_board(pt) for pt in view_polygon()])
+    lo, hi = board.min(axis=0), board.max(axis=0)
+    pan = np.array([layout.BASE_PAN_AXIS[0], 0.0])
+    for draws in range(1, MAX_PLACEMENT_DRAWS + 1):
+        center, yaw = rng.uniform(lo, hi), float(rng.uniform(-180, 180))
+        if np.linalg.norm(np.array(layout.to_world(center)) - pan) > r.reach_max_m:
+            continue
+        corners = [np.array(layout.to_world(c)) for c in footprint(center, yaw, half)]
+        if not all(_inside_view(c, r.view_margin_m) and np.linalg.norm(c - pan) >= r.base_keepout_m for c in corners):
+            continue
+        if any(overlap((center, yaw, half), o, r.object_gap_m) for o in others):
+            continue
+        return Placement((float(center[0]), float(center[1])), yaw), draws
+    raise RuntimeError("no free placement for the object")
+
+
+def _seeds_in(rng, box: layout.OpenBox, r: Randomisation) -> tuple[tuple[int, float, float], ...]:
+    n = int(rng.integers(r.seeds_min, r.seeds_max + 1))
+    idx = sorted(int(i) for i in rng.choice(layout.SEEDS_PER_BOX, n, replace=False))
+    hx, hy = box.inner_half[0] - r.seed_wall_margin_m, box.inner_half[1] - r.seed_wall_margin_m
+    spots: list[tuple[float, float]] = []
+    while len(spots) < n:
+        spot = (float(rng.uniform(-hx, hx)), float(rng.uniform(-hy, hy)))
+        if all(math.hypot(spot[0] - o[0], spot[1] - o[1]) >= r.seed_min_gap_m for o in spots):
+            spots.append(spot)
+    return tuple((i, *spot) for i, spot in zip(idx, spots))
 
 
 def _uni(rng, bound, size=None):
     return rng.uniform(-bound, bound, size)
 
 
-def sample_params(color: str, seed: int, attempt: int, r: Randomisation = RANDOM) -> EpisodeParams:
-    """Draw every random quantity of one candidate episode. Pure function of its arguments."""
-    rng = np.random.default_rng([seed, attempt, 1 if color == "white" else 0])
-    n = int(rng.integers(r.seeds_min, r.seeds_max + 1))
-    present = tuple(sorted(int(i) for i in rng.choice(layout.SEEDS_PER_BOX, n, replace=False)))
+def sample_params(color: str, seed: int, attempt: int, resample: int = 0, r: Randomisation = RANDOM) -> EpisodeParams:
+    """Draw every random quantity of one candidate episode. Pure function of its arguments; `resample` counts the
+    placements the planner could not reach (the generator asks for the next one)."""
+    rng = np.random.default_rng([seed, attempt, 1 if color == "white" else 0, resample])
+    tray, d1 = _place(rng, layout.TRAY_OUTER_HALF, [], r)
+    taken = [(tray.center, tray.yaw_deg, layout.TRAY_OUTER_HALF)]
+    placed, draws = {}, d1
+    for name, box in (("black", layout.BLACK_BOX), ("white", layout.WHITE_BOX)):
+        place, d = _place(rng, box.outer_half, taken, r)
+        taken.append((place.center, place.yaw_deg, box.outer_half))
+        placed[name] = BoxState(place.center, place.yaw_deg, _seeds_in(rng, box, r))
+        draws += d
+    present = [i for i, _, _ in placed[color].seeds]
     target = int(rng.choice(present))
     theta, rad = rng.uniform(0, 2 * math.pi), r.light_tilt_deg * math.sqrt(rng.uniform())
-    names = list(JOINTS)
     phases = tuple((k, int(rng.integers(getattr(r, k)[0], getattr(r, k)[1] + 1)))
                    for k in ("idle", "transit", "descend", "settle", "close", "hold", "lift", "retract"))
     core = sum(n_ for _, n_ in phases)
@@ -174,9 +283,8 @@ def sample_params(color: str, seed: int, attempt: int, r: Randomisation = RANDOM
     total = max(total, core + 15)
     aim = np.clip(rng.normal(0, r.aim_error_m, 2), -2 * r.aim_error_m, 2 * r.aim_error_m)
     return EpisodeParams(
-        color=color, seed=seed, attempt=attempt, present=present, target=target,
-        seed_offsets=tuple(tuple(map(float, _uni(rng, r.seed_jitter_m, 2))) for _ in range(layout.SEEDS_PER_BOX)),
-        box_shift=tuple(map(float, _uni(rng, r.box_shift_m, 2))), box_yaw_deg=float(_uni(rng, r.box_yaw_deg)),
+        color=color, seed=seed, attempt=attempt, resample=resample, proposals=draws,
+        black=placed["black"], white=placed["white"], tray=tray, target=target,
         light_scale=float(rng.uniform(*r.light_scale)),
         light_tilt_deg=(float(rad * math.cos(theta)), float(rad * math.sin(theta))),
         colour_gain=tuple(tuple(map(float, _uni(rng, r.colour_jitter, 3))) for _ in range(3)),
@@ -184,7 +292,7 @@ def sample_params(color: str, seed: int, attempt: int, r: Randomisation = RANDOM
         top_cam_rot_deg=tuple(map(float, _uni(rng, r.cam_rot_deg, 3))),
         wrist_cam_shift=tuple(map(float, _uni(rng, r.wrist_cam_shift_m, 3))),
         aim_error=(float(aim[0]), float(aim[1])),
-        start_noise_deg=tuple(float(_uni(rng, r.start_noise_deg[j])) for j in names),
+        start_noise_deg=tuple(float(_uni(rng, r.start_noise_deg[j])) for j in JOINTS),
         open_g=float(rng.uniform(*r.open_g)), close_g=float(rng.uniform(*r.close_g)),
         phases=phases, total_frames=min(total, MAX_FRAMES),
         rest_pose=(float(rng.uniform(*r.rest_pan)), float(rng.uniform(-103.6, -102.6)),
@@ -222,22 +330,31 @@ def apply_scene(robot: SimRobot, p: EpisodeParams) -> None:
     import mujoco
 
     m, d = robot._model, robot._data
-    box = box_of(p.color)
-    yaw, shift = math.radians(p.box_yaw_deg), np.asarray(p.box_shift)
-    c, s = math.cos(yaw), math.sin(yaw)
-    for g in range(m.ngeom):  # the box's five plates are geoms of the board body, in the board frame
-        if (m.geom(g).name or "").startswith(box.name + "_"):
-            nx, ny = m.geom_pos[g, 0] - box.center[0], m.geom_pos[g, 1] - box.center[1]
-            m.geom_pos[g, :2] = (box.center[0] + shift[0] + c * nx - s * ny, box.center[1] + shift[1] + s * nx + c * ny)
-            m.geom_quat[g] = _rotate_z(m.geom_quat[g], p.box_yaw_deg)
-    for i in range(layout.SEEDS_PER_BOX):
-        joint = m.joint(f"seed_{p.color}_{i}_free")
-        adr, dof = joint.qposadr[0], joint.dofadr[0]
-        if i in p.present:
-            d.qpos[adr:adr + 3] = p.seed_xyz(i)
-        else:
-            d.qpos[adr:adr + 3] = (PARK_XY[0] + 0.1 * i, PARK_XY[1], layout.TABLE_Z + layout.SEED_RADIUS[p.color])
-        d.qvel[dof:dof + 6] = 0
+
+    def move(prefix: str, old_center, center, yaw_deg: float) -> None:
+        """Turn every geom of the object about its old centre, then put that centre at `center` (board frame)."""
+        c, s = math.cos(math.radians(yaw_deg)), math.sin(math.radians(yaw_deg))
+        for g in range(m.ngeom):
+            if (m.geom(g).name or "").startswith(prefix):
+                nx, ny = m.geom_pos[g, 0] - old_center[0], m.geom_pos[g, 1] - old_center[1]
+                m.geom_pos[g, :2] = (center[0] + c * nx - s * ny, center[1] + s * nx + c * ny)
+                m.geom_quat[g] = _rotate_z(m.geom_quat[g], yaw_deg)
+                m.geom_sameframe[g] = 0  # the compiler flagged identity-quat geoms: without this the new quat is ignored
+
+    move("tray_", layout.TRAY_CENTER, p.tray.center, p.tray.yaw_deg)
+    for color, state in (("black", p.black), ("white", p.white)):
+        box = box_of(color)
+        move(box.name + "_", box.center, state.center, state.yaw_deg)
+        present = {i for i, _, _ in state.seeds}
+        for i in range(layout.SEEDS_PER_BOX):
+            joint = m.joint(f"seed_{color}_{i}_free")
+            adr, dof = joint.qposadr[0], joint.dofadr[0]
+            if i in present:
+                d.qpos[adr:adr + 3] = (*p.seed_xy(color, i), box.floor_z + layout.SEED_RADIUS[color] + 1e-4)
+            else:
+                d.qpos[adr:adr + 3] = (PARK_XY[0] + 0.1 * i, PARK_XY[1] + (color == "white"),
+                                       layout.TABLE_Z + layout.SEED_RADIUS[color])
+            d.qvel[dof:dof + 6] = 0
     # light: one ceiling lamp plus the headlight, brighter or dimmer, leaning a little
     scale = p.light_scale
     lid = m.light("ceiling").id
@@ -293,17 +410,31 @@ def _check_limits(sol: dict[str, float], what: str) -> None:
             raise Unreachable(f"{what}: {j} {sol[j]:.0f} deg is outside [{lo:.0f}, {hi:.0f}]")
 
 
+MAX_PITCH_DEG = 15.0  # the jaws must open about horizontally: a tilted wrist puts the seed outside the pads
+
+
 def _solve(kin: Kinematics, xyz, seed: dict, spin: float, what: str) -> dict[str, float]:
     try:
-        sol = kin.solve(*map(float, xyz), seed=seed, spin_deg=spin)
+        sol, pitch = kin.solve_with_pitch(*map(float, xyz), seed=seed, spin_deg=spin)
     except IKError as exc:
         raise Unreachable(f"{what}: {exc}") from exc
+    if pitch is None or pitch > MAX_PITCH_DEG:
+        raise Unreachable(f"{what}: only a tilted wrist reaches it (pitch {pitch})")
     _check_limits(sol, what)
     return sol
 
 
 def _vec(joints: dict[str, float]) -> np.ndarray:
     return np.array([joints.get(j, 0.0) for j in JOINTS], dtype=float)  # IK solutions carry no gripper
+
+
+MAX_STEP_DEG = 7.2  # per-frame joint step the follower can track (its clamp is 8)
+
+
+def _frames_for(frames: int, delta: np.ndarray) -> int:
+    """`frames`, or more if a min-jerk move of `delta` (peak speed up to 2.3x the mean with the speed skew) would
+    exceed the follower's per-step clamp."""
+    return max(frames, math.ceil(2.3 * float(np.abs(delta[:5]).max()) / MAX_STEP_DEG))
 
 
 def _wobble(rng_seed: int, n: int, amp: float) -> np.ndarray:
@@ -321,13 +452,13 @@ def plan_actions(kin: Kinematics, p: EpisodeParams, force_seed_xyz=None) -> tupl
     """The commanded joint targets of one episode, (frames, 6) float32, plus the first frame of every phase."""
     ph = dict(p.phases)
     skew = np.random.default_rng(p.wobble_seed ^ 0x5EED).uniform(0.85, 1.2, 4)
-    box = shifted_box(box_of(p.color), p)
+    box = placed_box(p)
     seed_true = np.asarray(force_seed_xyz if force_seed_xyz is not None else p.seed_xyz(p.target), dtype=float)
     others = [p.seed_xyz(i) for i in p.present if i != p.target]
     aimed = seed_true + np.array([*p.aim_error, 0.0])  # the operator sees the seed a millimetre or two off
     if np.linalg.norm(aimed[:2] - [layout.BASE_PAN_AXIS[0], 0.0]) > 0.40:
         raise Unreachable(f"seed at {aimed[0]:.2f}, {aimed[1]:.2f} is beyond the arm's reach")
-    grasp, spin = grasp_test.grasp_pose(aimed, layout.SEED_RADIUS[p.color], box, others)
+    grasp, spin = grasp_test.grasp_pose(aimed, layout.SEED_RADIUS[p.color], box, others, math.radians(p.box.yaw_deg))
     act_start = json.loads((CONFIG_DIR / "poses.json").read_text())["act_start"]
     q_start = np.array([act_start[j] for j in JOINTS]) + np.array(p.start_noise_deg)
     start_dict = dict(zip(JOINTS, q_start))
@@ -345,7 +476,7 @@ def plan_actions(kin: Kinematics, p: EpisodeParams, force_seed_xyz=None) -> tupl
     g_open = p.open_g
     add("idle", np.tile(q_start, (ph["idle"], 1)))
     marks["open"] = frame + int(0.3 * ph["transit"])  # the gripper starts opening during the transit
-    n = ph["transit"]
+    n = _frames_for(ph["transit"], q_above - q_start)
     s = _ease(n, skew[0])
     rows = q_start + (q_above - q_start) * s[:, None]
     ramp = _min_jerk(np.clip((np.arange(1, n + 1) / n - 0.3) / 0.55, 0, 1))
@@ -379,12 +510,12 @@ def plan_actions(kin: Kinematics, p: EpisodeParams, force_seed_xyz=None) -> tupl
     add("lift_start", rows)
     q_lift = rows[-1].copy()
     q_rest = np.array([*p.rest_pose, p.close_g])
-    n = ph["retract"]
+    n = _frames_for(ph["retract"], q_rest - q_lift)
     s = _ease(n, skew[3])
     add("retract_start", q_lift + (q_rest - q_lift) * s[:, None])
     rest_frames = p.total_frames - frame
-    if rest_frames < 0:
-        raise ValueError(f"phases need {frame} frames, the episode has {p.total_frames}")
+    if rest_frames < 0:  # a long swing needed more frames than the episode has: another placement, please
+        raise Unreachable(f"{what}: the motion needs {frame} frames, the episode has {p.total_frames}")
     marks["rest_start"] = frame
     segments.append(np.tile(q_rest, (rest_frames, 1)))
     actions = np.concatenate(segments)
@@ -474,11 +605,18 @@ def _open_dataset(root: Path, repo_id: str):
 
 
 def summarise(log: list[dict]) -> dict:
+    """Totals over the whole log: `success_rate` is kept episodes per attempt (every attempt is simulated, the
+    placements the planner could not reach were thrown away before); `placement_acceptance` is the share of drawn object
+    placements (3 per scene) that ended up in a scene the planner could reach; `geometry_acceptance` counts the
+    scenes that passed the geometric constraints and `ik_acceptance` the share of those the planner could grasp in."""
     saved = sum(1 for r in log if r["ok"])
-    unreachable = sum(1 for r in log if r["reason"].startswith("unreachable"))
-    simulated = len(log) - unreachable
-    return {"saved": saved, "attempts": len(log), "failed": len(log) - saved - unreachable, "unreachable": unreachable,
-            "simulated": simulated, "success_rate": saved / simulated if simulated else 0.0}
+    draws = sum(r.get("proposals", 0) for r in log)
+    ik = sum(r.get("ik_rejections", 0) for r in log)
+    return {"saved": saved, "attempts": len(log), "failed": len(log) - saved, "ik_rejections": ik,
+            "success_rate": saved / len(log) if log else 0.0,
+            "placement_acceptance": 3 * len(log) / draws if draws else 0.0,
+            "geometry_acceptance": 3 * (len(log) + ik) / draws if draws else 0.0,  # in view, in reach, no overlap
+            "ik_acceptance": len(log) / (len(log) + ik) if log else 0.0}  # ... and the planner can grasp the seed
 
 
 def build_dataset(root: str | Path, color: str, episodes: int, seed: int, *, repo_id: str | None = None,
@@ -486,8 +624,9 @@ def build_dataset(root: str | Path, color: str, episodes: int, seed: int, *, rep
                   progress: Callable[[str], None] = lambda msg: None) -> dict:
     """Record successful scripted episodes until the dataset holds `episodes`; resumes an existing one.
 
-    Attempts are numbered from 0 and drawn from `sample_params(color, seed, attempt)`; every attempt (kept, failed
-    or unreachable) is one line of `<root>/sim_generation.jsonl`."""
+    Attempts are numbered from 0 and drawn from `sample_params(color, seed, attempt, resample)`; a placement the
+    planner cannot reach (`Unreachable`) is replaced by the next `resample` of the same attempt. Every attempt (kept
+    or failed) is one line of `<root>/sim_generation.jsonl`."""
     root = Path(root)
     repo_id = repo_id or f"{HF_USER}/smartseed-sim-grasp-{color}"
     ds = _open_dataset(root, repo_id)
@@ -502,39 +641,45 @@ def build_dataset(root: str | Path, color: str, episodes: int, seed: int, *, rep
     result = {"resumed_from": start}
     try:
         while ds.meta.total_episodes < episodes:
-            attempt = len(log)
-            params = sample_params(color, seed, attempt)
+            attempt, t0, draws, rejected = len(log), time.time(), 0, 0
+            while True:
+                params = sample_params(color, seed, attempt, rejected)
+                draws += params.proposals
+                try:
+                    run = rollout(params) if kin is None else rollout(params, kin)
+                    break
+                except Unreachable:
+                    rejected += 1
+                    if rejected > 200:
+                        raise RuntimeError(f"attempt {attempt}: 200 placements in a row were unreachable")
             record = {"attempt": attempt, "ok": False, "reason": "", "color": color, "seed": seed,
-                      "target": params.target, "present": list(params.present), "episode_index": None}
-            t0 = time.time()
-            try:
-                run = rollout(params) if kin is None else rollout(params, kin)
-            except Unreachable as exc:
-                record["reason"] = f"unreachable: {exc}"
+                      "target": params.target, "present": list(params.present), "episode_index": None,
+                      "proposals": draws, "ik_rejections": rejected}
+            record |= {k: run.info[k] for k in ("lift_mm", "peak_lift_mm") if k in run.info}
+            if run.success:
+                for t in range(len(run.actions)):
+                    ds.add_frame({"action": run.actions[t], "observation.state": run.states[t],
+                                  "observation.images.top": run.top[t], "observation.images.wrist": run.wrist[t],
+                                  "task": TASK})
+                ds.save_episode()
+                record |= {"ok": True, "reason": "kept", "episode_index": ds.meta.total_episodes - 1,
+                           "frames": len(run.actions)}
             else:
-                record |= {k: run.info[k] for k in ("lift_mm", "peak_lift_mm") if k in run.info}
-                if run.success:
-                    for t in range(len(run.actions)):
-                        ds.add_frame({"action": run.actions[t], "observation.state": run.states[t],
-                                      "observation.images.top": run.top[t], "observation.images.wrist": run.wrist[t],
-                                      "task": TASK})
-                    ds.save_episode()
-                    record |= {"ok": True, "reason": "kept", "episode_index": ds.meta.total_episodes - 1,
-                               "frames": len(run.actions)}
-                else:
-                    record["reason"] = f"failed: lift {run.info.get('lift_mm', 0):.0f} mm, " \
-                                       f"seed {run.info.get('seed_to_tool_mm', float('nan')):.0f} mm from the tool"
+                record["reason"] = (f"failed: lift {run.info.get('lift_mm', 0):.0f} mm, seed "
+                                    f"{run.info.get('seed_to_tool_mm', float('nan')):.0f} mm from the tool")
             _append_log(root, record), log.append(record)
-            progress(f"attempt {attempt}: {record['reason'] or 'kept'} ({time.time() - t0:.0f} s) "
-                     f"{ds.meta.total_episodes}/{episodes}")
+            progress(f"attempt {attempt}: {record['reason']} ({rejected} unreachable placements, "
+                     f"{time.time() - t0:.0f} s) {ds.meta.total_episodes}/{episodes}")
     finally:
         ds.finalize()
     return result | summarise(log)
 
 
 def generator_commit() -> str:
+    """Last commit that touched the twin or the robot code the generator drives (docs-only commits do not count)."""
     try:
-        return subprocess.run(["git", "-C", str(ROOT), "rev-parse", "--short", "HEAD"], capture_output=True, text=True,
+        return subprocess.run(["git", "-C", str(ROOT), "log", "-1", "--format=%h", "--", "sim", "backend/smartseed_robot"],
+                              capture_output=True, text=True,
                               check=True).stdout.strip()
     except Exception:
         return "unknown"
@@ -586,9 +731,9 @@ jaws at the end are kept.
 
 | what | bound |
 |---|---|
-| seeds in the box / which one is grasped | {r.seeds_min}-{r.seeds_max} of 4 / one of them (unreachable ones are skipped and logged) |
-| seed position | +-{1000 * r.seed_jitter_m:.0f} mm in x and y |
-| box pose | +-{100 * r.box_shift_m:.0f} cm shift, +-{r.box_yaw_deg:.0f} deg turn, seeds move with it |
+| seeds per box / which one is grasped | {r.seeds_min}-{r.seeds_max} of 4 / one of the colour's seeds |
+| seed position | uniform on the box floor, {1000 * r.seed_wall_margin_m:.0f} mm off the inner walls, at least {1000 * r.seed_min_gap_m:.0f} mm apart |
+| box and tray pose | the two boxes and the 3x4 tray anywhere on the table the top camera sees (uniform position, any yaw, no overlap, {1000 * r.view_margin_m:.0f} mm inside the view, centre within {100 * r.reach_max_m:.0f} cm of the arm, {100 * r.base_keepout_m:.0f} cm clear of its base); placements the planner cannot reach are redrawn |
 | light | intensity x{r.light_scale[0]}-{r.light_scale[1]}, direction tilted up to {r.light_tilt_deg:.0f} deg |
 | colours | +-{100 * r.colour_jitter:.0f} % per channel on table, mat and cardboard (the twin has no textures) |
 | top camera | +-{1000 * r.top_cam_shift_m:.0f} mm, +-{r.cam_rot_deg:.0f} deg |
