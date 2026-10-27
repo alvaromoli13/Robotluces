@@ -312,8 +312,10 @@ All under <https://huggingface.co/RafaelJaime>, tagged `BraboRobots`. Collection
 |---|---|---|
 | [`smartseed-grasp-d1-clean`](https://huggingface.co/datasets/RafaelJaime/smartseed-grasp-d1-clean) | 96 × 10 s | `smartseed-grasp-d_20261025_002427` without episodes 1, 15, 26, 34 |
 | [`smartseed-grasp-d2-clean`](https://huggingface.co/datasets/RafaelJaime/smartseed-grasp-d2-clean) | 91 × 10 s | `smartseed-grasp-d_20261025_010641` without episodes 0-4, 18, 66, 84, 96 |
-| [`smartseed-sim-grasp-black`](https://huggingface.co/datasets/RafaelJaime/smartseed-sim-grasp-black) | 100 × ~9.8 s (29,497 frames) | **simulated**: scripted demos in the MuJoCo twin, black seeds, randomised scenes, same schema as `d1-clean` (`sim/make_dataset.py`) |
-| [`smartseed-sim-grasp-white`](https://huggingface.co/datasets/RafaelJaime/smartseed-sim-grasp-white) | 100 × ~9.8 s (29,502 frames) | **simulated**: same for white seeds, same schema as `d2-clean` |
+| [`smartseed-sim-grasp-black-v2`](https://huggingface.co/datasets/RafaelJaime/smartseed-sim-grasp-black-v2) | 100 × ~9.8 s (29,503 frames) | **simulated**, collision-valid (no arm geom more than 1 mm inside a wall): scripted demos in the MuJoCo twin, black seeds, randomised scenes, same schema as `d1-clean` (`sim/make_dataset.py`). Use this one |
+| [`smartseed-sim-grasp-black`](https://huggingface.co/datasets/RafaelJaime/smartseed-sim-grasp-black) (v1) | 100 × ~9.8 s | **superseded by v2**: the gripper passes through box walls in 24 % of the episodes; do not train on it |
+| [`smartseed-sim-grasp-white-v2`](https://huggingface.co/datasets/RafaelJaime/smartseed-sim-grasp-white-v2) | 100 × ~9.8 s (29,508 frames) | **simulated**, collision-valid: same for white seeds, same schema as `d2-clean` |
+| [`smartseed-sim-grasp-white`](https://huggingface.co/datasets/RafaelJaime/smartseed-sim-grasp-white) (v1) | 100 × ~9.8 s | **superseded by v2**: wall pass-through in 37 % of the episodes; do not train on it |
 
 ## Run
 

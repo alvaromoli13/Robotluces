@@ -996,6 +996,28 @@ def make_contact_sheet(roots: dict[str, Path], out: Path, episodes: int = 3) -> 
     imageio.imwrite(str(out), np.vstack(rows))
 
 
+def export_videos(root: Path, repo_id: str, episodes: int, out_dir: Path, prefix: str) -> list[Path]:
+    """mp4 (30 fps) of the first `episodes` episodes of a local dataset: top camera left, wrist camera right."""
+    import imageio.v2 as imageio
+    from lerobot.datasets.lerobot_dataset import LeRobotDataset
+
+    def hwc(t):
+        return (t.permute(1, 2, 0).numpy() * 255).round().astype(np.uint8)
+
+    ds = LeRobotDataset(repo_id, root=root)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    paths = []
+    for ep in range(min(episodes, ds.meta.total_episodes)):
+        lo, hi = int(ds.meta.episodes["dataset_from_index"][ep]), int(ds.meta.episodes["dataset_to_index"][ep])
+        path = out_dir / f"{prefix}_ep{ep:02d}.mp4"
+        with imageio.get_writer(str(path), fps=FPS, codec="libx264", macro_block_size=1) as w:
+            for i in range(lo, hi):
+                item = ds[i]
+                w.append_data(np.hstack([hwc(item["observation.images.top"]), hwc(item["observation.images.wrist"])]))
+        paths.append(path)
+    return paths
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--color", choices=["black", "white"], default=None)
@@ -1004,12 +1026,20 @@ def main() -> None:
     ap.add_argument("--out", default=None, help="dataset folder (default sim/out/datasets/smartseed-sim-grasp-<colour>-v2)")
     ap.add_argument("--coverage", default=None, metavar="PNG", help="only draw the placement coverage plot of the "
                     "black and white datasets under sim/out/datasets (from their logs) and exit")
+    ap.add_argument("--videos", default=None, metavar="DIR", help="only write DIR/<colour>_epNN.mp4 (top | wrist) of the "
+                    "first 5 episodes of the black and white datasets under sim/out/datasets and exit")
     ap.add_argument("--push-repo", default=None, help="Hub dataset repo to upload to when done (existing HF login)")
     args = ap.parse_args()
     if args.coverage:
         base = ROOT / "sim" / "out" / "datasets"
         coverage_plot({c: logged_scenes(_read_log(base / dataset_name(c))) for c in ("black", "white")},
                       Path(args.coverage))
+        return
+    if args.videos:
+        base = ROOT / "sim" / "out" / "datasets"
+        for c in ("black", "white"):
+            for path in export_videos(base / dataset_name(c), f"{HF_USER}/{dataset_name(c)}", 5, Path(args.videos), c):
+                print(path)
         return
     if not args.color:
         ap.error("--color is required")

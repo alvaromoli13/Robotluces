@@ -40,11 +40,27 @@ Strict TDD (session config). Runner: `cd backend && uv run pytest` (via `~/.clau
       https://huggingface.co/datasets/RafaelJaime/smartseed-sim-grasp-black and `-white` (public, BraboRobots, in the HF
       collection); features identical to real d1/d2 `info.json` (checked from the Hub), `docs/media/sim-dataset-preview.png`,
       `docs/media/sim-dataset-coverage.png`. Commits: 5e748db, 5472152 and the docs commit after it.
-- [ ] T4b Collision-correct demos (reopens T4): the user saw the jaw pass through a seed-box wall (episode 0). Cause:
+- [x] T4b Collision-correct demos (reopens T4): the user saw the jaw pass through a seed-box wall (episode 0). Cause:
       the moving jaw hull has `contype="0"` and the pads only touch seeds, and the planner never checks walls. Make every
       jaw geom collide with box/tray walls (not the floors), make the planner choose a jaw yaw/approach that clears walls
       or redraw the scene, and discard any episode in which an arm geom penetrates a wall; regenerate both datasets as
       `-v2` Hub repos (route: delegated)
+      Evidence: RED first (ImportError on `sim.collision`; 7 physics tests failed on the old scene; a pose with the tool
+      inside a moved wall gave no contact). Found on the way: MuJoCo's static broad phase ignores runtime `geom_pos`
+      edits, so in v1 moved boxes/tray had no wall collisions at all; boxes and tray are now bodies moved via `body_pos`.
+      Walls get their own bit (`wall` class, conaffinity 19), jaw hull contype 16, pads 24: every jaw geom stops at walls
+      (30-40 N push, 0.4 mm penetration), floors unchanged. `sim/collision.py` monitors arm-wall contacts per physics step
+      (valid = max penetration <= 1 mm and force <= 2 N). Planner: 25 jaw axes, swept forward-kinematics check of the whole
+      motion (5 mm in the grasp, 2 cm in transit), `NoFit` redraws the scene. `sim/audit_walls.py` on the v1 datasets: 24 % of
+      the black and 37 % of the white kept episodes have an arm geom > 1 mm in a wall (max 22 / 25 mm; 4 % / 9 % in the grasp, the
+      rest the folded arm or the transit); the v2 planner redraws 58 of those 61 scenes. v2: black 114 attempts / 100 kept,
+      white 112 / 100; 0 collision rejections, 543 / 666 placement rejections (204 / 269 no fit); audit of the 200 kept: 0 overlaps.
+      Hub: https://huggingface.co/datasets/RafaelJaime/smartseed-sim-grasp-black-v2 and `-white-v2` (public, BraboRobots, features
+      identical to real `info.json`, 100 episodes, 29,503 / 29,508 frames; reloaded from the Hub); the HF collection now lists v2
+      and not v1 (v1 repos kept, superseded). `grasp_test.py`: seed 2 20/20 both colours and every other seed unchanged except
+      black seed 0 20/20 -> 0/20 (13 mm from a wall: v1 flew the jaw through it). `uv run pytest` 380 passed (was 350).
+      Media: `docs/media/sim-wall-check.png`, regenerated `sim-dataset-preview.png`, `sim-dataset-coverage.png`; mp4 of 5 episodes per
+      colour in `sim/out/v2_videos/` (gitignored).
 - [x] T4c Brev hardening after the 2026-10-27 failed run (box idle ~2.5 h): fix root-owned `~/.cache` on hyperstack,
       watcher deletes the box on setup failure or stalled training, check the Brev session before delete (route: inline)
       Evidence: `scripts/brev/launch_two.sh` (chown cache before the token, upload check, tmux check), `train_two.sh`
@@ -53,10 +69,11 @@ Strict TDD (session config). Runner: `cd backend && uv run pytest` (via `~/.clau
       logs to ~/brev-logs). Watcher paths exercised with fake ssh/brev: setup failed, logged out, run failed, no step,
       stalled -> all delete except logged out (exit 3). shellcheck clean on the three scripts.
 - [ ] T5 Train ACT on sim demos + `sim/eval.py` success metric (seed lifted > 3 cm, lands in target hole) (route: delegated)
-      To train on Brev (do not start it from this task): upload with `ssh <host> 'cat > ~/train_pair.sh' < scripts/brev/train_pair.sh`
-      (not scp), then per colour `ssh <host> 'chmod +x ~/train_pair.sh && tmux new -d -s train "~/train_pair.sh RafaelJaime/smartseed-sim-grasp-black sim-black"'`
-      (and `.../smartseed-sim-grasp-white sim-white`); it trains `act-sim-black-c100` / `-c50` (40k steps, batch 32, one per GPU)
-      and pushes them under `RafaelJaime`; check `tmux ls; tail -5 ~/setup.log`, then `scripts/brev/watch_one.sh <host> RafaelJaime/act-sim-black-c100 40000`.
+      To train on Brev (do not start it from this task), use the `-v2` datasets (v1 had wall pass-through) and
+      `scripts/brev/train_two.sh` on a 2-GPU box, one ACT (chunk 100, 40k steps, batch 32) per GPU: `scripts/brev/launch_two.sh <host>
+      RafaelJaime/smartseed-sim-grasp-black-v2 sim-black RafaelJaime/smartseed-sim-grasp-white-v2 sim-white` (it uploads the script with
+      `ssh ... 'cat >'`, not scp, and starts tmux; the models are pushed as `RafaelJaime/act-sim-black` / `act-sim-white`), then
+      `PYTHON=backend/.venv/bin/python scripts/brev/watch_pair.sh <host> RafaelJaime/act-sim-black RafaelJaime/act-sim-white`.
 
 ## Acceptance
 - `SMARTSEED_ROBOT=sim ./scripts/stack.sh` runs the web + executor against the simulated arm.
@@ -72,3 +89,4 @@ Strict TDD (session config). Runner: `cd backend && uv run pytest` (via `~/.clau
 - 2026-10-27: T2b done (pads, servo and seed tuning, `Kinematics.solve(spin_deg)`); details in `sim/README.md`.
 - 2026-10-27: T3 done: real ACT policies run in the twin (1/40 episodes lifted a seed); see `sim/README.md`.
 - 2026-10-27: T4 done: 100 sim episodes per colour on the Hub; see `sim/README.md`, "Generating sim datasets".
+- 2026-10-27: T4b done: jaws collide with walls, wall-aware planner, wall monitor, v2 datasets on the Hub; see `sim/README.md`, "Collision model (T4b)".

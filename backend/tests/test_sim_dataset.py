@@ -562,3 +562,15 @@ def test_the_wall_audit_flags_a_pass_through_plan_and_passes_a_planned_episode(k
     audit = audit_walls.audit_episode(good, kin, plan=(actions, marks))
     assert audit.report.valid and audit.report.contact_steps == 0 and audit.lifted
     assert audit.grasp_penetration_m == audit.start_penetration_m == 0.0
+
+
+def test_the_first_episodes_of_a_dataset_export_as_side_by_side_mp4(tmp_path):
+    import imageio.v2 as imageio
+
+    root = tmp_path / "ds"
+    md.build_dataset(root, "black", episodes=3, seed=0, rollout=fake_rollout(6), repo_id="local/vid")
+    out = tmp_path / "videos"
+    paths = md.export_videos(root, "local/vid", episodes=2, out_dir=out, prefix="black")
+    assert [p.name for p in paths] == ["black_ep00.mp4", "black_ep01.mp4"]
+    frames = imageio.mimread(str(paths[0]), memtest=False)
+    assert len(frames) == 6 and frames[0].shape[1] == 2 * IMAGE_SHAPE[1] and frames[0].shape[0] == IMAGE_SHAPE[0]

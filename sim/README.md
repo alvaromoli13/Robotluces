@@ -31,6 +31,8 @@ the executor's own 30 Hz sleeps make plans run in real time. Torque off holds th
 | `replay.py` | replays the episode, prints residuals, writes `out/replay_overlay.png` |
 | `run_policy.py` | closed-loop real-trained ACT in the twin: obs like `act.py`, success = seed lifted > 3 cm, mp4 + PNG strip per policy |
 | `grasp_test.py` | scripted IK grasp by contact physics, N jittered trials per colour, mp4 + PNG strip of a success |
+| `collision.py` | wall pass-through detector: per physics step, arm-geom vs box/tray-wall contacts (max penetration, max force, count); a `geometry` mode for scenes whose jaws did not collide (v1) |
+| `audit_walls.py`, `wall_check.py` | replay the kept episodes of a generation log and measure wall overlap (the v1 audit); the v1-vs-v2 close-up `docs/media/sim-wall-check.png` |
 | `make_dataset.py` | scripted demos with randomised scenes -> LeRobotDatasets in the real schema, Hub push, previews (see "Generating sim datasets") |
 
 ## Measured, fitted, estimated
@@ -71,8 +73,8 @@ Real data (d1-clean 96 episodes, d2-clean 91): the follower reads about 6.1 clos
 the MJCF joint stop (g = 6.0) is a hard stop, not jaw contact, and the pads are 10.9 mm apart at the tip there.
 A 12-13 mm seed therefore holds the jaw off the stop by 0.9-1.4 units, with no weld or attach.
 
-- Two fingertip pad boxes carry all jaw-seed contact (`sim/assets/README.md`, change 4); the moving-jaw hull no longer
-  collides (its nib dragged the box floor). Box floors are 1.5 mm cardboard, so a seed centre sits at the measured tool z.
+- Two fingertip pad boxes carry all jaw-seed contact (`sim/assets/README.md`, change 4); the moving-jaw hull does not
+  touch seeds or floors (its nib dragged the box floor) but, since T4b, it does hit walls. Box floors are 1.5 mm cardboard, so a seed centre sits at the measured tool z.
 - Gripper servo: kp 3, kv 0.3, force limit 0.15 N m. A stiff, strong servo squeezes a light seed through the pads, a
   weak one cannot close, a lightly damped one rings.
 - Seeds: friction 1.2, condim 4, mass 1 g, radii 6.8 / 7.4 mm (ESTIMATED from the readings and from the wrist frames).
@@ -89,8 +91,68 @@ Results (`backend/.venv/bin/python sim/grasp_test.py`, seed 2 of each box, +-3 m
 | white | 100 | 100 | 49.8 mm | under 1 mm | 7.44 (7.37) |
 
 +-5 mm error: 40/40 per colour. Other seeds, 20 trials: black 0, 1 20/20, black 3 0/20; white 0, 1 20/20, white 3 19/20.
+T4b (solid walls), same 20 trials, +-3 mm, `grasp_test.py --index N`, before = v1 checkout, after = this one:
+
+| seed | black before / after | white before / after |
+|---|---|---|
+| 0 | 20/20 / **0/20** | 20/20 / 20/20 |
+| 1 | 20/20 / 20/20 | 20/20 / 20/20 |
+| 2 (the 100-trial rows above) | 20/20 / 20/20 | 20/20 / 20/20 |
+| 3 | 0/20 / 0/20 | 19/20 / 19/20 |
+
+Black seed 0 is the one change: its nominal spot is 13 mm from the box wall, no jaw axis clears it (the closest
+passes 0.4 mm into it) and v1 only grasped it by flying the open jaw through the wall. The trial now prints the wall
+penetration and force of every run; a grasp with no wall contact is asserted for seed 2 of both colours.
+
 Replay of the recorded actions of episode 0 (black seed 0): the seed is lifted and carried off with the arm (sim
 reading 6.7-6.9 against 7.1-7.2 recorded). Strips: `docs/media/sim-grasp-black.png`, `sim-grasp-white.png`.
+
+## Collision model (T4b)
+
+The v1 demos had the gripper pass through seed-box walls: the moving-jaw hull had `contype="0"` and the pads only
+touched seeds, so only the fixed jaw and the arm links ever hit a wall, and (see "Moved walls" below) not even those
+once a box had been moved. v2 gives walls their own collision bit:
+
+| Geoms | contype | conaffinity | Collide with |
+|---|---|---|---|
+| walls and dividers of the boxes and the tray (class `wall`) | 2 | 19 (1+2+16) | the arm hulls, both jaws, seeds; stiff (`solref 0.004`, `priority 1`: their contact parameters win over the arm's soft defaults) |
+| fixed-jaw hull, wrist, links (`collision` class) | 1 | 0 | walls and floors, not seeds, not each other |
+| moving-jaw hull | 16 | 0 | walls only |
+| fingertip pads | 24 (8+16) | 0 | seeds (bit 8) and walls (bit 16), not floors |
+| box and tray floors (`env`) | 2 | 3 | the arm hulls, seeds |
+| table, paper, mat (`ground`) | 4 | 2 | seeds only (the arm passes through: the arm rests its jaws on the table at `home`) |
+| seeds | 2 | 10 | pads, walls, floors, ground, seeds |
+
+So every jaw geom (fixed hull, moving hull, both pads) and every other arm geom stops at every box and tray wall,
+rims included (the rim is the top face of the wall box). The floors, mat and table stay non-solid for the jaws: the
+moving hull's nib dragged on the 1.5 mm box floor (T2b) and the pads and the home pose sit at or below those surfaces.
+A jaw driven 4 cm through a box wall is stopped within 0.4 mm (30-40 N of servo push, test
+`test_a_tool_pushed_through_a_box_wall_is_stopped_by_it`). The moving hull is MuJoCo's convex hull of an L-shaped part,
+so it is a conservative proxy: it can touch a wall slightly before the real jaw would.
+
+**Moved walls.** The generator moves and turns the boxes and the tray per episode. MuJoCo builds the static broad phase
+when the model is compiled, so editing `geom_pos` of a static geom at run time left its collisions at the nominal spot
+(a pose with the tool 7 mm inside a moved wall produced no contact at all). Each movable object is now its own body
+(`tray`, `box_white`, `box_black`, geoms relative to it) and `apply_scene` sets `body_pos` / `body_quat`, which the
+broad phase honours (`test_walls_that_the_scene_moved_still_collide_with_the_arm`). That bug also means the v1 physics
+had no wall collisions at all for moved boxes.
+
+**Validity** (`collision.WallMonitor`, a step hook on `SimRobot`): after every physics step it reads the contact list for
+arm-geom vs wall-geom pairs (all links, both hulls, both pads; every box and tray wall) and records the deepest `-dist`,
+the largest normal force (`mj_contactForce`) and the number of steps in contact. An episode is kept only if the seed
+was lifted over 3 cm and is in the jaws at the end AND the deepest wall penetration is at most 1 mm AND no wall
+contact pushed with more than 2 N. A `geometry` mode asks `mj_geomDistance` for the signed distance of every arm geom
+to every wall geom after each control step regardless of the collision bits; `audit_walls.py` uses it on the v1 scenes.
+
+**Planner.** `grasp_test.grasp_candidates` lists the jaw axes (radial, plus the 24 board axes turned with the box) whose
+open-jaw footprint clears the walls and the neighbouring seeds by more than 5 mm, smallest wrist roll first.
+`make_dataset.plan_actions` plans the whole episode for the first axis, then `check_path` puts the arm at every commanded
+pose (forward kinematics, no physics), measures its distance to every wall of that scene and requires 5 mm from the
+descent to the end of the lift and at the still poses (start and fold), and 2 cm for the moving transit and retract
+(or no closer than the still poses already were: a box beside the base puts the folded arm within 2 cm of its wall
+before any motion). The hover at tool height 7 cm and the vertical descent keep the jaw above the 3.5 cm walls until it is
+over the seed. If an axis fails, the next one is tried; if none passes the scene is redrawn (`NoFit`, a placement
+rejection counted separately from out-of-reach ones).
 
 ## Running the real ACT in sim (T3)
 
@@ -129,14 +191,21 @@ no seed highlights, different wrist-camera exposure and mount; the real wrist vi
 isolate it from the physics, seed layout (the real box held 2 white seeds, the twin has 4) or the missing inference
 latency. One episode in 40 is not a measured rate; the lone success is a genuine grasp-and-lift that did not hold.
 
-## Generating sim datasets (T4)
+## Generating sim datasets (T4, collision-valid since T4b)
 
 ```bash
-backend/.venv/bin/python sim/make_dataset.py --color black --episodes 100 --seed 0 \
-    --out sim/out/datasets/smartseed-sim-grasp-black --push-repo RafaelJaime/smartseed-sim-grasp-black
-backend/.venv/bin/python sim/make_dataset.py --color white --episodes 100 --seed 0 --push-repo RafaelJaime/smartseed-sim-grasp-white
+backend/.venv/bin/python sim/make_dataset.py --color black --episodes 100 --seed 0 --push-repo RafaelJaime/smartseed-sim-grasp-black-v2
+backend/.venv/bin/python sim/make_dataset.py --color white --episodes 100 --seed 0 --push-repo RafaelJaime/smartseed-sim-grasp-white-v2
 backend/.venv/bin/python sim/make_dataset.py --coverage docs/media/sim-dataset-coverage.png   # redraw from the logs
+backend/.venv/bin/python sim/make_dataset.py --videos sim/out/v2_videos                         # mp4 of the first 5 episodes per colour
 ```
+
+Datasets go to `sim/out/datasets/smartseed-sim-grasp-<colour>-v2` (a stopped run resumes; running it again with
+`--push-repo` uploads). **v2 supersedes v1** (`smartseed-sim-grasp-black` / `-white`, still on the Hub): v1 episodes let the
+gripper pass through box walls (see "Collision model (T4b)"; replaying the 100 kept episodes of each v1 dataset with
+`audit_walls.py`, **24 % of the black and 37 % of the white ones** have an arm geom more than 1 mm inside a wall, 19 % / 26 %
+more than 5 mm, up to 22 / 25 mm; 4 % / 9 % of them in the grasp itself, the rest with the folded arm or the transit
+inside a wall of a box placed near the base). Train on v2.
 
 Scripted demonstrations recorded with `LeRobotDataset.create` / `add_frame` / `save_episode` (lerobot at the pinned
 commit `e595b79`; `lerobot[dataset]` is now part of the backend dependencies). The schema is the real one, key for key:
@@ -173,22 +242,34 @@ jaws about horizontal (pitch up to 15 deg; a tilted wrist puts the seed outside 
 (the MJCF wrist flex stops at +-95). The boxes' turn reaches the physics: MuJoCo ignores a runtime `geom_quat` on geoms
 whose compiled frame was the identity unless `geom_sameframe` is cleared (a test reads `geom_xmat`).
 
-**Results** (seed 0):
+**Results** (seed 0, generator at `ba857d5`+):
 
-| | black (`smartseed-sim-grasp-black`) | white (`smartseed-sim-grasp-white`) |
+| | black (`smartseed-sim-grasp-black-v2`) | white (`smartseed-sim-grasp-white-v2`) |
 |---|---|---|
-| Kept episodes / attempts | 100 / 132 (generator success 75.8 %) | 100 / 136 (73.5 %) |
-| Frames | 29,497 | 29,502 |
-| Placements drawn / reachable | geometry accepted 1.95 % of drawn object placements; the planner could grasp into 29.0 % of the geometrically valid scenes (323 redraws); 0.57 % of drawn object placements end in a kept scene | 1.77 %, 28.5 % (342 redraws), 0.50 % |
-| Seed grasped (index 0-3) | 22 / 23 / 28 / 27 | 27 / 31 / 23 / 19 |
-| Generation time | about 45 min on the M5 (two colours in parallel, no GPU) | |
+| Attempts / kept episodes | 114 / 100 (generator success 87.7 %) | 112 / 100 (89.3 %) |
+| Lifted but rejected by the wall monitor | 0 | 0 |
+| Scenes redrawn before simulating (placement rejections) | 543: 204 no jaw yaw / path clears the walls, 339 out of reach | 666: 269 no fit, 397 out of reach |
+| Failed attempts | 14, the seed was not lifted (missed the pads, open-loop) | 12, same |
+| Wall contact in the kept episodes | 0 physics steps, max penetration 0.0 mm | 0 steps, 0.0 mm |
+| Frames | 29,503 | 29,508 |
+| Seed grasped (index 0-3) | 31 / 18 / 30 / 21 | 17 / 29 / 29 / 25 |
+| Generation time | about 35 min on the M5 (two colours in parallel, no GPU) | |
 
-The 24-26 % of attempts that fail after a reachable placement mostly drop the seed during the fold-back or miss it (the arm lags
-the open-loop command, seeds close to a wall). Hub: https://huggingface.co/datasets/RafaelJaime/smartseed-sim-grasp-black and
-https://huggingface.co/datasets/RafaelJaime/smartseed-sim-grasp-white (public, tag `BraboRobots`, in the collection
-`smartseed-so-101-act-seed-sowing`). Loading them back from the Hub gives the same feature dict as the real `info.json`.
-Previews: `docs/media/sim-dataset-preview.png` (episodes 0, 50, 99 per colour: top over wrist at the first, middle and last
-frame) and `docs/media/sim-dataset-coverage.png` (every kept scene drawn on the top view).
+The monitor rejected nothing because the planner's swept-path check already redraws every scene where an arm geom would
+touch a wall: replaying the v1 scenes that the v1 audit flagged (more than 1 mm), the v2 planner redraws 23 of the 24 black
+and 35 of the 37 white ones (the other three get a different jaw yaw). `audit_walls.py` run on the v2 logs (geometry mode,
+independent of the collision bits) agrees: 0 of 200 episodes overlap a wall. Yield is lower than v1 (the planner now accepts 17 % / 14 % of the geometrically valid scenes, v1 29 % / 28.5 %) and biased to scenes with room around the seed: the grasped seeds in
+`docs/media/sim-dataset-coverage.png` cluster nearer the arm and away from walls than the v1 ones.
+
+Hub: https://huggingface.co/datasets/RafaelJaime/smartseed-sim-grasp-black-v2 and
+https://huggingface.co/datasets/RafaelJaime/smartseed-sim-grasp-white-v2 (public, tag `BraboRobots`, in the collection
+`smartseed-so-101-act-seed-sowing`, which no longer lists the v1 repos). Loading them back from the Hub gives the same feature dict
+as the real `info.json`, 100 episodes each. Previews: `docs/media/sim-dataset-preview.png` (episodes 0, 50, 99 per colour: top over
+wrist at the first, middle and last frame), `docs/media/sim-dataset-coverage.png` (every kept scene on the top view) and
+`docs/media/sim-wall-check.png` (episode 0 of v1: the same commands in the v1 and the v2 twin).
+
+v1 results for reference (seed 0 of the v1 generator, no wall collisions for the jaws): 132 / 136 attempts for 100 kept
+(75.8 % / 73.5 %), 29,497 / 29,502 frames.
 
 Limits: the demos only show scenes the scripted planner can solve (the placements and seeds it cannot reach are never
 recorded, so the data under-represents the far corners of the table); the scene is the twin, see "What is weak"; the real
@@ -196,6 +277,14 @@ white-seed episodes command the gripper to ~6.7 at the end, the sim uses 4.2-5.0
 
 ## What is weak
 
+- **Walls and the jaw proxy.** The moving-jaw hull is a convex hull, larger than the real jaw, and the box and tray walls are
+  estimated from the top frame (a centimetre or so): a grasp the real arm manages with the wall a few millimetres from the
+  seed can be refused here. Nominal black seed 0 (13 mm from a wall) was grasped 20/20 in v1 only because the open jaw went
+  through the wall; with solid walls no jaw axis clears it and `grasp_test.py` gets 0/20 on it (table above).
+- **Floors, mat and table are not solid for the jaws** (see "Collision model"): a jaw pressed into the floor is not detected.
+- **v2 data is biased** to scenes with room for the open jaws (17 % / 14 % of the geometrically valid scenes survive the planner, v1 29 % / 28.5 %), so seeds
+  hard against a wall or in a corner are never demonstrated; the arm itself is only checked against walls, not against seeds
+  other than the grasped one (the footprint test keeps neighbours 10 mm out of the jaws).
 - **Grasping** is limited to what `grasp_test.py` covers: vertical approach, seeds clear of walls and neighbours. Black seed 3 (near the box corner) fails 0/20 (the spun-wrist IK does not reach it), white seed 3 19/20. Pad friction, squeeze torque and seed size are tuned to the real readings, not measured.
 - **Real calibration vs the camera.** The four clicks in `backend/data/calibration.json` miss the fitted camera by
   28-60 px (several cm) at any single tool height; the best single height is 0.12 m. Likely lens distortion (the
