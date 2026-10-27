@@ -150,40 +150,49 @@ def _f(values) -> str:
     return " ".join(f"{v:.5f}".rstrip("0").rstrip(".") if v else "0" for v in values)
 
 
-def _box(name: str, pos, half, rgba, cls: str = "env") -> str:
+def _box(name: str, pos, half, rgba, cls: str = "env") -> str:  # `wall` for walls and dividers, `env` for floors
     return (f'    <geom name="{name}" type="box" pos="{_f(pos)}" size="{_f(half)}" rgba="{_f(rgba)}" '
             f'class="{cls}"/>')
 
 
+def _body(name: str, center, geoms: list[str]) -> list[str]:
+    """One body per movable object (tray, each box), its origin at the object's centre on the board plane, so the
+    geoms are written relative to it. The dataset generator moves and turns the object through `body_pos` and
+    `body_quat`: MuJoCo builds its static broad phase when the model is compiled, so editing the `geom_pos` of a
+    static geom at run time would leave its collisions at the nominal place."""
+    return [f'    <body name="{name}" pos="{_f((*center, 0.0))}">', *geoms, '    </body>']
+
+
 def _open_box(b: OpenBox) -> list[str]:
-    (cx, cy), (hx, hy), h, w, z0 = b.center, b.outer_half, b.height, b.wall, MAT_TOP_Z
-    return [
+    center, (cx, cy) = b.center, (0.0, 0.0)  # geoms are relative to the box body
+    (hx, hy), h, w, z0 = b.outer_half, b.height, b.wall, MAT_TOP_Z
+    return _body(b.name, center, [
         _box(f"{b.name}_floor", (cx, cy, z0 + b.floor / 2), (hx, hy, b.floor / 2), b.floor_rgba),
-        _box(f"{b.name}_wall_far", (cx + hx - w / 2, cy, z0 + h / 2), (w / 2, hy, h / 2), b.rim_rgba),
-        _box(f"{b.name}_wall_near", (cx - hx + w / 2, cy, z0 + h / 2), (w / 2, hy, h / 2), b.rim_rgba),
-        _box(f"{b.name}_wall_left", (cx, cy + hy - w / 2, z0 + h / 2), (hx - w, w / 2, h / 2), b.rim_rgba),
-        _box(f"{b.name}_wall_right", (cx, cy - hy + w / 2, z0 + h / 2), (hx - w, w / 2, h / 2), b.rim_rgba),
-    ]
+        _box(f"{b.name}_wall_far", (cx + hx - w / 2, cy, z0 + h / 2), (w / 2, hy, h / 2), b.rim_rgba, "wall"),
+        _box(f"{b.name}_wall_near", (cx - hx + w / 2, cy, z0 + h / 2), (w / 2, hy, h / 2), b.rim_rgba, "wall"),
+        _box(f"{b.name}_wall_left", (cx, cy + hy - w / 2, z0 + h / 2), (hx - w, w / 2, h / 2), b.rim_rgba, "wall"),
+        _box(f"{b.name}_wall_right", (cx, cy - hy + w / 2, z0 + h / 2), (hx - w, w / 2, h / 2), b.rim_rgba, "wall"),
+    ])
 
 
 def _tray() -> list[str]:
-    (cx, cy), (hx, hy), w = TRAY_CENTER, TRAY_OUTER_HALF, TRAY_WALL
+    (cx, cy), (hx, hy), w = (0.0, 0.0), TRAY_OUTER_HALF, TRAY_WALL  # relative to the tray body
     z0, h, fl = MAT_TOP_Z, TRAY_TOP_Z - MAT_TOP_Z, CELL_FLOOR_Z - MAT_TOP_Z  # wall height, floor thickness
     px, py = _pitch()
     geoms = [
         _box("tray_floor", (cx, cy, z0 + fl / 2), (hx, hy, fl / 2), CARDBOARD),
-        _box("tray_wall_far", (cx + hx - w / 2, cy, z0 + h / 2), (w / 2, hy, h / 2), CARDBOARD),
-        _box("tray_wall_near", (cx - hx + w / 2, cy, z0 + h / 2), (w / 2, hy, h / 2), CARDBOARD),
-        _box("tray_wall_left", (cx, cy + hy - w / 2, z0 + h / 2), (hx - w, w / 2, h / 2), CARDBOARD),
-        _box("tray_wall_right", (cx, cy - hy + w / 2, z0 + h / 2), (hx - w, w / 2, h / 2), CARDBOARD),
+        _box("tray_wall_far", (cx + hx - w / 2, cy, z0 + h / 2), (w / 2, hy, h / 2), CARDBOARD, "wall"),
+        _box("tray_wall_near", (cx - hx + w / 2, cy, z0 + h / 2), (w / 2, hy, h / 2), CARDBOARD, "wall"),
+        _box("tray_wall_left", (cx, cy + hy - w / 2, z0 + h / 2), (hx - w, w / 2, h / 2), CARDBOARD, "wall"),
+        _box("tray_wall_right", (cx, cy - hy + w / 2, z0 + h / 2), (hx - w, w / 2, h / 2), CARDBOARD, "wall"),
     ]
     for i in range(1, TRAY_ROWS):  # dividers between rows (across y)
         x = cx - hx + w + i * px
-        geoms.append(_box(f"tray_div_row{i}", (x, cy, z0 + h / 2), (w / 2, hy - w, h / 2), CARDBOARD_DARK))
+        geoms.append(_box(f"tray_div_row{i}", (x, cy, z0 + h / 2), (w / 2, hy - w, h / 2), CARDBOARD_DARK, "wall"))
     for j in range(1, TRAY_COLS):  # dividers between columns (across x)
         y = cy - hy + w + j * py
-        geoms.append(_box(f"tray_div_col{j}", (cx, y, z0 + h / 2), (hx - w, w / 2, h / 2), CARDBOARD_DARK))
-    return geoms
+        geoms.append(_box(f"tray_div_col{j}", (cx, y, z0 + h / 2), (hx - w, w / 2, h / 2), CARDBOARD_DARK, "wall"))
+    return _body("tray", TRAY_CENTER, geoms)
 
 
 def _seeds() -> list[str]:
@@ -216,6 +225,11 @@ def build_scene_xml() -> str:
         # through them, seeds do not
         '    <default class="ground"><geom contype="4" conaffinity="2" friction="0.9 0.005 0.0001"/></default>',
         '    <default class="env"><geom contype="2" conaffinity="3" friction="0.9 0.005 0.0001"/></default>',
+        # walls and dividers of the boxes and the tray: bit 16 is what the jaw hull and the pads carry, so every jaw
+        # geom stops at a wall (and the floors stay as they were); `priority` makes the wall's stiff contact
+        # parameters win over the arm's soft defaults
+        '    <default class="wall"><geom contype="2" conaffinity="19" priority="1" friction="0.9 0.005 0.0001" '
+        'solref="0.004 1" solimp="0.95 0.99 0.001"/></default>',
         '    <default class="seed"><geom contype="2" conaffinity="10" friction="1.2 0.02 0.002" condim="4" '
         'solref="0.004 1" solimp="0.95 0.99 0.001"/></default>',
         '  </default>',

@@ -15,7 +15,7 @@ import pytest
 
 from sim import layout, make_dataset as md
 from smartseed_robot.robot import ARM_JOINTS, IMAGE_SHAPE, JOINTS
-from smartseed_robot.sim_robot import SimRobot
+from smartseed_robot.sim_robot import SimRobot, joints_to_qpos
 
 REAL = json.loads((md.CONFIG_DIR / "real_features.json").read_text())
 ACT_START = json.loads((md.CONFIG_DIR / "poses.json").read_text())["act_start"]
@@ -140,12 +140,12 @@ def test_the_scene_moves_both_boxes_the_tray_and_parks_the_absent_seeds():
     robot = SimRobot(initial=ACT_START)
     try:
         p = md.sample_params("black", seed=0, attempt=0)
-        before = robot._model.geom_pos.copy(), robot._model.cam_pos.copy()
+        before = robot._model.body_pos.copy(), robot._model.cam_pos.copy()
         md.apply_scene(robot, p)
         m = robot._model
-        for name in ("box_white_floor", "box_black_floor", "tray_floor"):
-            g = m.geom(name).id
-            assert not np.allclose(m.geom_pos[g, :2], before[0][g, :2]), name
+        for name in ("box_white", "box_black", "tray"):
+            b = m.body(name).id
+            assert not np.allclose(m.body_pos[b, :2], before[0][b, :2]), name
         assert not np.allclose(m.cam_pos, before[1])
         for name, state in (("box_white_wall_far", p.white), ("box_black_wall_far", p.black), ("tray_wall_far", p.tray)):
             xmat = robot._data.geom_xmat[m.geom(name).id].reshape(3, 3)  # the turn really reaches the rendered/colliding geom
@@ -153,14 +153,42 @@ def test_the_scene_moves_both_boxes_the_tray_and_parks_the_absent_seeds():
                 math.atan2(math.sin(layout.BOARD_YAW + math.radians(state.yaw_deg)),
                            math.cos(layout.BOARD_YAW + math.radians(state.yaw_deg))), abs=1e-6), name
         for color, state in (("black", p.black), ("white", p.white)):
-            floor = m.geom(f"box_{color}_floor").id
-            assert np.allclose(m.geom_pos[floor, :2], state.center, atol=1e-9)
+            assert np.allclose(m.body_pos[m.body(f"box_{color}").id, :2], state.center, atol=1e-9)
             for i, _, _ in state.seeds:  # every seed rests where the planner believes it is
                 adr = m.joint(f"seed_{color}_{i}_free").qposadr[0]
                 assert np.allclose(robot._data.qpos[adr:adr + 2], p.seed_xy(color, i), atol=1e-9)
             for i in set(range(layout.SEEDS_PER_BOX)) - {i for i, _, _ in state.seeds}:
                 adr = m.joint(f"seed_{color}_{i}_free").qposadr[0]
                 assert np.linalg.norm(robot._data.qpos[adr:adr + 2]) > 1.0  # parked far from the scene
+    finally:
+        robot.close()
+
+
+@pytest.mark.parametrize("wall", ["box_black_wall_far", "box_white_wall_near", "tray_wall_left", "tray_div_row2"])
+def test_walls_that_the_scene_moved_still_collide_with_the_arm(kin, wall):
+    """MuJoCo's static broad phase is built at compile time: a wall moved by editing its geom would stay solid only
+    at its nominal spot. The tool of the arm placed in the middle of a moved wall must touch it."""
+    from sim import collision
+
+    robot = SimRobot(initial=ACT_START)
+    try:
+        p = md.sample_params("black", seed=0, attempt=4)
+        md.apply_scene(robot, p)
+        m, d = robot._model, robot._data
+        w = m.geom(wall).id
+        nominal = np.array(layout.to_world(layout.WHITE_BOX.center))
+        assert np.linalg.norm(d.geom_xpos[w][:2] - nominal) > 0.0  # (it moved somewhere)
+        target = d.geom_xpos[w].copy()
+        sol = kin.solve(target[0], target[1], 0.012, seed=dict(zip(JOINTS, [0.0, -60.0, 60.0, 30.0, 0.0, 10.0])))
+        d.qpos[robot._qadr] = joints_to_qpos({**sol, "gripper": 10.0})
+        mujoco.mj_forward(m, d)
+        walls = set(collision.wall_geoms(m))
+        arm = set(collision.arm_geoms(m))
+        pairs = [(d.contact[i].geom1, d.contact[i].geom2) for i in range(d.ncon)]
+        touching = [(a, b) for a, b in pairs if (a in arm and b in walls) or (b in arm and a in walls)]
+        assert touching or collision.min_wall_distance(m, d) > 0.001, "overlapping geometry without a contact"
+        assert collision.min_wall_distance(m, d) < 0.0, "the pose is meant to put the tool inside the wall"
+        assert touching
     finally:
         robot.close()
 

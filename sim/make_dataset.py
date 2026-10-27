@@ -303,14 +303,6 @@ def sample_params(color: str, seed: int, attempt: int, resample: int = 0, r: Ran
 
 
 # -- the scene ------------------------------------------------------------------------------------------------
-def _rotate_z(quat: np.ndarray, deg: float) -> np.ndarray:
-    import mujoco
-
-    out, half = np.zeros(4), math.radians(deg) / 2
-    mujoco.mju_mulQuat(out, np.array([math.cos(half), 0.0, 0.0, math.sin(half)]), quat)
-    return out
-
-
 def _turn(quat: np.ndarray, rot_deg) -> np.ndarray:
     """`quat` followed by a small rotation (degrees about x, y, z of the local frame)."""
     import mujoco
@@ -331,20 +323,17 @@ def apply_scene(robot: SimRobot, p: EpisodeParams) -> None:
 
     m, d = robot._model, robot._data
 
-    def move(prefix: str, old_center, center, yaw_deg: float) -> None:
-        """Turn every geom of the object about its old centre, then put that centre at `center` (board frame)."""
-        c, s = math.cos(math.radians(yaw_deg)), math.sin(math.radians(yaw_deg))
-        for g in range(m.ngeom):
-            if (m.geom(g).name or "").startswith(prefix):
-                nx, ny = m.geom_pos[g, 0] - old_center[0], m.geom_pos[g, 1] - old_center[1]
-                m.geom_pos[g, :2] = (center[0] + c * nx - s * ny, center[1] + s * nx + c * ny)
-                m.geom_quat[g] = _rotate_z(m.geom_quat[g], yaw_deg)
-                m.geom_sameframe[g] = 0  # the compiler flagged identity-quat geoms: without this the new quat is ignored
+    def move(body: str, center, yaw_deg: float) -> None:
+        """Put the object's body (tray or box, its geoms are relative to it) at `center` (board frame), turned by
+        `yaw_deg`. Moving a body, not its geoms, keeps MuJoCo's static broad phase right (see `layout._body`)."""
+        b, half = m.body(body).id, math.radians(yaw_deg) / 2
+        m.body_pos[b] = (center[0], center[1], 0.0)
+        m.body_quat[b] = (math.cos(half), 0.0, 0.0, math.sin(half))
 
-    move("tray_", layout.TRAY_CENTER, p.tray.center, p.tray.yaw_deg)
+    move("tray", p.tray.center, p.tray.yaw_deg)
     for color, state in (("black", p.black), ("white", p.white)):
         box = box_of(color)
-        move(box.name + "_", box.center, state.center, state.yaw_deg)
+        move(box.name, state.center, state.yaw_deg)
         present = {i for i, _, _ in state.seeds}
         for i in range(layout.SEEDS_PER_BOX):
             joint = m.joint(f"seed_{color}_{i}_free")

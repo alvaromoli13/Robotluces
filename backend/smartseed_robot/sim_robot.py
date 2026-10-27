@@ -73,6 +73,7 @@ class SimRobot:
         self._record_dir = Path(record_dir) if record_dir else None
         self._writer = None
         self._viewer = self._launch_viewer() if viewer else None
+        self.step_hook = None  # optional callable(model, data) run after every physics step (the wall monitor)
 
     # -- RobotPort ---------------------------------------------------------------------------------------
     @property
@@ -137,6 +138,8 @@ class SimRobot:
         self._data.ctrl[:] = self._ctrl
         for _ in range(self._substeps):
             self._mj.mj_step(self._model, self._data)
+            if self.step_hook is not None:
+                self.step_hook(self._model, self._data)
         if self._viewer is not None:
             self._viewer.sync()
         if self._writer is not None:

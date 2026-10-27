@@ -14,9 +14,10 @@
       <default class="collision">
         <geom group="3" contype="1" conaffinity="0"/>
       </default>
-      <!-- SMARTSEED: fingertip contact pads, the only jaw geoms that touch seeds (contype 8, see sim/layout.py) -->
+      <!-- SMARTSEED: fingertip contact pads, the only jaw geoms that touch seeds (bit 8) and, with bit 16, box and
+           tray walls (see sim/layout.py and sim/README.md, "Collision model") -->
       <default class="pad">
-        <geom type="box" group="3" contype="8" conaffinity="0" condim="4" friction="1.2 0.02 0.002" solref="0.004 1" solimp="0.95 0.99 0.001"/>
+        <geom type="box" group="3" contype="24" conaffinity="0" condim="4" friction="1.2 0.02 0.002" solref="0.004 1" solimp="0.95 0.99 0.001"/>
       </default>
     </default>
   </default>
@@ -139,8 +140,8 @@
                   <inertial pos="-0.00157495 -0.0300244 0.0192755" mass="0.012" fullinertia="6.61427e-06 1.89032e-06 5.28738e-06 -3.19807e-07 -5.90717e-09 -1.09945e-07"/>
                   <!-- Part moving_jaw_so101_v1 -->
                   <geom type="mesh" class="visual" pos="-5.55112e-17 -5.55112e-17 0.0189" quat="1 -0 3.00524e-16 -2.00834e-17" mesh="moving_jaw_so101_v1" material="moving_jaw_so101_v1_material"/>
-                  <geom type="mesh" class="collision" contype="0" pos="-5.55112e-17 -5.55112e-17 0.0189" quat="1 -0 3.00524e-16 -2.00834e-17" mesh="moving_jaw_so101_v1" material="moving_jaw_so101_v1_material"/>
-                  <!-- SMARTSEED: moving fingertip pad, inner face plane fitted to the jaw mesh (gap 10.9 mm at the tip at the joint stop) -->
+                  <geom type="mesh" class="collision" contype="16" pos="-5.55112e-17 -5.55112e-17 0.0189" quat="1 -0 3.00524e-16 -2.00834e-17" mesh="moving_jaw_so101_v1" material="moving_jaw_so101_v1_material"/>
+                  <!-- SMARTSEED: the hull above only collides with walls (bit 16): it never touched seeds and its tip dragged on the box floor. Moving fingertip pad, inner face plane fitted to the jaw mesh (gap 10.9 mm at the tip at the joint stop) -->
                   <geom name="pad_moving" class="pad" pos="-0.00903 -0.05512 0.01902" quat="0.47390 -0.47390 0.52480 -0.52480" size="0.0245 0.0062 0.0015"/>
                 </body>
               </body>
