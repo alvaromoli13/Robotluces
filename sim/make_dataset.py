@@ -1,7 +1,7 @@
 """Scripted grasp demonstrations in the MuJoCo twin, recorded as LeRobotDatasets with the real datasets' schema.
 
     backend/.venv/bin/python sim/make_dataset.py --color black --episodes 100 --seed 0 \\
-        --out sim/out/datasets/smartseed-sim-grasp-black --push-repo RafaelJaime/smartseed-sim-grasp-black
+        --out sim/out/datasets/smartseed-sim-grasp-black-v2 --push-repo RafaelJaime/smartseed-sim-grasp-black-v2
 
 One episode mirrors a real teleop episode of `RafaelJaime/smartseed-grasp-d{1,2}-clean`: rest at the taught
 `act_start`, open the gripper while moving above a seed, descend, close, lift, fold back to the rest pose with the seed
@@ -49,6 +49,9 @@ LOG_NAME = "sim_generation.jsonl"
 GITHUB = "https://github.com/alvaromoli13/Robotluces"
 HF_USER = "RafaelJaime"
 REAL_REPOS = {"black": "RafaelJaime/smartseed-grasp-d1-clean", "white": "RafaelJaime/smartseed-grasp-d2-clean"}
+DATASET_SUFFIX = "-v2"  # v1 had no wall collisions for the jaws (T4b); the v1 repos stay on the Hub, superseded
+# measured by `sim/audit_walls.py` on the 100 kept episodes of each v1 dataset: share with an arm geom > 1 mm in a wall
+V1_REJECTED_PCT = {"black": 24.0, "white": 37.0}
 COLLECTION = "RafaelJaime/smartseed-so-101-act-seed-sowing-6adf0632f7e93bb112d73e8c"
 
 MIN_FRAMES, MAX_FRAMES = 272, 300  # real episodes: 278-300 frames, most of them exactly the 10 s cap
@@ -690,6 +693,10 @@ def simulate_episode(p: EpisodeParams, kin: Kinematics | None = None, *, render:
 
 
 # -- the dataset ----------------------------------------------------------------------------------------------
+def dataset_name(color: str) -> str:
+    return f"smartseed-sim-grasp-{color}{DATASET_SUFFIX}"
+
+
 def _read_log(root: Path) -> list[dict]:
     path = root / LOG_NAME
     return [json.loads(line) for line in path.read_text().splitlines() if line.strip()] if path.exists() else []
@@ -737,7 +744,7 @@ def build_dataset(root: str | Path, color: str, episodes: int, seed: int, *, rep
     planner cannot reach (`Unreachable`) is replaced by the next `resample` of the same attempt. Every attempt (kept
     or failed) is one line of `<root>/sim_generation.jsonl`."""
     root = Path(root)
-    repo_id = repo_id or f"{HF_USER}/smartseed-sim-grasp-{color}"
+    repo_id = repo_id or f"{HF_USER}/{dataset_name(color)}"
     ds = _open_dataset(root, repo_id)
     root.mkdir(parents=True, exist_ok=True)
     log = _read_log(root)
@@ -854,11 +861,14 @@ def generator_commit() -> str:
         return "unknown"
 
 
-def dataset_card(color: str, repo_id: str, commit: str, stats: dict) -> str:
+def dataset_card(color: str, repo_id: str, commit: str, stats: dict, v1_rejected_pct: float | None = None) -> str:
     real = REAL_REPOS[color]
+    v1 = f"{HF_USER}/smartseed-sim-grasp-{color}"
     box = {"black": "black seeds in the black box (real source `d1`)",
            "white": "white seeds in the white box (real source `d2`)"}[color]
     r = RANDOM
+    v1_note = (f" ({v1_rejected_pct:.0f} % of the kept v1 episodes have an arm geom more than 1 mm inside a wall)"
+               if v1_rejected_pct is not None else "")
     rate = f"{100 * stats['success_rate']:.0f} %" if stats.get("success_rate") is not None else "n/a"
     tags = ["LeRobot", "BraboRobots", "smartseed", "robotekin-hackathon", "lerobot", "so101", "simulation", "mujoco"]
     front = "\n".join(["---", "license: apache-2.0", "task_categories:", "- robotics", "tags:",
@@ -873,11 +883,39 @@ real recordings. The schema is the one of [`{real}`](https://huggingface.co/data
 {FPS} fps, `robot_type` `{ROBOT_TYPE}`, same keys, shapes and units), so the same training scripts work unchanged and
 real and simulated episodes can be mixed or fine-tuned across.
 
+- **Supersedes [`{v1}`](https://huggingface.co/datasets/{v1}) (v1)**: in v1 the moving jaw and the fingertip pads
+  did not collide with box and tray walls, so the open jaw could pass through a seed-box wall and the episode taught an
+  impossible motion{v1_note}. v2 fixes the collision model and the planner and keeps only collision-free episodes (see
+  "Validity" below). Do not train on v1.
 - Task: `{TASK}`
 - Episodes: {stats.get("episodes", "?")}, frames: {stats.get("frames", "?")}; generator success rate {rate} \
 ({stats.get("attempts", "?")} attempts)
 - Generator: `sim/make_dataset.py` of {GITHUB} at commit `{commit}` (the twin, the planner and the randomisation live
   there; `sim/README.md`, "Generating sim datasets")
+
+## Validity
+
+Every episode is simulated under a wall monitor (`sim/collision.py`): after each physics step (3.3 ms) it reads the
+contacts between any arm geom (all links, both jaw hulls, both pads) and any box or tray wall. An episode is kept only if
+
+1. the seed rose over 3 cm and is still in the jaws at the end,
+2. no arm geom went deeper than **1 mm** into a wall (contact `dist`), and no wall contact pushed with more than 2 N,
+3. before it was recorded the planner checked the whole commanded motion against every wall (forward kinematics): the
+   open jaws stay 5 mm clear of walls and neighbouring seeds from the descent to the end of the lift, the transit and
+   the retract stay 2 cm clear, and a scene where no jaw yaw fits is redrawn.
+
+Walls are solid for every jaw geom in this scene (the floors, mat and table are not: the jaws rest on them at the
+taught pose, see `sim/README.md`, "Collision model").
+
+## Generator statistics
+
+| | |
+|---|---|
+| attempts / kept | {stats.get("attempts", "?")} / {stats.get("episodes", "?")} |
+| lifted but rejected for a wall collision | {stats.get("collision_rejections", "?")} |
+| scenes redrawn before simulating: total | {stats.get("ik_rejections", "?")} |
+| ... no jaw yaw / path clears the walls | {stats.get("fit_rejections", "?")} |
+| ... seed out of the arm's reach | {stats.get("reach_rejections", "?")} |
 
 ## Features
 
@@ -893,8 +931,7 @@ real and simulated episodes can be mixed or fine-tuned across.
 Like the real teleop episodes: rest at the taught `act_start`, open the gripper while moving above a seed, descend,
 close, lift, fold back to the rest pose with the seed in the jaws and hold there until frame 300 (real episodes are
 278-300 frames). Motion is min-jerk interpolation with random timing, a slow hand wobble and a 1.5 mm aiming error. The
-grasp is plain contact physics (no weld, no attach). Only episodes where the seed rose over 3 cm and is still in the
-jaws at the end are kept.
+grasp is plain contact physics (no weld, no attach). Only successful, collision-free episodes are kept (see Validity).
 
 ## Randomisation (per episode)
 
@@ -902,7 +939,7 @@ jaws at the end are kept.
 |---|---|
 | seeds per box / which one is grasped | {r.seeds_min}-{r.seeds_max} of 4 / one of the colour's seeds |
 | seed position | uniform on the box floor, {1000 * r.seed_wall_margin_m:.0f} mm off the inner walls, at least {1000 * r.seed_min_gap_m:.0f} mm apart |
-| box and tray pose | the two boxes and the 3x4 tray anywhere on the table the top camera sees (uniform position, any yaw, no overlap, {1000 * r.view_margin_m:.0f} mm inside the view, centre within {100 * r.reach_max_m:.0f} cm of the arm, {100 * r.base_keepout_m:.0f} cm clear of its base); placements the planner cannot reach are redrawn |
+| box and tray pose | the two boxes and the 3x4 tray anywhere on the table the top camera sees (uniform position, any yaw, no overlap, {1000 * r.view_margin_m:.0f} mm inside the view, centre within {100 * r.reach_max_m:.0f} cm of the arm, {100 * r.base_keepout_m:.0f} cm clear of its base); placements the planner cannot reach, or where no jaw yaw clears the walls, are redrawn |
 | light | intensity x{r.light_scale[0]}-{r.light_scale[1]}, direction tilted up to {r.light_tilt_deg:.0f} deg |
 | colours | +-{100 * r.colour_jitter:.0f} % per channel on table, mat and cardboard (the twin has no textures) |
 | top camera | +-{1000 * r.top_cam_shift_m:.0f} mm, +-{r.cam_rot_deg:.0f} deg |
@@ -947,7 +984,7 @@ def make_contact_sheet(roots: dict[str, Path], out: Path, episodes: int = 3) -> 
 
     rows = []
     for color, root in roots.items():
-        ds = LeRobotDataset(f"{HF_USER}/smartseed-sim-grasp-{color}", root=root)
+        ds = LeRobotDataset(f"{HF_USER}/{dataset_name(color)}", root=root)
         for ep in np.linspace(0, ds.meta.total_episodes - 1, episodes).round().astype(int):
             lo, hi = int(ds.meta.episodes["dataset_from_index"][ep]), int(ds.meta.episodes["dataset_to_index"][ep])
             cells = []
@@ -964,20 +1001,20 @@ def main() -> None:
     ap.add_argument("--color", choices=["black", "white"], default=None)
     ap.add_argument("--episodes", type=int, default=100)
     ap.add_argument("--seed", type=int, default=0)
-    ap.add_argument("--out", default=None, help="dataset folder (default sim/out/datasets/smartseed-sim-grasp-<colour>)")
+    ap.add_argument("--out", default=None, help="dataset folder (default sim/out/datasets/smartseed-sim-grasp-<colour>-v2)")
     ap.add_argument("--coverage", default=None, metavar="PNG", help="only draw the placement coverage plot of the "
                     "black and white datasets under sim/out/datasets (from their logs) and exit")
     ap.add_argument("--push-repo", default=None, help="Hub dataset repo to upload to when done (existing HF login)")
     args = ap.parse_args()
     if args.coverage:
         base = ROOT / "sim" / "out" / "datasets"
-        coverage_plot({c: logged_scenes(_read_log(base / f"smartseed-sim-grasp-{c}")) for c in ("black", "white")},
+        coverage_plot({c: logged_scenes(_read_log(base / dataset_name(c))) for c in ("black", "white")},
                       Path(args.coverage))
         return
     if not args.color:
         ap.error("--color is required")
-    root = Path(args.out or ROOT / "sim" / "out" / "datasets" / f"smartseed-sim-grasp-{args.color}")
-    repo_id = args.push_repo or f"{HF_USER}/smartseed-sim-grasp-{args.color}"
+    root = Path(args.out or ROOT / "sim" / "out" / "datasets" / dataset_name(args.color))
+    repo_id = args.push_repo or f"{HF_USER}/{dataset_name(args.color)}"
     summary = build_dataset(root, args.color, args.episodes, args.seed, repo_id=repo_id,
                             progress=lambda msg: print(msg, flush=True))
     print(json.dumps(summary))
@@ -986,7 +1023,8 @@ def main() -> None:
 
         ds = LeRobotDataset(repo_id, root=root)
         stats = {"episodes": ds.meta.total_episodes, "frames": ds.meta.total_frames, **summary}
-        print("pushed", push_dataset(root, args.push_repo, dataset_card(args.color, args.push_repo, generator_commit(), stats)))
+        print("pushed", push_dataset(root, args.push_repo, dataset_card(args.color, args.push_repo, generator_commit(), stats,
+                                                                  V1_REJECTED_PCT[args.color])))
 
 
 if __name__ == "__main__":

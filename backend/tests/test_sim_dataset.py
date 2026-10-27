@@ -537,3 +537,27 @@ def test_the_dataset_card_names_the_generator_and_says_it_is_simulated():
     assert "BraboRobots" in card.split("---")[1]  # in the YAML tags
     assert "grasp the seed below the gripper" in card
     assert "smartseed-grasp-d1-clean" in card
+
+
+def test_the_v2_dataset_card_says_it_supersedes_v1_and_states_the_validity_rule_and_the_stats():
+    stats = {"episodes": 100, "frames": 29000, "attempts": 112, "success_rate": 0.89, "collision_rejections": 0,
+             "ik_rejections": 640, "fit_rejections": 300, "reach_rejections": 340}
+    card = md.dataset_card("white", "RafaelJaime/smartseed-sim-grasp-white-v2", commit="abc1234", stats=stats,
+                           v1_rejected_pct=37.0)
+    assert "supersedes" in card.lower()
+    assert "(https://huggingface.co/datasets/RafaelJaime/smartseed-sim-grasp-white)" in card  # links the v1 repo
+    assert "pass" in card and "wall" in card and "1 mm" in card  # the v1 problem and the criterion
+    assert "37 %" in card  # share of v1 episodes that would be rejected
+    assert "640" in card and "300" in card  # placement rejections, no-fit among them
+    assert "smartseed-grasp-d2-clean" in card and "BraboRobots" in card.split("---")[1]
+
+
+def test_the_wall_audit_flags_a_pass_through_plan_and_passes_a_planned_episode(kin):
+    from sim import audit_walls
+
+    bad = next(scenes_where_the_radial_jaw_cuts_a_wall(kin))
+    report, _ = audit_walls.audit_episode(bad[0], kin, plan=bad[1:])
+    assert report.contact_steps > 0  # in v2 physics the wall stops the jaw (<1 mm), but the arm did run into it
+    good, actions, marks = reachable(kin, "black", 0, 1)
+    report, lifted = audit_walls.audit_episode(good, kin, plan=(actions, marks))
+    assert report.valid and report.contact_steps == 0 and lifted
