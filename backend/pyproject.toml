@@ -13,7 +13,7 @@ dependencies = [
     "pillow",
     "torch",
     "transformers>=5.4.0,<5.6.0",
-    "lerobot[feetech,kinematics] @ git+https://github.com/huggingface/lerobot.git@e595b79",
+    "lerobot[feetech,kinematics,dataset] @ git+https://github.com/huggingface/lerobot.git@e595b79",
 ]
 
 [dependency-groups]

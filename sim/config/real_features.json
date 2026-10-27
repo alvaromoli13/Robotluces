@@ -1,0 +1,109 @@
+{
+  "source": [
+    "RafaelJaime/smartseed-grasp-d1-clean",
+    "RafaelJaime/smartseed-grasp-d2-clean"
+  ],
+  "note": "meta/info.json of the real datasets (identical in both); the sim datasets must keep these keys, shapes, dtypes and fps",
+  "codebase_version": "v3.0",
+  "fps": 30,
+  "robot_type": "so_follower",
+  "task": "grasp the seed below the gripper",
+  "real_episodes": {
+    "d1-clean": {
+      "episodes": 96,
+      "frames": 27527
+    },
+    "d2-clean": {
+      "episodes": 91,
+      "frames": 25742
+    }
+  },
+  "features": {
+    "action": {
+      "dtype": "float32",
+      "names": [
+        "shoulder_pan.pos",
+        "shoulder_lift.pos",
+        "elbow_flex.pos",
+        "wrist_flex.pos",
+        "wrist_roll.pos",
+        "gripper.pos"
+      ],
+      "shape": [
+        6
+      ]
+    },
+    "observation.state": {
+      "dtype": "float32",
+      "names": [
+        "shoulder_pan.pos",
+        "shoulder_lift.pos",
+        "elbow_flex.pos",
+        "wrist_flex.pos",
+        "wrist_roll.pos",
+        "gripper.pos"
+      ],
+      "shape": [
+        6
+      ]
+    },
+    "observation.images.top": {
+      "dtype": "video",
+      "shape": [
+        480,
+        640,
+        3
+      ],
+      "names": [
+        "height",
+        "width",
+        "channels"
+      ],
+      "info": {
+        "is_depth_map": false,
+        "video.height": 480,
+        "video.width": 640,
+        "video.codec": "av1",
+        "video.pix_fmt": "yuv420p",
+        "video.fps": 30,
+        "video.channels": 3,
+        "has_audio": false,
+        "video.g": 2,
+        "video.crf": 30,
+        "video.preset": 12,
+        "video.fast_decode": 0,
+        "video.video_backend": "pyav",
+        "video.extra_options": {}
+      }
+    },
+    "observation.images.wrist": {
+      "dtype": "video",
+      "shape": [
+        480,
+        640,
+        3
+      ],
+      "names": [
+        "height",
+        "width",
+        "channels"
+      ],
+      "info": {
+        "is_depth_map": false,
+        "video.height": 480,
+        "video.width": 640,
+        "video.codec": "av1",
+        "video.pix_fmt": "yuv420p",
+        "video.fps": 30,
+        "video.channels": 3,
+        "has_audio": false,
+        "video.g": 2,
+        "video.crf": 30,
+        "video.preset": 12,
+        "video.fast_decode": 0,
+        "video.video_backend": "pyav",
+        "video.extra_options": {}
+      }
+    }
+  }
+}

@@ -100,6 +100,7 @@ MAT_CENTER, MAT_HALF = (0.291, 0.007), (0.224, 0.249)  # ESTIMATED: 44.7 x 49.8 
 # (0.1503, -0.1320); the jaws open along the tool z axis (0.844, -0.524) there, so the seed sits one black radius
 # beyond the tool along it, between the pads: (0.1560, -0.1356). The other positions are read off the top frame
 # (+-3 mm) for the first two of each colour and ESTIMATED for the extras (board frame, metres).
+SEEDS_PER_BOX = 4
 _WHITE_SEEDS = ((0.217, 0.186), (0.159, 0.179), (0.200, 0.150), (0.140, 0.205))
 _BLACK_SEEDS = ((0.1751, -0.1098), (0.135, -0.185), (0.150, -0.140), (0.215, -0.180))
 
@@ -132,6 +133,11 @@ def cell_center(row: int, col: int) -> tuple[float, float, float]:
     x, y = to_world((TRAY_CENTER[0] + (TRAY_ROWS / 2 - 0.5 - row) * px,
                      TRAY_CENTER[1] + (TRAY_COLS / 2 - 0.5 - col) * py))
     return x, y, CELL_FLOOR_Z
+
+
+def seed_board_positions(color: str) -> tuple[tuple[float, float], ...]:
+    """Nominal seed centres of a box in the board frame (x' up in the top image, y' left)."""
+    return _WHITE_SEEDS if color == "white" else _BLACK_SEEDS
 
 
 def seed_positions(color: str) -> list[tuple[float, float, float]]:
