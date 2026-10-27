@@ -94,24 +94,40 @@ def _clearance(seed: np.ndarray, phi: float, box: layout.OpenBox, others=(), box
     return margin
 
 
-def grasp_pose(seed: np.ndarray, radius: float, box: layout.OpenBox, others=(), box_yaw: float = 0.0
-               ) -> tuple[np.ndarray, float]:
-    """Tool target and wrist spin (deg) for a seed. The jaws open along the radial line from the shoulder (spin 0) or,
-    when the open jaws would hit a box wall, along the nearest axis of the board that clears it (the recorded grasp of
-    episode 0 does the same, with its wrist rolled 20 degrees), the moving jaw on the far side. The tool frame sits on
-    the fixed-jaw face, so the seed is one radius (plus `FACE_GAP`) beyond the tool along the jaw axis. A box turned
-    by `box_yaw` (radians, board frame) has its own axes as candidates."""
+def axis_pose(seed: np.ndarray, radius: float, phi: float) -> tuple[float, np.ndarray]:
+    """Wrist spin (deg) and tool xy that put the jaw axis along the world direction `phi` (rad) with the seed in it."""
+    tool_xy = np.asarray(seed[:2]) - np.array([math.cos(phi), math.sin(phi)]) * (radius + FACE_GAP)
+    radial_tool = math.degrees(math.atan2(tool_xy[1], tool_xy[0] - layout.BASE_PAN_AXIS[0]))
+    return _wrap_deg(radial_tool - math.degrees(phi)), tool_xy  # the jaw axis follows the radial one minus the spin
+
+
+def grasp_candidates(seed: np.ndarray, radius: float, box: layout.OpenBox, others=(), box_yaw: float = 0.0,
+                     margin: float = WALL_MARGIN) -> list[tuple[float, float, np.ndarray]]:
+    """Every jaw axis whose open-jaw footprint clears the box walls by more than `margin` and the other seeds, as
+    (clearance, spin deg, tool xy), the smallest wrist roll first. The jaws open along the radial line from the
+    shoulder (spin 0) or along one of the axes of the board turned with the box (every 15 degrees), the moving jaw on
+    the far side. The tool frame sits on the fixed-jaw face, so the seed is one radius (plus `FACE_GAP`) beyond the
+    tool along the jaw axis."""
     radial = math.atan2(seed[1], seed[0] - layout.BASE_PAN_AXIS[0])
     candidates = [radial] + [layout.BOARD_YAW + box_yaw + math.radians(15 * k) for k in range(24)]
     scored = []
     for phi in candidates:
-        u = np.array([math.cos(phi), math.sin(phi)])
-        tool_xy = np.asarray(seed[:2]) - u * (radius + FACE_GAP)
-        radial_tool = math.degrees(math.atan2(tool_xy[1], tool_xy[0] - layout.BASE_PAN_AXIS[0]))
-        spin = _wrap_deg(radial_tool - math.degrees(phi))  # the jaw axis follows the radial one minus the spin
+        spin, tool_xy = axis_pose(seed, radius, phi)
         scored.append((_clearance(seed, phi, box, others, box_yaw), spin, tool_xy))
-    free = [c for c in scored if c[0] > WALL_MARGIN]
-    margin, spin, tool_xy = min(free, key=lambda c: abs(c[1])) if free else max(scored, key=lambda c: c[0])
+    return sorted((c for c in scored if c[0] > margin), key=lambda c: abs(c[1]))
+
+
+def grasp_pose(seed: np.ndarray, radius: float, box: layout.OpenBox, others=(), box_yaw: float = 0.0
+               ) -> tuple[np.ndarray, float]:
+    """Tool target and wrist spin (deg) for a seed: the free jaw axis with the smallest wrist roll (the recorded grasp of
+    episode 0 rolls its wrist 20 degrees to clear a wall), else the axis with the most room. A box turned by
+    `box_yaw` (radians, board frame) has its own axes as candidates."""
+    free = grasp_candidates(seed, radius, box, others, box_yaw)
+    if free:
+        _, spin, tool_xy = free[0]
+    else:
+        every = grasp_candidates(seed, radius, box, others, box_yaw, margin=-np.inf)
+        _, spin, tool_xy = max(every, key=lambda c: c[0])
     return np.array([*tool_xy, seed[2] + TOOL_Z_OFFSET]), spin
 
 

@@ -264,6 +264,132 @@ def test_the_descent_reaches_the_seed_centre_height(kin):
     assert np.linalg.norm(np.array(tool[:2]) - seed[:2]) < 0.03  # beside the seed, within one jaw length
 
 
+# -- walls: the jaw yaw, the swept path and the validity of an episode ----------------------------------------
+def test_jaw_axis_candidates_clear_the_walls_and_come_in_order_of_wrist_roll():
+    from sim import grasp_test
+
+    box = layout.OpenBox("b", (0.2, 0.0), (0.09, 0.06), 0.035)
+    seed = np.array([*layout.to_world((0.2, 0.0)), 0.0])
+    found = grasp_test.grasp_candidates(seed, 0.007, box)
+    assert len(found) >= 6
+    assert all(clear > grasp_test.WALL_MARGIN for clear, _, _ in found)
+    spins = [abs(spin) for _, spin, _ in found]
+    assert spins == sorted(spins)
+
+
+def test_a_seed_in_a_box_too_small_for_the_open_jaws_has_no_candidate_and_no_plan(kin):
+    from sim import grasp_test
+
+    tiny = layout.OpenBox("b", (0.2, 0.0), (0.03, 0.03), 0.035)
+    seed = np.array([*layout.to_world((0.2, 0.0)), 0.0])
+    assert grasp_test.grasp_candidates(seed, 0.007, tiny) == []
+    narrow = layout.OpenBox("b", (0.2, 0.0), (0.09, 0.03), 0.035)  # long enough along x, 5.2 cm wide inside
+    near_wall = np.array([*layout.to_world((0.2, 0.021)), 0.0])
+    assert all(clear > grasp_test.WALL_MARGIN for clear, _, _ in grasp_test.grasp_candidates(near_wall, 0.007, narrow))
+
+
+def test_every_planned_path_keeps_its_distance_from_every_wall(kin):
+    checked = 0
+    for attempt in range(6):
+        p, actions, marks = reachable(kin, "black" if attempt % 2 else "white", attempt, attempt)
+        check = md.check_path(p, actions, marks)
+        assert check.ok, check
+        assert check.min_grasp_m >= md.GRASP_CLEARANCE_M and check.min_static_m >= md.GRASP_CLEARANCE_M
+        assert check.min_transit_m >= min(md.TRANSIT_CLEARANCE_M, check.min_static_m)
+        checked += 1
+    assert checked == 6
+
+
+def scenes_where_the_radial_jaw_cuts_a_wall(kin, colour="black"):
+    """(params, radial plan, radial marks) of scenes whose radial (spin 0) approach fails the swept check."""
+    for attempt in range(60):
+        for resample in range(6):
+            p = md.sample_params(colour, 0, attempt, resample)
+            try:
+                actions, marks = md.plan_radial(kin, p)
+            except md.Unreachable:
+                continue
+            if not md.check_path(p, actions, marks).ok:
+                yield p, actions, marks
+
+
+def test_when_the_radial_jaw_cuts_a_wall_the_planner_picks_a_yaw_that_clears_it(kin):
+    """Among the scenes whose radial jaw axis cuts a wall, the planner flies another axis in some."""
+    rolled = 0
+    for p, bad_actions, bad_marks in itertools.islice(scenes_where_the_radial_jaw_cuts_a_wall(kin), 25):
+        assert not md.check_path(p, bad_actions, bad_marks).ok
+        try:
+            actions, marks = md.plan_actions(kin, p)
+        except md.Unreachable:
+            continue  # no axis fits or reaches there: the scene is redrawn (next test)
+        assert md.check_path(p, actions, marks).ok
+        wrist = slice(bad_marks["descend_start"], bad_marks["lift_start"])
+        assert not np.allclose(actions[wrist, 4], bad_actions[wrist, 4], atol=1.0)  # a different wrist roll
+        rolled += 1
+        if rolled == 2:
+            break
+    assert rolled == 2
+
+
+def test_a_scene_no_jaw_yaw_fits_is_a_placement_rejection_not_a_plan(kin):
+    seen = 0
+    for attempt in range(40):
+        p = md.sample_params("white", 0, attempt)
+        try:
+            md.plan_actions(kin, p)
+        except md.NoFit as exc:
+            assert "wall" in str(exc) or "walls" in str(exc)
+            seen += 1
+        except md.Unreachable:
+            pass  # out of the arm's reach: a different rejection
+    assert seen > 0
+
+
+def test_a_no_fit_scene_is_redrawn_and_counted_separately(tmp_path):
+    def run(params, kin=None):
+        if params.attempt == 0 and params.resample < 3:
+            raise (md.NoFit("white seed 1: no jaw yaw clears the walls") if params.resample == 1 else md.Unreachable("ik"))
+        return fake_rollout(3)(params)
+
+    summary = md.build_dataset(tmp_path / "ds", "white", episodes=1, seed=0, repo_id="local/nofit", rollout=run)
+    assert summary["saved"] == 1 and summary["ik_rejections"] == 3 and summary["fit_rejections"] == 1
+    first = json.loads((tmp_path / "ds" / md.LOG_NAME).read_text().splitlines()[0])
+    assert first["fit_rejections"] == 1 and first["ik_rejections"] == 3
+
+
+def test_a_lifted_but_colliding_episode_is_discarded_and_counted(tmp_path):
+    verdict = {0: False, 1: True}
+
+    def run(params, kin=None):
+        out = fake_rollout(3)(params)
+        out.valid = verdict[params.attempt]
+        out.info |= {"wall_max_penetration_mm": 4.0 if not out.valid else 0.0, "wall_max_force_n": 30.0, "wall_contact_steps": 7}
+        return out
+
+    summary = md.build_dataset(tmp_path / "ds", "black", episodes=1, seed=0, repo_id="local/coll", rollout=run)
+    assert summary["saved"] == 1 and summary["attempts"] == 2 and summary["collision_rejections"] == 1
+    log = [json.loads(line) for line in (tmp_path / "ds" / md.LOG_NAME).read_text().splitlines()]
+    assert log[0]["ok"] is False and log[0]["reason"].startswith("collision") and log[0]["wall_max_penetration_mm"] == 4.0
+    assert log[1]["ok"] is True and log[1]["wall_contact_steps"] == 7
+
+
+def test_a_simulated_episode_is_lifted_and_has_no_wall_contact_at_all(kin):
+    for attempt in (0, 1):
+        p = reachable(kin, "black", attempt, attempt)[0]
+        run = md.simulate_episode(p, kin, render=False)
+        assert run.success and run.valid, run.info
+        assert run.info["wall_contact_steps"] == 0 and run.info["wall_max_penetration_mm"] <= 1.0
+
+
+def test_the_monitor_rejects_an_episode_whose_jaw_goes_through_a_wall(kin):
+    verdicts = []
+    for p, bad_actions, bad_marks in itertools.islice(scenes_where_the_radial_jaw_cuts_a_wall(kin), 4):
+        run = md.simulate_episode(p, kin, render=False, plan=(bad_actions, bad_marks))
+        verdicts.append((run.valid, run.info["wall_contact_steps"]))
+    assert verdicts and not all(valid for valid, _ in verdicts), verdicts  # the monitor sees what the planner sees
+    assert any(steps > 0 for _, steps in verdicts)
+
+
 def test_two_plans_of_the_same_params_are_identical(kin):
     p = reachable(kin, "white", 5)[0]
     assert np.array_equal(md.plan_actions(kin, p)[0], md.plan_actions(kin, p)[0])
