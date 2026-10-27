@@ -28,7 +28,10 @@ Strict TDD (session config). Runner: `cd backend && uv run pytest` (via `~/.clau
 - [x] T2b Contact-physics grasp: jaws close on a seed and hold it while lifting (real-like stop at gripper ~7),
       no weld/attach trick; the user chose physics tuning over attach (route: delegated)
       Evidence: `sim/grasp_test.py` 100/100 black, 100/100 white (+-3 mm, readings 6.88 / 7.44 vs real 6.93 / 7.37); recorded ep0 actions lift the seed; `uv run pytest` 310 passed (RED first: 9 of 11 new tests failed on the old scene). Real readings are ~7, not 12: the jaw stop is a hard stop. Weak: black seed 3 0/20
-- [ ] T3 Run the real-trained ACT in sim and save a video per policy (route: delegated)
+- [x] T3 Run the real-trained ACT in sim and save a video per policy (route: delegated)
+      Evidence: `sim/run_policy.py` (stub-policy tests, RED first); 40 episodes: d1-c100 0/10, d1-c100-80k 1/10 (a real
+      grasp-and-lift to 11.5 cm held 0.8 s, then dropped), d2-c100 0/10, d2-c50 0/10; policies reach the right box but do not close
+      on a seed; table, videos, `docs/media/sim-vs-real-obs.png` in `sim/README.md`. Side fix: `shoulder_lift` range widened to -103
 - [ ] T4 Scripted IK grasp demos -> LeRobotDataset (randomised seed/box positions, lighting) (route: delegated)
 - [ ] T5 Train ACT on sim demos + `sim/eval.py` success metric (seed lifted > 3 cm, lands in target hole) (route: delegated)
 
@@ -44,3 +47,4 @@ Strict TDD (session config). Runner: `cd backend && uv run pytest` (via `~/.clau
   Limits: jaw grasp physics is weak (seed not held), real calibration clicks disagree with the arm-fitted camera, servo
   gains untuned. Details in `sim/README.md`. Commits: see `git log` (feat(sim) scene+SimRobot, docs).
 - 2026-10-27: T2b done (pads, servo and seed tuning, `Kinematics.solve(spin_deg)`); details in `sim/README.md`.
+- 2026-10-27: T3 done: real ACT policies run in the twin (1/40 episodes lifted a seed); see `sim/README.md`.

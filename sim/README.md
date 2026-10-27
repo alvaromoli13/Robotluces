@@ -29,6 +29,7 @@ the executor's own 30 Hz sleeps make plans run in real time. Torque off holds th
 | `fit_top_camera.py`, `fit_wrist_camera.py` | camera fits against real frames, print the constants |
 | `measure_layout.py` | back-projects pixels read off the real top frame to metres |
 | `replay.py` | replays the episode, prints residuals, writes `out/replay_overlay.png` |
+| `run_policy.py` | closed-loop real-trained ACT in the twin: obs like `act.py`, success = seed lifted > 3 cm, mp4 + PNG strip per policy |
 | `grasp_test.py` | scripted IK grasp by contact physics, N jittered trials per colour, mp4 + PNG strip of a success |
 
 ## Measured, fitted, estimated
@@ -89,6 +90,43 @@ Results (`backend/.venv/bin/python sim/grasp_test.py`, seed 2 of each box, +-3 m
 +-5 mm error: 40/40 per colour. Other seeds, 20 trials: black 0, 1 20/20, black 3 0/20; white 0, 1 20/20, white 3 19/20.
 Replay of the recorded actions of episode 0 (black seed 0): the seed is lifted and carried off with the arm (sim
 reading 6.7-6.9 against 7.1-7.2 recorded). Strips: `docs/media/sim-grasp-black.png`, `sim-grasp-white.png`.
+
+## Running the real ACT in sim (T3)
+
+```bash
+backend/.venv/bin/python sim/run_policy.py --repo RafaelJaime/act-smartseed-d1-c100 --color black     # 10 episodes, 10 s
+backend/.venv/bin/python sim/run_policy.py --repo RafaelJaime/act-smartseed-d2-c50 --color white --checkpoint <step>
+backend/.venv/bin/python sim/run_policy.py --obs-compare real_top.png real_wrist.png --color white   # sim-vs-real frame
+```
+
+The loop mirrors `ActGrasp.run`: the arm starts at the taught `act_start` (`config/poses.json`), each 1/30 s of
+simulated time the policy gets `read_observation()` (`observation.state` float32 in degrees with the gripper 0-100,
+`observation.images.top` / `.wrist` 480x640 RGB uint8) and its action goes out through `send_joints` (same clamp as the
+follower). The model loads through `resolve_spec` + `LeRobotActPolicy`, so normalisation and action-chunk handling are
+lerobot's (MPS when available). Differences from the real run: no inference latency, exactly 30 fps of sim time, the
+twin's images. Each episode jitters every seed of the colour by up to +-5 mm in x and y (fixed seed 0, so a run is
+reproducible). Success: any seed of the colour rose more than 30 mm above its resting height at any time. Also
+reported: max lift, closest tool-to-seed distance, final gripper reading, whether a seed ended within 20 mm of the tool
+frame ("in jaws"). Videos (all 10 episodes, top | wrist = what the policy sees): `sim/out/act_<name>.mp4` (git-ignored);
+PNG strips of episode 0 (top over wrist, t = 0, 2, 4, 6, 8, 10 s): `docs/media/sim-act-<name>.png`.
+
+Results, 10 episodes each, nothing tuned toward the policies (`shoulder_lift` range widened to the real follower's
+-103 rest first, see `assets/README.md` change 5):
+
+| Policy (colour) | Success | Max lift (mean / best) | Closest tool-seed (min / mean) | Final gripper (mean) | In jaws at end | Behaviour |
+|---|---|---|---|---|---|---|
+| `act-smartseed-d1-c100` (black) | 0/10 | 0 / 0 mm | 19 / 29 mm | 12.3 | 0/10 | goes to the black box and hovers over the seeds with the jaws half open, never closes on one |
+| `act-smartseed-d1-c100-80k` (black) | 1/10 | 12.9 / 114.8 mm | 8 / 13 mm | 17.1 | 0/10 | reaches into the box, moves seeds by 1-5 mm; episode 2 closed on seed 0 (reading 7.0-7.6, the real holding value), lifted it to 11.5 cm and carried it for 0.8 s, then opened and dropped it |
+| `act-smartseed-d2-c100` (white) | 0/10 | 0 / 0.1 mm | 39 / 46 mm | 23.9 | 0/10 | goes to the white box, wrist camera hovers over the seeds, gripper wide open, no descent to the floor |
+| `act-smartseed-d2-c50` (white) | 0/10 | 0 / 0 mm | 36 / 39 mm | 15.2 | 0/10 | same approach, closer to the box wall, no grasp |
+
+Reading: the policies recognise the box of their colour from the rendered images and move there, so the top camera,
+joint units and action path work. The d1 policies, whose black seeds on a cardboard floor are the highest-contrast
+target, get within 8-30 mm; the white-seed policies stay 36-47 mm away. The visual gap (flat colours, no WOWROBO print,
+no seed highlights, different wrist-camera exposure and mount; the real wrist view at t = 0 sees a bright wall and no
+seeds, `docs/media/sim-vs-real-obs.png`) is the most likely reason they do not commit to a grasp, but this run does not
+isolate it from the physics, seed layout (the real box held 2 white seeds, the twin has 4) or the missing inference
+latency. One episode in 40 is not a measured rate; the lone success is a genuine grasp-and-lift that did not hold.
 
 ## What is weak
 
