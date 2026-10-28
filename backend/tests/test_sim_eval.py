@@ -136,3 +136,38 @@ def test_the_eval_draws_held_out_scenes_from_the_same_layout_mode_as_the_dataset
                    abs(p.tray.center[1] - layout.TRAY_CENTER[1])) <= md.NARROW.anchor_jitter_m
         assert md.plan_actions(kin, p)[0].shape[0] >= md.MIN_FRAMES
     assert narrow != sim_eval.heldout_scenes("black", 2, kin=kin)
+
+
+def test_the_planner_ceiling_counts_scripted_successes_on_held_out_scenes_of_the_layout(kin):
+    seen = []
+
+    renders = []
+
+    def rollout(params, kin=None, *, render=True):
+        seen.append(params)
+        renders.append(render)
+        ok = params.attempt != 1
+        return md.Rollout(np.zeros((1, 6), np.float32), np.zeros((1, 6), np.float32), np.zeros((1, 1, 1, 3), np.uint8),
+                          np.zeros((1, 1, 1, 3), np.uint8), success=ok, valid=True)
+
+    res = sim_eval.planner_ceiling("black", 3, layout_mode="narrow", rollout=rollout, kin=kin)
+    assert res == {"episodes": 3, "successes": 2, "valid": 3, "kept": 2, "success_rate": pytest.approx(2 / 3),
+                   "kept_rate": pytest.approx(2 / 3)}
+    assert seen == sim_eval.heldout_scenes("black", 3, kin=kin, layout_mode="narrow")  # same scenes the policy gets
+    assert renders == [False] * 3  # physics only: no frames are rendered (100 episodes of frames filled a 24 GB Mac)
+
+
+def test_the_ceiling_keeps_no_frames_and_an_unrendered_rollout_allocates_none(kin):
+    p = sim_eval.heldout_scenes("black", 1, kin=kin, layout_mode="narrow")[0]
+    run = md.simulate_episode(p, kin, render=False)
+    assert run.top.nbytes + run.wrist.nbytes < 1_000_000  # not (300, 480, 640, 3) twice
+    held = []
+
+    def rollout(params, kin=None, *, render=True):
+        r = md.simulate_episode(params, kin, render=render)
+        held.append(r)
+        return r
+
+    sim_eval.planner_ceiling("black", 1, layout_mode="narrow", rollout=rollout, kin=kin)
+    assert sum(r.top.nbytes + r.wrist.nbytes for r in held) < 1_000_000
+    assert sim_eval.parse_args(["--repo", "x/y", "--color", "black", "--planner"]).planner is True

@@ -149,9 +149,29 @@ def evaluate(policy, color: str, scenes: list[md.EpisodeParams], *, duration_s: 
     return summary
 
 
+def planner_ceiling(color: str, n: int, *, seed: int = HELDOUT_SEED, layout_mode: str = "wide",
+                    rollout: Callable[..., md.Rollout] = md.simulate_episode, kin: Kinematics | None = None,
+                    log: Callable[[str], None] = lambda msg: None) -> dict:
+    """The ceiling for a policy: the scripted planner (the demonstrator) on the same held-out scenes, through the physics
+    and the wall monitor, no rendering. `successes`: the seed was lifted and held; `kept`: also wall-valid (what the
+    dataset generator would keep)."""
+    kin = kin or Kinematics()
+    episodes = successes = valid = kept = 0
+    for p in heldout_scenes(color, n, seed=seed, kin=kin, layout_mode=layout_mode):
+        r = rollout(p, kin, render=False)  # physics only; only three numbers per episode are kept, never the frames
+        episodes, successes, valid = episodes + 1, successes + bool(r.success), valid + bool(r.valid)
+        kept += bool(r.success and r.valid)
+        log(f"scene {p.attempt}: lift {r.info.get('lift_mm', float('nan')):6.1f} mm  success {r.success}  wall-valid {r.valid}")
+        del r
+    return {"episodes": episodes, "successes": successes, "valid": valid, "kept": kept,
+            "success_rate": successes / episodes, "kept_rate": kept / episodes}
+
+
 def parse_args(argv=None) -> argparse.Namespace:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("--repo", required=True, help="Hub repo id or local path of the ACT policy")
+    ap.add_argument("--repo", default=None, help="Hub repo id or local path of the ACT policy (not needed with --planner)")
+    ap.add_argument("--planner", action="store_true",
+                    help="no policy: run the scripted planner on the held-out scenes (the ceiling for a policy)")
     ap.add_argument("--checkpoint", default=None, help="intermediate checkpoint step, e.g. 020000 (default: final model)")
     ap.add_argument("--color", choices=["black", "white"], required=True)
     ap.add_argument("--episodes", type=int, default=20)
@@ -162,11 +182,20 @@ def parse_args(argv=None) -> argparse.Namespace:
     ap.add_argument("--duration", type=float, default=run_policy.DURATION_S, help="seconds per episode (sim time)")
     ap.add_argument("--device", default=None, help="torch device (default: mps if available, else cpu)")
     ap.add_argument("--out-dir", default=str(OUT_DIR))
-    return ap.parse_args(argv)
+    args = ap.parse_args(argv)
+    if not args.planner and not args.repo:
+        ap.error("--repo is required unless --planner is given")
+    return args
 
 
 def main(argv=None) -> None:
     args = parse_args(argv)
+    if args.planner:
+        res = planner_ceiling(args.color, args.episodes, seed=args.seed, layout_mode=args.layout,
+                              log=lambda msg: print(msg, flush=True))
+        print(f"scripted planner ({args.color}, {args.layout}, seed {args.seed}): {res['successes']}/{res['episodes']} lifted and held "
+              f"({100 * res['success_rate']:.0f} %), {res['kept']}/{res['episodes']} also wall-valid ({100 * res['kept_rate']:.0f} %)")
+        return
     from smartseed_robot.act import pick_device
 
     device = pick_device(args.device)

@@ -680,7 +680,7 @@ def simulate_episode(p: EpisodeParams, kin: Kinematics | None = None, *, render:
         seed_rest = grasp_test.seed_xyz(robot, p.color, p.target)
         n = len(actions)
         states = np.zeros((n, 6), np.float32)
-        top = np.zeros((n, *IMAGE_SHAPE), np.uint8)
+        top = np.zeros((n, *IMAGE_SHAPE) if render else (n, 0, 0, 3), np.uint8)  # unrendered: no 300 x 480 x 640 x 3 buffers
         wrist = np.zeros_like(top)
         peak = 0.0
         for t in range(n):
