@@ -33,6 +33,7 @@ the executor's own 30 Hz sleeps make plans run in real time. Torque off holds th
 | `grasp_test.py` | scripted IK grasp by contact physics, N jittered trials per colour, mp4 + PNG strip of a success |
 | `collision.py` | wall pass-through detector: per physics step, arm-geom vs box/tray-wall contacts (max penetration, max force, count); a `geometry` mode for scenes whose jaws did not collide (v1) |
 | `audit_walls.py`, `wall_check.py` | replay the kept episodes of a generation log and measure wall overlap (the v1 audit); the v1-vs-v2 close-up `docs/media/sim-wall-check.png` |
+| `eval.py` | T5 metric: a policy on held-out generator scenes (seed 1000), success = target-colour seed lifted > 3 cm, mp4 of the first 5 episodes to `out/eval/` |
 | `make_dataset.py` | scripted demos with randomised scenes -> LeRobotDatasets in the real schema, Hub push, previews (see "Generating sim datasets") |
 
 ## Measured, fitted, estimated
@@ -292,3 +293,45 @@ white-seed episodes command the gripper to ~6.7 at the end, the sim uses 4.2-5.0
   ships its own self-consistent `config/calibration.json` instead of the real one.
 - No lens distortion, no motion blur, no real textures: expect a visual gap for a policy trained on real images.
 - Servo dynamics untuned; torque off holds instead of going limp.
+
+## Evaluating sim-trained policies (T5)
+
+```bash
+backend/.venv/bin/python sim/eval.py --repo RafaelJaime/act-sim-black-c100 --color black                      # 20 held-out scenes
+backend/.venv/bin/python sim/eval.py --repo RafaelJaime/act-sim-white-c100 --color white --checkpoint 020000
+backend/.venv/bin/python sim/eval.py --repo RafaelJaime/act-sim-white-c100 --color white --split train       # sanity: the training scenes
+```
+
+`eval.py` draws scenes with `make_dataset.sample_params(color, 1000, attempt, resample)` (the datasets used seed 0; same layout,
+light, colour, camera and start-pose sampling; a scene is kept only if the scripted planner can grasp in it), starts the arm at
+the demonstration's first pose and runs the policy 10 s in closed loop. **Success = a seed of the target colour rose more than
+3 cm.** "Lands in the target hole" is not measured: the scripted demos fold back holding the seed and never place it.
+Run it with `run_policy.py` in mind: `run_policy.py` is the T3 tool (one fixed nominal scene) and is the wrong test for the v2 policies.
+
+**Diagnosis of the 0/10 from `run_policy.py`.** Checked, no mismatch found: dataset frames vs a fresh render of the same scene
+(top 2.1/255 mean abs difference, all from the AV1 codec; state and action identical), keys, 480x640 RGB uint8, units and joint
+order, 30 fps, action through `send_joints`, start pose. A test pins that the first observation of an eval episode equals frame 0
+of the demonstration byte for byte. Open loop (policy fed the recorded observations of training episode 0, replanning each
+frame): mean abs error 1.4-2 deg per joint, gripper 0.1-0.3. What differs is the scene: `run_policy.py` always runs the one
+nominal layout (and no start noise), which is a single point of a 3-objects x position x yaw space seen through 100 episodes.
+
+Results (20 episodes per row, ACT chunk 100, 40k steps, `sim/out/eval/*.log`):
+
+| policy | training scenes (log of seed 0) | held-out scenes | held-out, checkpoint 020000 |
+|---|---|---|---|
+| black | 12/20 (60 %) | **1/20** (5 %) | 1/20 |
+| white | 4/20 (20 %) | **2/20** (10 %) | 1/20 |
+
+Only 1 of the 3 held-out "successes" of the final models ends with the seed in the jaws (white); the others lifted the seed and
+dropped it (a 32 cm peak lift is the fold-back with the seed, then lost). Offline error of the policy against the scripted
+demonstration, replanning every 5th frame, mean over 6 scenes: training 2.1 / 1.8 deg (black / white), held-out 4.4 / 5.2 deg,
+wrist roll of white 9.3 deg (the jaw yaw is the hard part). The scripted planner itself succeeds on about 88 % of scenes.
+
+Most likely cause: too few demonstrations for the scene diversity. 100 episodes spread boxes and tray anywhere with any yaw, so
+the policy interpolates a seed position and a jaw yaw from about 100 layouts; it does not even close the loop reliably on the
+layouts it was trained on (60 % / 20 %), and generalises worse (error x2.4 held-out). Causal confusion is not excluded (the
+state alone predicts the idle and fold phases; the images must carry the target) but this data cannot separate it from
+under-fitting. Recommendation, nothing started: (1) 5-10x more demos per colour (about 3-6 h of generation on the M5), or one
+policy for both colours with the target colour as a fixed task; (2) a narrower first stage (tray and boxes inside a small
+region, yaw within +-30 deg) to confirm the pipeline reaches >50 % before widening; (3) re-run `eval.py --split train` and the
+held-out split as the acceptance number.

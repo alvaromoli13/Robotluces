@@ -90,3 +90,8 @@ Strict TDD (session config). Runner: `cd backend && uv run pytest` (via `~/.clau
 - 2026-10-27: T3 done: real ACT policies run in the twin (1/40 episodes lifted a seed); see `sim/README.md`.
 - 2026-10-27: T4 done: 100 sim episodes per colour on the Hub; see `sim/README.md`, "Generating sim datasets".
 - 2026-10-27: T4b done: jaws collide with walls, wall-aware planner, wall monitor, v2 datasets on the Hub; see `sim/README.md`, "Collision model (T4b)".
+- 2026-10-28: T5 partial (task stays open): `sim/eval.py` (RED first) measures 20 held-out scenes (seed 1000), success = seed
+  lifted > 3 cm (no target-hole check: the demos never place the seed). ACT c100 40k: black 1/20 held-out (12/20 on training
+  scenes), white 2/20 (4/20); checkpoint 020000 1/20 and 1/20. Observation path verified identical to the dataset (no mismatch);
+  the 0/10 of `run_policy.py` came from the single nominal scene. Cause: too few demos for the layout diversity; recommendation in
+  `sim/README.md`, "Evaluating sim-trained policies (T5)".
