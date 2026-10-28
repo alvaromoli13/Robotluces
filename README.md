@@ -314,6 +314,8 @@ All under <https://huggingface.co/RafaelJaime>, tagged `BraboRobots`. Collection
 | [`smartseed-grasp-d2-clean`](https://huggingface.co/datasets/RafaelJaime/smartseed-grasp-d2-clean) | 91 × 10 s | `smartseed-grasp-d_20261025_010641` without episodes 0-4, 18, 66, 84, 96 |
 | [`smartseed-sim-grasp-black-v2`](https://huggingface.co/datasets/RafaelJaime/smartseed-sim-grasp-black-v2) | 100 × ~9.8 s (29,503 frames) | **simulated**, collision-valid (no arm geom more than 1 mm inside a wall): scripted demos in the MuJoCo twin, black seeds, randomised scenes, same schema as `d1-clean` (`sim/make_dataset.py`) |
 | [`smartseed-sim-grasp-white-v2`](https://huggingface.co/datasets/RafaelJaime/smartseed-sim-grasp-white-v2) | 100 × ~9.8 s (29,508 frames) | **simulated**, collision-valid: same for white seeds, same schema as `d2-clean` |
+| [`smartseed-sim-grasp-black-v3-narrow`](https://huggingface.co/datasets/RafaelJaime/smartseed-sim-grasp-black-v3-narrow) | 300 × ~9.9 s (88,617 frames) | **simulated**, narrow layout (boxes and tray within 3 cm / 30 deg of the real scene), collision-valid, black seeds, schema of `d1-clean` |
+| [`smartseed-sim-grasp-white-v3-narrow`](https://huggingface.co/datasets/RafaelJaime/smartseed-sim-grasp-white-v3-narrow) | 300 × ~9.8 s (88,410 frames) | **simulated**, narrow layout, collision-valid, white seeds, schema of `d2-clean` |
 
 ## Run
 

@@ -74,17 +74,28 @@ Strict TDD (session config). Runner: `cd backend && uv run pytest` (via `~/.clau
       RafaelJaime/smartseed-sim-grasp-black-v2 sim-black RafaelJaime/smartseed-sim-grasp-white-v2 sim-white` (it uploads the script with
       `ssh ... 'cat >'`, not scp, and starts tmux; the models are pushed as `RafaelJaime/act-sim-black` / `act-sim-white`), then
       `PYTHON=backend/.venv/bin/python scripts/brev/watch_pair.sh <host> RafaelJaime/act-sim-black RafaelJaime/act-sim-white`.
-- [ ] T5b Withdraw the v1 links and add a narrow layout mode (route: delegated). The v1 Hub datasets
+- [x] T5b Withdraw the v1 links and add a narrow layout mode (route: delegated). The v1 Hub datasets
       `smartseed-sim-grasp-black` / `-white` were deleted by the user; remove every link to them (README, sim/README,
       docs/simulation.md, this file, `dataset_card()` + its test) and say v1 was withdrawn because the gripper passed through
       walls, regenerable from git history (commit before a279c23); re-upload the README of the two v2 Hub repos. Add
       `--layout narrow` to `sim/make_dataset.py` and `sim/eval.py`: boxes and tray near their nominal positions, yaw within
       +-30 deg, ranges chosen from the planner acceptance rate, all T4b wall rules kept.
-- [ ] T5c Generate 300 kept episodes per colour in narrow mode and publish them as `-v3-narrow` Hub repos (public, in the HF
+      Evidence: RED first (link/card tests failed, then a collection error on `md.NARROW`). No document links the v1 repos
+      (a test scans README, sim/README, docs/simulation, this file); the v2 Hub cards were re-uploaded (README only). Narrow =
+      centre +-3 cm, yaw +-30 deg of the nominal pose: planner acceptance 50 % black / 34 % white in `sim/scan_layout.py`
+      (2-4 cm flat, 5 cm drops; wide was 17 % / 14 %). `eval.py --layout narrow`. Commit ed2924b.
+- [x] T5c Generate 300 kept episodes per colour in narrow mode and publish them as `-v3-narrow` Hub repos (public, in the HF
       collection), measure the scripted planner's success on held-out narrow scenes (the ceiling), 3 mp4 per colour in
       `sim/out/v3_videos/`, coverage png in `docs/media`, docs. Next step (NOT started here): train on Brev with
       `scripts/brev/launch_two.sh <host> RafaelJaime/smartseed-sim-grasp-black-v3-narrow sim-black-narrow-c100
       RafaelJaime/smartseed-sim-grasp-white-v3-narrow sim-white-narrow-c100`, then `sim/eval.py --layout narrow`.
+      Evidence: 300 kept per colour, seed 0: black 307 attempts (97.7 %), 88,617 frames; white 302 (99.3 %), 88,410 frames; 0
+      wall-monitor rejections; planner acceptance 42.7 % / 36.1 %. Scripted planner ceiling on 100 held-out narrow scenes (seed
+      1000): black 100/100, white 97/100 (`eval.py --planner`, RED first). Hub: `RafaelJaime/smartseed-sim-grasp-black-v3-narrow`
+      and `-white-v3-narrow` (public, BraboRobots, in the collection, features equal real info.json). Coverage
+      `docs/media/sim-dataset-coverage-narrow.png`, 3 mp4 per colour in `sim/out/v3_videos/`. Incident: the first ceiling run
+      kept every rendered rollout (51 GB, killed); fixed (render=False, no frames kept, test first), RSS 0.6 GB.
+      Training NOT started. Route: delegated, one writer.
 
 ## Acceptance
 - `SMARTSEED_ROBOT=sim ./scripts/stack.sh` runs the web + executor against the simulated arm.
@@ -106,3 +117,5 @@ Strict TDD (session config). Runner: `cd backend && uv run pytest` (via `~/.clau
   scenes), white 2/20 (4/20); checkpoint 020000 1/20 and 1/20. Observation path verified identical to the dataset (no mismatch);
   the 0/10 of `run_policy.py` came from the single nominal scene. Cause: too few demos for the layout diversity; recommendation in
   `sim/README.md`, "Evaluating sim-trained policies (T5)".
+- 2026-10-28: T5b/T5c done: v1 links removed, `--layout narrow`, 300 episodes per colour on the Hub as `-v3-narrow`, scripted ceiling
+  100 % / 97 %; next step is training on Brev with the narrow datasets and `sim/eval.py --layout narrow` (see T5c).

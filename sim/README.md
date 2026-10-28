@@ -33,7 +33,8 @@ the executor's own 30 Hz sleeps make plans run in real time. Torque off holds th
 | `grasp_test.py` | scripted IK grasp by contact physics, N jittered trials per colour, mp4 + PNG strip of a success |
 | `collision.py` | wall pass-through detector: per physics step, arm-geom vs box/tray-wall contacts (max penetration, max force, count); a `geometry` mode for scenes whose jaws did not collide (v1) |
 | `audit_walls.py`, `wall_check.py` | replay the kept episodes of a generation log and measure wall overlap (the v1 audit); the v1-vs-v2 close-up `docs/media/sim-wall-check.png` |
-| `eval.py` | T5 metric: a policy on held-out generator scenes (seed 1000), success = target-colour seed lifted > 3 cm, mp4 of the first 5 episodes to `out/eval/` |
+| `eval.py` | T5 metric: a policy on held-out generator scenes (seed 1000, `--layout wide|narrow`, `--planner` for the scripted ceiling), success = target-colour seed lifted > 3 cm, mp4 of the first 5 episodes to `out/eval/` |
+| `scan_layout.py` | planner acceptance of candidate narrow-layout ranges (planning only), the evidence behind `--layout narrow` |
 | `make_dataset.py` | scripted demos with randomised scenes -> LeRobotDatasets in the real schema, Hub push, previews (see "Generating sim datasets") |
 
 ## Measured, fitted, estimated
@@ -276,6 +277,72 @@ v1 results for reference (seed 0 of the v1 generator, no wall collisions for the
 Limits: the demos only show scenes the scripted planner can solve (the placements and seeds it cannot reach are never
 recorded, so the data under-represents the far corners of the table); the scene is the twin, see "What is weak"; the real
 white-seed episodes command the gripper to ~6.7 at the end, the sim uses 4.2-5.0 (a harder squeeze is needed for the sim servo).
+
+## Narrow layout and the v3-narrow datasets (T5b, T5c)
+
+The v2 policies (`act-sim-*-c100`, 100 demos over boxes and tray placed anywhere with any yaw) scored 1/20 and 2/20 on held-out
+scenes (see "Evaluating sim-trained policies"). The next stage shrinks the distribution first: `--layout narrow` keeps the two
+boxes and the tray near their nominal position in the real scene (centre uniform within +-3 cm in x and y of `layout.py`'s
+position, yaw uniform within +-30 deg), and keeps everything else of the generator: 2-4 seeds uniform inside their box, light,
+colour, camera and start-pose randomisation, the 1 cm gap between objects, the view and reach limits, the T4b wall-aware
+planner, and the wall monitor (episode kept only with max wall penetration <= 1 mm, force <= 2 N).
+
+**Why +-3 cm / +-30 deg** (`sim/scan_layout.py --attempts 40`, planner acceptance = scenes the scripted planner can grasp in per
+scene drawn, `ik_acceptance` in the logs; the wide layout accepts 17 % / 14 %):
+
+| jitter | yaw | black | white |
+|---|---|---|---|
+| 2 cm | +-15 | 43 % | 34 % |
+| 2 cm | +-30 | 46 % | 36 % |
+| 3 cm | +-15 | 43 % | 40 % |
+| **3 cm** | **+-30** | **50 %** | **34 %** |
+| 4 cm | +-30 | 49 % | 32 % |
+| 5 cm | +-15 | 35 % | 33 % |
+| 5 cm | +-30 | 35 % | 31 % |
+
+Acceptance is flat from 2 to 4 cm and drops at 5 cm (40 attempts per cell, so about +-7 points of noise); 3 cm and +-30 deg is the
+widest range that keeps it up, so it was taken. The yaw bound is the user's +-30 deg: smaller bounds did not raise it. The real
+300-episode runs measured 42.7 % (black) and 36.1 % (white), see the table below.
+
+```bash
+backend/.venv/bin/python sim/make_dataset.py --color black --layout narrow --episodes 300 --seed 0 --push-repo RafaelJaime/smartseed-sim-grasp-black-v3-narrow
+backend/.venv/bin/python sim/make_dataset.py --color white --layout narrow --episodes 300 --seed 0 --push-repo RafaelJaime/smartseed-sim-grasp-white-v3-narrow
+backend/.venv/bin/python sim/make_dataset.py --layout narrow --videos sim/out/v3_videos      # mp4 of the first 5 (3 kept)
+backend/.venv/bin/python sim/make_dataset.py --layout narrow --coverage docs/media/sim-dataset-coverage-narrow.png
+backend/.venv/bin/python sim/eval.py --planner --color black --layout narrow --episodes 100     # scripted ceiling
+```
+
+| | black (`smartseed-sim-grasp-black-v3-narrow`) | white (`smartseed-sim-grasp-white-v3-narrow`) |
+|---|---|---|
+| Attempts / kept episodes | 307 / 300 (generator success 97.7 %) | 302 / 300 (99.3 %) |
+| Frames | 88,617 | 88,410 |
+| Lifted but rejected by the wall monitor | 0 | 0 |
+| Scenes redrawn before simulating | 412: 193 no jaw yaw / path clears the walls, 219 out of reach | 534: 235 no fit, 299 out of reach |
+| Planner acceptance of geometrically valid scenes (`ik_acceptance`) | 42.7 % | 36.1 % |
+| Geometric acceptance of drawn objects | 64.0 % | 67.1 % |
+| Failed attempts (seed not lifted) | 7 | 2 |
+| Scripted planner on 100 held-out narrow scenes (seed 1000, physics, wall monitor) | **100 / 100** lifted and held, all wall-valid | **97 / 100**, all wall-valid |
+
+The last row is the ceiling for a policy trained on this data: the demonstrator itself succeeds 100 % / 97 % on the scenes
+`eval.py --layout narrow` uses. Hub: https://huggingface.co/datasets/RafaelJaime/smartseed-sim-grasp-black-v3-narrow and
+https://huggingface.co/datasets/RafaelJaime/smartseed-sim-grasp-white-v3-narrow (public, tags `BraboRobots`, `smartseed`, `so101`,
+`simulation`, both in the collection `smartseed-so-101-act-seed-sowing`; `meta/info.json` features, fps, robot type and codebase
+version equal the real `d1-clean` / `d2-clean` ones, read back from the Hub; 300 episodes each). Coverage: `docs/media/sim-dataset-coverage-narrow.png`
+(grasped seeds cluster in the nominal box area); videos `sim/out/v3_videos/` (git-ignored).
+
+Weak: the demos still only show planner-solvable scenes (the planner redraws 57 % / 64 % of the geometrically valid scenes, so
+seeds hard against a wall are absent), the layout is a +-3 cm / +-30 deg neighbourhood of one scene (a policy trained here will not
+generalise across the table), and the wall-collision audit (`audit_walls.py`) was not re-run on the 600 episodes: the planner's
+swept-path check and the monitor (0 collision rejections) are the evidence.
+
+**Next step (not started here):** train on Brev,
+
+```bash
+scripts/brev/launch_two.sh <host> RafaelJaime/smartseed-sim-grasp-black-v3-narrow sim-black-narrow-c100 RafaelJaime/smartseed-sim-grasp-white-v3-narrow sim-white-narrow-c100
+backend/.venv/bin/python sim/eval.py --repo RafaelJaime/act-sim-black-narrow-c100 --color black --layout narrow
+```
+
+and gate on `eval.py --layout narrow` (held-out) against the 100 % / 97 % ceiling.
 
 ## What is weak
 
