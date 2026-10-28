@@ -37,8 +37,8 @@ Strict TDD (session config). Runner: `cd backend && uv run pytest` (via `~/.clau
       caught MuJoCo ignoring runtime `geom_quat`); 100 episodes per colour kept of 132 (black) / 136 (white) attempts
       (generator success 75.8 % / 73.5 %), 29,497 / 29,502 frames; scope change: boxes, tray and seeds anywhere in the top
       view (placement: geometry 1.95 % / 1.77 % of drawn objects, planner reaches 29 % / 28.5 % of valid scenes). Hub:
-      https://huggingface.co/datasets/RafaelJaime/smartseed-sim-grasp-black and `-white` (public, BraboRobots, in the HF
-      collection); features identical to real d1/d2 `info.json` (checked from the Hub), `docs/media/sim-dataset-preview.png`,
+      `RafaelJaime/smartseed-sim-grasp-black` and `-white` (v1, public at the time, later withdrawn and deleted: the
+      gripper passed through walls, see T4b; BraboRobots, were in the HF collection); features identical to real d1/d2 `info.json` (checked from the Hub), `docs/media/sim-dataset-preview.png`,
       `docs/media/sim-dataset-coverage.png`. Commits: 5e748db, 5472152 and the docs commit after it.
 - [x] T4b Collision-correct demos (reopens T4): the user saw the jaw pass through a seed-box wall (episode 0). Cause:
       the moving jaw hull has `contype="0"` and the pads only touch seeds, and the planner never checks walls. Make every
@@ -57,7 +57,7 @@ Strict TDD (session config). Runner: `cd backend && uv run pytest` (via `~/.clau
       white 112 / 100; 0 collision rejections, 543 / 666 placement rejections (204 / 269 no fit); audit of the 200 kept: 0 overlaps.
       Hub: https://huggingface.co/datasets/RafaelJaime/smartseed-sim-grasp-black-v2 and `-white-v2` (public, BraboRobots, features
       identical to real `info.json`, 100 episodes, 29,503 / 29,508 frames; reloaded from the Hub); the HF collection now lists v2
-      and not v1 (v1 repos kept, superseded). `grasp_test.py`: seed 2 20/20 both colours and every other seed unchanged except
+      and not v1 (v1 repos since withdrawn and deleted). `grasp_test.py`: seed 2 20/20 both colours and every other seed unchanged except
       black seed 0 20/20 -> 0/20 (13 mm from a wall: v1 flew the jaw through it). `uv run pytest` 380 passed (was 350).
       Media: `docs/media/sim-wall-check.png`, regenerated `sim-dataset-preview.png`, `sim-dataset-coverage.png`; mp4 of 5 episodes per
       colour in `sim/out/v2_videos/` (gitignored).
@@ -74,6 +74,17 @@ Strict TDD (session config). Runner: `cd backend && uv run pytest` (via `~/.clau
       RafaelJaime/smartseed-sim-grasp-black-v2 sim-black RafaelJaime/smartseed-sim-grasp-white-v2 sim-white` (it uploads the script with
       `ssh ... 'cat >'`, not scp, and starts tmux; the models are pushed as `RafaelJaime/act-sim-black` / `act-sim-white`), then
       `PYTHON=backend/.venv/bin/python scripts/brev/watch_pair.sh <host> RafaelJaime/act-sim-black RafaelJaime/act-sim-white`.
+- [ ] T5b Withdraw the v1 links and add a narrow layout mode (route: delegated). The v1 Hub datasets
+      `smartseed-sim-grasp-black` / `-white` were deleted by the user; remove every link to them (README, sim/README,
+      docs/simulation.md, this file, `dataset_card()` + its test) and say v1 was withdrawn because the gripper passed through
+      walls, regenerable from git history (commit before a279c23); re-upload the README of the two v2 Hub repos. Add
+      `--layout narrow` to `sim/make_dataset.py` and `sim/eval.py`: boxes and tray near their nominal positions, yaw within
+      +-30 deg, ranges chosen from the planner acceptance rate, all T4b wall rules kept.
+- [ ] T5c Generate 300 kept episodes per colour in narrow mode and publish them as `-v3-narrow` Hub repos (public, in the HF
+      collection), measure the scripted planner's success on held-out narrow scenes (the ceiling), 3 mp4 per colour in
+      `sim/out/v3_videos/`, coverage png in `docs/media`, docs. Next step (NOT started here): train on Brev with
+      `scripts/brev/launch_two.sh <host> RafaelJaime/smartseed-sim-grasp-black-v3-narrow sim-black-narrow-c100
+      RafaelJaime/smartseed-sim-grasp-white-v3-narrow sim-white-narrow-c100`, then `sim/eval.py --layout narrow`.
 
 ## Acceptance
 - `SMARTSEED_ROBOT=sim ./scripts/stack.sh` runs the web + executor against the simulated arm.

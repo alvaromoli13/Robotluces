@@ -3,9 +3,11 @@
     backend/.venv/bin/python sim/eval.py --repo RafaelJaime/act-sim-black-c100 --color black
     backend/.venv/bin/python sim/eval.py --repo RafaelJaime/act-sim-white-c100 --color white --checkpoint 020000 --episodes 20
     backend/.venv/bin/python sim/eval.py --repo RafaelJaime/act-sim-white-c100 --color white --split train   # sanity check
+    backend/.venv/bin/python sim/eval.py --repo RafaelJaime/act-sim-black-narrow-c100 --color black --layout narrow
 
 A scene is `make_dataset.sample_params(color, HELDOUT_SEED, attempt, resample)`: the same layout sampling (boxes and tray
-anywhere in the top view, any yaw, 2-4 seeds per box, light, colours, camera and start-pose noise) as the training data,
+anywhere in the top view, any yaw, 2-4 seeds per box, light, colours, camera and start-pose noise) as the training data
+(`--layout narrow`: boxes and tray near their nominal pose, as in the `-v3-narrow` datasets),
 and it is kept only if the scripted planner can grasp in it (`plan_actions` does not raise), exactly like a dataset
 episode. The datasets used seed 0; RNG streams of different seeds are independent, so no held-out scene is a training one.
 `--split train` replays the kept scenes of the training log instead (a policy that fails there memorised nothing).
@@ -61,14 +63,15 @@ class Summary:
                 f"closest tool-seed approach mean {np.mean(self.closest_mm):.0f} mm, best {min(self.closest_mm):.0f} mm")
 
 
-def heldout_scenes(color: str, n: int, *, seed: int = HELDOUT_SEED, kin: Kinematics | None = None) -> list[md.EpisodeParams]:
+def heldout_scenes(color: str, n: int, *, seed: int = HELDOUT_SEED, kin: Kinematics | None = None,
+                   layout_mode: str = "wide") -> list[md.EpisodeParams]:
     """The first `n` plannable scenes of `seed`: attempts are numbered from 0, and a placement the planner cannot grasp
     in is replaced by the next `resample` of the same attempt, as `build_dataset` does."""
     kin, scenes = kin or Kinematics(), []
     for attempt in range(n):
         rejected = 0
         while True:
-            p = md.sample_params(color, seed, attempt, rejected)
+            p = md.sample_params(color, seed, attempt, rejected, md.LAYOUTS[layout_mode])
             try:
                 md.plan_actions(kin, p)
                 break
@@ -80,10 +83,10 @@ def heldout_scenes(color: str, n: int, *, seed: int = HELDOUT_SEED, kin: Kinemat
     return scenes
 
 
-def train_scenes(color: str, n: int) -> list[md.EpisodeParams]:
+def train_scenes(color: str, n: int, layout_mode: str = "wide") -> list[md.EpisodeParams]:
     """The first `n` kept scenes of the local training log (`make_dataset.py`, seed 0)."""
-    log = md._read_log(ROOT / "sim" / "out" / "datasets" / md.dataset_name(color))
-    scenes = md.logged_scenes(log)
+    log = md._read_log(ROOT / "sim" / "out" / "datasets" / md.dataset_name(color, layout_mode))
+    scenes = md.logged_scenes(log, layout_mode)
     if len(scenes) < n:
         raise SystemExit(f"the training log of {color} has {len(scenes)} scenes, {n} asked")
     return scenes[:n]
@@ -153,6 +156,8 @@ def parse_args(argv=None) -> argparse.Namespace:
     ap.add_argument("--color", choices=["black", "white"], required=True)
     ap.add_argument("--episodes", type=int, default=20)
     ap.add_argument("--seed", type=int, default=HELDOUT_SEED, help="generator seed of the held-out scenes")
+    ap.add_argument("--layout", choices=sorted(md.LAYOUTS), default="wide",
+                    help="scene distribution; use the one the policy was trained on (narrow for the v3-narrow datasets)")
     ap.add_argument("--split", choices=["heldout", "train"], default="heldout")
     ap.add_argument("--duration", type=float, default=run_policy.DURATION_S, help="seconds per episode (sim time)")
     ap.add_argument("--device", default=None, help="torch device (default: mps if available, else cpu)")
@@ -165,11 +170,12 @@ def main(argv=None) -> None:
     from smartseed_robot.act import pick_device
 
     device = pick_device(args.device)
-    name = run_policy.policy_name(args.repo, args.checkpoint) + ("" if args.split == "heldout" else "-train")
+    name = (run_policy.policy_name(args.repo, args.checkpoint) + ("" if args.split == "heldout" else "-train")
+            + ("" if args.layout == "wide" else f"-{args.layout}"))
     print(f"{name}: loading {args.repo} (checkpoint {args.checkpoint or 'final'}) on {device}", flush=True)
     policy = run_policy.load_policy(args.repo, args.checkpoint, device)
-    scenes = (heldout_scenes(args.color, args.episodes, seed=args.seed) if args.split == "heldout"
-              else train_scenes(args.color, args.episodes))
+    scenes = (heldout_scenes(args.color, args.episodes, seed=args.seed, layout_mode=args.layout)
+              if args.split == "heldout" else train_scenes(args.color, args.episodes, args.layout))
     video = Path(args.out_dir) / f"eval_{name}.mp4"
     summary = evaluate(policy, args.color, scenes, duration_s=args.duration, video=video, name=name,
                        log=lambda msg: print(msg, flush=True))

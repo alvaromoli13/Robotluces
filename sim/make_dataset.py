@@ -49,9 +49,10 @@ LOG_NAME = "sim_generation.jsonl"
 GITHUB = "https://github.com/alvaromoli13/Robotluces"
 HF_USER = "RafaelJaime"
 REAL_REPOS = {"black": "RafaelJaime/smartseed-grasp-d1-clean", "white": "RafaelJaime/smartseed-grasp-d2-clean"}
-DATASET_SUFFIX = "-v2"  # v1 had no wall collisions for the jaws (T4b); the v1 repos stay on the Hub, superseded
+DATASET_SUFFIX = "-v2"  # v1 had no wall collisions for the jaws (T4b); the v1 repos were withdrawn and deleted
 # measured by `sim/audit_walls.py` on the 100 kept episodes of each v1 dataset: share with an arm geom > 1 mm in a wall
 V1_REJECTED_PCT = {"black": 24.0, "white": 37.0}
+V1_GENERATOR_COMMIT = "874e274"  # last commit before the T4b wall collisions; the v1 datasets came from this generator
 COLLECTION = "RafaelJaime/smartseed-so-101-act-seed-sowing-6adf0632f7e93bb112d73e8c"
 
 MIN_FRAMES, MAX_FRAMES = 272, 300  # real episodes: 278-300 frames, most of them exactly the 10 s cap
@@ -75,6 +76,8 @@ class Randomisation:
     seeds_max: int = 4
     seed_wall_margin_m: float = 0.022  # seeds are uniform on the box floor, this far from the inner walls so the jaws fit
     seed_min_gap_m: float = 0.025  # ... and at least this far from each other
+    anchor_jitter_m: float | None = None  # narrow layout: each object's centre within this of its nominal one (x and y)
+    anchor_yaw_deg: float = 180.0  # ... and its yaw within this of the nominal 0 (wide layout: any yaw)
     view_margin_m: float = 0.015  # boxes and tray lie fully inside the top camera's footprint, this far from its edge
     object_gap_m: float = 0.01  # free space between the two boxes and the tray
     base_keepout_m: float = 0.10  # nothing closer than this to the shoulder pan axis (the arm's own footprint)
@@ -108,6 +111,10 @@ class Randomisation:
 
 
 RANDOM = Randomisation()
+# Narrow layout (T5b): boxes and tray near the real scene, so 300 demos cover the distribution the policy sees.
+# The ranges come from the planner acceptance rate measured in `sim/README.md`, "Narrow layout".
+NARROW = replace(RANDOM, anchor_jitter_m=0.03, anchor_yaw_deg=30.0)
+LAYOUTS = {"wide": RANDOM, "narrow": NARROW}
 MAX_PLACEMENT_DRAWS = 100_000
 MAX_REJECTIONS = 600  # placements in a row the planner may refuse before the generator gives up
 
@@ -239,14 +246,19 @@ def _inside_view(point_world, margin: float) -> bool:
     return True
 
 
-def _place(rng, half, others, r: Randomisation) -> tuple[Placement, int]:
+def _place(rng, half, others, r: Randomisation, nominal=None) -> tuple[Placement, int]:
     """Draw (centre, yaw) uniformly until the rectangle is in view, within reach, clear of the arm and of `others`;
-    returns it with the number of draws it took."""
+    returns it with the number of draws it took. With `r.anchor_jitter_m` the draw is around the `nominal` centre and
+    yaw 0 instead of anywhere in view."""
     board = np.array([layout.to_board(pt) for pt in view_polygon()])
     lo, hi = board.min(axis=0), board.max(axis=0)
     pan = np.array([layout.BASE_PAN_AXIS[0], 0.0])
     for draws in range(1, MAX_PLACEMENT_DRAWS + 1):
-        center, yaw = rng.uniform(lo, hi), float(rng.uniform(-180, 180))
+        if r.anchor_jitter_m is None:
+            center, yaw = rng.uniform(lo, hi), float(rng.uniform(-180, 180))
+        else:
+            center = np.asarray(nominal) + rng.uniform(-r.anchor_jitter_m, r.anchor_jitter_m, 2)
+            yaw = float(rng.uniform(-r.anchor_yaw_deg, r.anchor_yaw_deg))
         if np.linalg.norm(np.array(layout.to_world(center)) - pan) > r.reach_max_m:
             continue
         corners = [np.array(layout.to_world(c)) for c in footprint(center, yaw, half)]
@@ -278,11 +290,11 @@ def sample_params(color: str, seed: int, attempt: int, resample: int = 0, r: Ran
     """Draw every random quantity of one candidate episode. Pure function of its arguments; `resample` counts the
     placements the planner could not reach (the generator asks for the next one)."""
     rng = np.random.default_rng([seed, attempt, 1 if color == "white" else 0, resample])
-    tray, d1 = _place(rng, layout.TRAY_OUTER_HALF, [], r)
+    tray, d1 = _place(rng, layout.TRAY_OUTER_HALF, [], r, layout.TRAY_CENTER)
     taken = [(tray.center, tray.yaw_deg, layout.TRAY_OUTER_HALF)]
     placed, draws = {}, d1
     for name, box in (("black", layout.BLACK_BOX), ("white", layout.WHITE_BOX)):
-        place, d = _place(rng, box.outer_half, taken, r)
+        place, d = _place(rng, box.outer_half, taken, r, box.center)
         taken.append((place.center, place.yaw_deg, box.outer_half))
         placed[name] = BoxState(place.center, place.yaw_deg, _seeds_in(rng, box, r))
         draws += d
@@ -693,8 +705,8 @@ def simulate_episode(p: EpisodeParams, kin: Kinematics | None = None, *, render:
 
 
 # -- the dataset ----------------------------------------------------------------------------------------------
-def dataset_name(color: str) -> str:
-    return f"smartseed-sim-grasp-{color}{DATASET_SUFFIX}"
+def dataset_name(color: str, layout_mode: str = "wide") -> str:
+    return f"smartseed-sim-grasp-{color}" + ("-v3-narrow" if layout_mode == "narrow" else DATASET_SUFFIX)
 
 
 def _read_log(root: Path) -> list[dict]:
@@ -736,7 +748,7 @@ def summarise(log: list[dict]) -> dict:
 
 
 def build_dataset(root: str | Path, color: str, episodes: int, seed: int, *, repo_id: str | None = None,
-                  rollout: Callable[..., Rollout] = simulate_episode, kin: Kinematics | None = None,
+                  layout_mode: str = "wide", rollout: Callable[..., Rollout] = simulate_episode, kin: Kinematics | None = None,
                   progress: Callable[[str], None] = lambda msg: None) -> dict:
     """Record successful scripted episodes until the dataset holds `episodes`; resumes an existing one.
 
@@ -744,7 +756,7 @@ def build_dataset(root: str | Path, color: str, episodes: int, seed: int, *, rep
     planner cannot reach (`Unreachable`) is replaced by the next `resample` of the same attempt. Every attempt (kept
     or failed) is one line of `<root>/sim_generation.jsonl`."""
     root = Path(root)
-    repo_id = repo_id or f"{HF_USER}/{dataset_name(color)}"
+    repo_id = repo_id or f"{HF_USER}/{dataset_name(color, layout_mode)}"
     ds = _open_dataset(root, repo_id)
     root.mkdir(parents=True, exist_ok=True)
     log = _read_log(root)
@@ -759,7 +771,7 @@ def build_dataset(root: str | Path, color: str, episodes: int, seed: int, *, rep
         while ds.meta.total_episodes < episodes:
             attempt, t0, draws, rejected, no_fit = len(log), time.time(), 0, 0, 0
             while True:
-                params = sample_params(color, seed, attempt, rejected)
+                params = sample_params(color, seed, attempt, rejected, LAYOUTS[layout_mode])
                 draws += params.proposals
                 try:
                     run = rollout(params) if kin is None else rollout(params, kin)
@@ -796,9 +808,9 @@ def build_dataset(root: str | Path, color: str, episodes: int, seed: int, *, rep
     return result | summarise(log)
 
 
-def logged_scenes(log: list[dict]) -> list[EpisodeParams]:
+def logged_scenes(log: list[dict], layout_mode: str = "wide") -> list[EpisodeParams]:
     """The parameters of every kept episode in a generation log (redrawn: they are a function of the log line)."""
-    return [sample_params(r["color"], r["seed"], r["attempt"], r.get("ik_rejections", 0)) for r in log
+    return [sample_params(r["color"], r["seed"], r["attempt"], r.get("ik_rejections", 0), LAYOUTS[layout_mode]) for r in log
             if r["ok"] and r.get("reason") != "recovered"]
 
 
@@ -861,12 +873,13 @@ def generator_commit() -> str:
         return "unknown"
 
 
-def dataset_card(color: str, repo_id: str, commit: str, stats: dict, v1_rejected_pct: float | None = None) -> str:
+def dataset_card(color: str, repo_id: str, commit: str, stats: dict, v1_rejected_pct: float | None = None,
+                 layout_mode: str = "wide") -> str:
     real = REAL_REPOS[color]
-    v1 = f"{HF_USER}/smartseed-sim-grasp-{color}"
     box = {"black": "black seeds in the black box (real source `d1`)",
            "white": "white seeds in the white box (real source `d2`)"}[color]
-    r = RANDOM
+    r = LAYOUTS[layout_mode]
+    narrow = layout_mode == "narrow"
     v1_note = (f" ({v1_rejected_pct:.0f} % of the kept v1 episodes have an arm geom more than 1 mm inside a wall)"
                if v1_rejected_pct is not None else "")
     rate = f"{100 * stats['success_rate']:.0f} %" if stats.get("success_rate") is not None else "n/a"
@@ -874,6 +887,26 @@ def dataset_card(color: str, repo_id: str, commit: str, stats: dict, v1_rejected
     front = "\n".join(["---", "license: apache-2.0", "task_categories:", "- robotics", "tags:",
                        *[f"- {t}" for t in tags], "configs:", "- config_name: default", "  data_files: data/*/*.parquet",
                        "---"])
+    withdrawn = f"""- **Replaces v1, which was withdrawn**: in v1 the moving jaw and the fingertip pads did not collide with box and tray
+  walls, so the open jaw could pass through a seed-box wall and the episode taught an impossible motion{v1_note}. v2 fixes
+  the collision model and the planner and keeps only collision-free episodes (see "Validity" below). The v1 repos were
+  deleted from the Hub; they can be regenerated from git history ({GITHUB}, generator at commit `{V1_GENERATOR_COMMIT}`, the
+  last one before the wall fixes)."""
+    wide_repo = f"{HF_USER}/{dataset_name(color)}"
+    narrow_note = narrow and f"""- **Narrow layout (v3)**: the boxes and the tray stay near their position in the real scene (each centre within
+  {100 * r.anchor_jitter_m:.0f} cm of its nominal one, yaw within +-{r.anchor_yaw_deg:.0f} deg) instead of anywhere in the top
+  view, so a policy sees a layout distribution that a few hundred demonstrations can cover. The wide-layout dataset is
+  [`{wide_repo}`](https://huggingface.co/datasets/{wide_repo}) (v2); the collision rules are the same as v2 (see
+  "Validity")."""
+    lineage = narrow_note if narrow else withdrawn
+    pose = (f"the two boxes and the 3x4 tray near their nominal pose: centre uniform within +-{100 * r.anchor_jitter_m:.0f} cm "
+            f"of it in x and y, yaw uniform within +-{r.anchor_yaw_deg:.0f} deg, no overlap ({1000 * r.object_gap_m:.0f} mm gap), "
+            f"inside the top camera view; placements the planner cannot reach, or where no jaw yaw clears the walls, are redrawn"
+            if narrow else
+            f"the two boxes and the 3x4 tray anywhere on the table the top camera sees (uniform position, any yaw, no overlap, "
+            f"{1000 * r.view_margin_m:.0f} mm inside the view, centre within {100 * r.reach_max_m:.0f} cm of the arm, "
+            f"{100 * r.base_keepout_m:.0f} cm clear of its base); placements the planner cannot reach, or where no jaw yaw "
+            f"clears the walls, are redrawn")
     return f"""{front}
 
 # {repo_id.split("/")[-1]}
@@ -883,10 +916,7 @@ real recordings. The schema is the one of [`{real}`](https://huggingface.co/data
 {FPS} fps, `robot_type` `{ROBOT_TYPE}`, same keys, shapes and units), so the same training scripts work unchanged and
 real and simulated episodes can be mixed or fine-tuned across.
 
-- **Supersedes [`{v1}`](https://huggingface.co/datasets/{v1}) (v1)**: in v1 the moving jaw and the fingertip pads
-  did not collide with box and tray walls, so the open jaw could pass through a seed-box wall and the episode taught an
-  impossible motion{v1_note}. v2 fixes the collision model and the planner and keeps only collision-free episodes (see
-  "Validity" below). Do not train on v1.
+{lineage}
 - Task: `{TASK}`
 - Episodes: {stats.get("episodes", "?")}, frames: {stats.get("frames", "?")}; generator success rate {rate} \
 ({stats.get("attempts", "?")} attempts)
@@ -939,7 +969,7 @@ grasp is plain contact physics (no weld, no attach). Only successful, collision-
 |---|---|
 | seeds per box / which one is grasped | {r.seeds_min}-{r.seeds_max} of 4 / one of the colour's seeds |
 | seed position | uniform on the box floor, {1000 * r.seed_wall_margin_m:.0f} mm off the inner walls, at least {1000 * r.seed_min_gap_m:.0f} mm apart |
-| box and tray pose | the two boxes and the 3x4 tray anywhere on the table the top camera sees (uniform position, any yaw, no overlap, {1000 * r.view_margin_m:.0f} mm inside the view, centre within {100 * r.reach_max_m:.0f} cm of the arm, {100 * r.base_keepout_m:.0f} cm clear of its base); placements the planner cannot reach, or where no jaw yaw clears the walls, are redrawn |
+| box and tray pose | {pose} |
 | light | intensity x{r.light_scale[0]}-{r.light_scale[1]}, direction tilted up to {r.light_tilt_deg:.0f} deg |
 | colours | +-{100 * r.colour_jitter:.0f} % per channel on table, mat and cardboard (the twin has no textures) |
 | top camera | +-{1000 * r.top_cam_shift_m:.0f} mm, +-{r.cam_rot_deg:.0f} deg |
@@ -1023,7 +1053,10 @@ def main() -> None:
     ap.add_argument("--color", choices=["black", "white"], default=None)
     ap.add_argument("--episodes", type=int, default=100)
     ap.add_argument("--seed", type=int, default=0)
-    ap.add_argument("--out", default=None, help="dataset folder (default sim/out/datasets/smartseed-sim-grasp-<colour>-v2)")
+    ap.add_argument("--layout", choices=sorted(LAYOUTS), default="wide",
+                    help="box/tray placement: wide = anywhere in the top view (v2), narrow = near the real scene (v3-narrow)")
+    ap.add_argument("--out", default=None, help="dataset folder (default sim/out/datasets/smartseed-sim-grasp-<colour>-v2, "
+                    "or -v3-narrow with --layout narrow)")
     ap.add_argument("--coverage", default=None, metavar="PNG", help="only draw the placement coverage plot of the "
                     "black and white datasets under sim/out/datasets (from their logs) and exit")
     ap.add_argument("--videos", default=None, metavar="DIR", help="only write DIR/<colour>_epNN.mp4 (top | wrist) of the "
@@ -1032,20 +1065,22 @@ def main() -> None:
     args = ap.parse_args()
     if args.coverage:
         base = ROOT / "sim" / "out" / "datasets"
-        coverage_plot({c: logged_scenes(_read_log(base / dataset_name(c))) for c in ("black", "white")},
+        coverage_plot({c: logged_scenes(_read_log(base / dataset_name(c, args.layout)), args.layout)
+                       for c in ("black", "white")},
                       Path(args.coverage))
         return
     if args.videos:
         base = ROOT / "sim" / "out" / "datasets"
         for c in ("black", "white"):
-            for path in export_videos(base / dataset_name(c), f"{HF_USER}/{dataset_name(c)}", 5, Path(args.videos), c):
+            for path in export_videos(base / dataset_name(c, args.layout), f"{HF_USER}/{dataset_name(c, args.layout)}", 5,
+                                      Path(args.videos), c):
                 print(path)
         return
     if not args.color:
         ap.error("--color is required")
-    root = Path(args.out or ROOT / "sim" / "out" / "datasets" / dataset_name(args.color))
-    repo_id = args.push_repo or f"{HF_USER}/{dataset_name(args.color)}"
-    summary = build_dataset(root, args.color, args.episodes, args.seed, repo_id=repo_id,
+    root = Path(args.out or ROOT / "sim" / "out" / "datasets" / dataset_name(args.color, args.layout))
+    repo_id = args.push_repo or f"{HF_USER}/{dataset_name(args.color, args.layout)}"
+    summary = build_dataset(root, args.color, args.episodes, args.seed, repo_id=repo_id, layout_mode=args.layout,
                             progress=lambda msg: print(msg, flush=True))
     print(json.dumps(summary))
     if args.push_repo:
@@ -1054,7 +1089,8 @@ def main() -> None:
         ds = LeRobotDataset(repo_id, root=root)
         stats = {"episodes": ds.meta.total_episodes, "frames": ds.meta.total_frames, **summary}
         print("pushed", push_dataset(root, args.push_repo, dataset_card(args.color, args.push_repo, generator_commit(), stats,
-                                                                  V1_REJECTED_PCT[args.color])))
+                                                                  V1_REJECTED_PCT[args.color] if args.layout == "wide" else None,
+                                                                  args.layout)))
 
 
 if __name__ == "__main__":

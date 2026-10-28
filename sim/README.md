@@ -202,11 +202,12 @@ backend/.venv/bin/python sim/make_dataset.py --videos sim/out/v2_videos         
 ```
 
 Datasets go to `sim/out/datasets/smartseed-sim-grasp-<colour>-v2` (a stopped run resumes; running it again with
-`--push-repo` uploads). **v2 supersedes v1** (`smartseed-sim-grasp-black` / `-white`, still on the Hub): v1 episodes let the
+`--push-repo` uploads). **v2 replaces v1**, which was withdrawn and deleted from the Hub (repos `smartseed-sim-grasp-black` / `-white`): v1 episodes let the
 gripper pass through box walls (see "Collision model (T4b)"; replaying the 100 kept episodes of each v1 dataset with
 `audit_walls.py`, **24 % of the black and 37 % of the white ones** have an arm geom more than 1 mm inside a wall, 19 % / 26 %
 more than 5 mm, up to 22 / 25 mm; 4 % / 9 % of them in the grasp itself, the rest with the folded arm or the transit
-inside a wall of a box placed near the base). Train on v2.
+inside a wall of a box placed near the base). The v1 generator is in git history (commit `874e274`, the last one before the
+T4b wall fixes: `git worktree add ../Robotluces-v1 874e274`); do not train on v1 data.
 
 Scripted demonstrations recorded with `LeRobotDataset.create` / `add_frame` / `save_episode` (lerobot at the pinned
 commit `e595b79`; `lerobot[dataset]` is now part of the backend dependencies). The schema is the real one, key for key:
@@ -264,7 +265,7 @@ independent of the collision bits) agrees: 0 of 200 episodes overlap a wall. Yie
 
 Hub: https://huggingface.co/datasets/RafaelJaime/smartseed-sim-grasp-black-v2 and
 https://huggingface.co/datasets/RafaelJaime/smartseed-sim-grasp-white-v2 (public, tag `BraboRobots`, in the collection
-`smartseed-so-101-act-seed-sowing`, which no longer lists the v1 repos). Loading them back from the Hub gives the same feature dict
+`smartseed-so-101-act-seed-sowing`, which does not list the withdrawn v1 repos). Loading them back from the Hub gives the same feature dict
 as the real `info.json`, 100 episodes each. Previews: `docs/media/sim-dataset-preview.png` (episodes 0, 50, 99 per colour: top over
 wrist at the first, middle and last frame), `docs/media/sim-dataset-coverage.png` (every kept scene on the top view) and
 `docs/media/sim-wall-check.png` (episode 0 of v1: the same commands in the v1 and the v2 twin).

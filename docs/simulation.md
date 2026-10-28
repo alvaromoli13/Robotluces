@@ -97,8 +97,8 @@ and joint conventions, it replaces most of steps 2 and 3 below.
 - **B. Sim-trained policy.** **Demos done (T4, `sim/make_dataset.py`):** 100 scripted episodes per colour with
   randomised box, tray and seed placement, lighting and cameras, on the Hub as `RafaelJaime/smartseed-sim-grasp-black-v2` and
   `-white-v2` (T4b: collision-valid, generator success 88 % / 89 %, details in `sim/README.md`; the v1 repos
-  `smartseed-sim-grasp-black` / `-white` are superseded because their episodes let the gripper pass through box walls,
-  24 % / 37 % of them by more than 1 mm). Training is T5. Original plan: write scripted IK demonstrations (`sim/scripted_demo.py`, using
+  `smartseed-sim-grasp-black` / `-white` were withdrawn and deleted from the Hub because their episodes let the gripper pass
+  through box walls, 24 % / 37 % of them by more than 1 mm; regenerable from git history at `874e274`). Training is T5. Original plan: write scripted IK demonstrations (`sim/scripted_demo.py`, using
   `Kinematics.solve` against the simulated tool frame), record them as a `LeRobotDataset` with the
   same keys and fps, train ACT with the existing scripts (`lerobot/scripts/20_train_local.sh`, or
   `scripts/brev/train_pair.sh` on a cloud GPU), and evaluate. Metric: a seed is lifted more than

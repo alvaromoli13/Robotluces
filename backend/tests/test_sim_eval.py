@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from sim import eval as sim_eval, make_dataset as md
+from sim import eval as sim_eval, layout, make_dataset as md
 from smartseed_robot.robot import JOINTS
 
 
@@ -123,3 +123,16 @@ def test_the_policy_sees_the_very_frames_the_dataset_generator_recorded_for_the_
     assert np.array_equal(seen["obs"]["observation.images.top"], demo.top[0])
     assert np.array_equal(seen["obs"]["observation.images.wrist"], demo.wrist[0])
     assert np.array_equal(seen["obs"]["observation.state"], demo.states[0])
+
+
+def test_the_eval_draws_held_out_scenes_from_the_same_layout_mode_as_the_dataset(kin):
+    assert sim_eval.parse_args(["--repo", "x/y", "--color", "black"]).layout == "wide"
+    assert sim_eval.parse_args(["--repo", "x/y", "--color", "black", "--layout", "narrow"]).layout == "narrow"
+    narrow = sim_eval.heldout_scenes("black", 2, kin=kin, layout_mode="narrow")
+    assert [p.seed for p in narrow] == [sim_eval.HELDOUT_SEED] * 2
+    for p in narrow:
+        assert abs(p.tray.yaw_deg) <= md.NARROW.anchor_yaw_deg  # a narrow-mode scene, not a wide one
+        assert max(abs(p.tray.center[0] - layout.TRAY_CENTER[0]),
+                   abs(p.tray.center[1] - layout.TRAY_CENTER[1])) <= md.NARROW.anchor_jitter_m
+        assert md.plan_actions(kin, p)[0].shape[0] >= md.MIN_FRAMES
+    assert narrow != sim_eval.heldout_scenes("black", 2, kin=kin)

@@ -118,6 +118,67 @@ def test_objects_and_seeds_cover_the_visible_table_not_just_a_neighbourhood_of_t
     assert 300 in lengths and len(lengths) > 5
 
 
+# -- narrow layout (T5b) --------------------------------------------------------------------------------------
+N = md.NARROW
+NOMINAL = {"white": layout.WHITE_BOX.center, "black": layout.BLACK_BOX.center, "tray": layout.TRAY_CENTER}
+
+
+def test_layouts_are_named_and_the_wide_one_is_the_default_distribution():
+    assert md.LAYOUTS == {"wide": md.RANDOM, "narrow": md.NARROW}
+    assert md.dataset_name("black") == "smartseed-sim-grasp-black-v2"
+    assert md.dataset_name("white", "narrow") == "smartseed-sim-grasp-white-v3-narrow"
+    assert md.sample_params("black", 1, 2) == md.sample_params("black", 1, 2, r=md.RANDOM)  # wide streams unchanged
+
+
+@pytest.mark.parametrize("color", ["black", "white"])
+def test_narrow_layout_keeps_boxes_and_tray_near_their_nominal_pose_and_every_other_rule(color):
+    poly = _view_quad()
+    pan = np.array([layout.BASE_PAN_AXIS[0], 0.0])
+    assert 0.0 < N.anchor_jitter_m <= 0.05 and 0.0 < N.anchor_yaw_deg <= 30.0  # a few cm, within +-30 deg
+    assert (N.seeds_min, N.seeds_max, N.seed_wall_margin_m) == (R.seeds_min, R.seeds_max, R.seed_wall_margin_m)
+    assert (N.light_scale, N.light_tilt_deg, N.colour_jitter) == (R.light_scale, R.light_tilt_deg, R.colour_jitter)
+    centers = {k: [] for k in NOMINAL}
+    for attempt in range(150):
+        p = md.sample_params(color, seed=1, attempt=attempt, r=N)
+        placed = {"white": (p.white.center, p.white.yaw_deg, layout.WHITE_BOX.outer_half),
+                  "black": (p.black.center, p.black.yaw_deg, layout.BLACK_BOX.outer_half),
+                  "tray": (p.tray.center, p.tray.yaw_deg, layout.TRAY_OUTER_HALF)}
+        for name, (center, yaw, half) in placed.items():
+            assert np.abs(np.subtract(center, NOMINAL[name])).max() <= N.anchor_jitter_m + 1e-12, name
+            assert abs(yaw) <= N.anchor_yaw_deg + 1e-12, name
+            centers[name].append(center)
+            for corner in md.footprint(center, yaw, half):  # the wide-mode rules still hold
+                world = np.array(layout.to_world(corner))
+                assert _inside(poly, world, N.view_margin_m)
+                assert np.linalg.norm(world - pan) >= N.base_keepout_m
+        for a, b in itertools.combinations(placed.values(), 2):
+            assert not md.overlap(a, b, N.object_gap_m)
+        for state, box in ((p.black, layout.BLACK_BOX), (p.white, layout.WHITE_BOX)):  # seeds: still random in the box
+            hx, hy = box.inner_half[0] - N.seed_wall_margin_m, box.inner_half[1] - N.seed_wall_margin_m
+            assert N.seeds_min <= len(state.seeds) <= N.seeds_max
+            assert all(abs(lx) <= hx + 1e-12 and abs(ly) <= hy + 1e-12 for _, lx, ly in state.seeds)
+    for name, xy in centers.items():  # and it really jitters (not pinned to the nominal pose)
+        assert np.array(xy).std(axis=0).min() > 0.25 * N.anchor_jitter_m, name
+
+
+def test_narrow_scenes_are_reproducible_and_differ_from_the_wide_ones():
+    a = md.sample_params("white", 5, 3, r=N)
+    assert a == md.sample_params("white", 5, 3, r=N) and a != md.sample_params("white", 5, 3)
+
+
+def test_the_generator_and_the_coverage_plot_use_the_requested_layout(tmp_path):
+    seen = []
+
+    def run(params, kin=None):
+        seen.append(params)
+        return fake_rollout(3)(params)
+
+    root = tmp_path / "ds"
+    md.build_dataset(root, "white", episodes=2, seed=0, repo_id="local/n", rollout=run, layout_mode="narrow")
+    assert seen == [md.sample_params("white", 0, a, r=N) for a in range(2)]
+    assert md.logged_scenes(md._read_log(root), layout_mode="narrow") == seen
+
+
 def test_overlap_and_footprint_geometry():
     a = ((0.0, 0.0), 0.0, (0.05, 0.03))
     assert md.overlap(a, ((0.09, 0.0), 0.0, (0.05, 0.03)), 0.0)  # 1 cm into each other
@@ -539,17 +600,41 @@ def test_the_dataset_card_names_the_generator_and_says_it_is_simulated():
     assert "smartseed-grasp-d1-clean" in card
 
 
-def test_the_v2_dataset_card_says_it_supersedes_v1_and_states_the_validity_rule_and_the_stats():
+def test_the_v2_dataset_card_says_v1_was_withdrawn_without_linking_it_and_states_the_validity_rule_and_the_stats():
     stats = {"episodes": 100, "frames": 29000, "attempts": 112, "success_rate": 0.89, "collision_rejections": 0,
              "ik_rejections": 640, "fit_rejections": 300, "reach_rejections": 340}
     card = md.dataset_card("white", "RafaelJaime/smartseed-sim-grasp-white-v2", commit="abc1234", stats=stats,
                            v1_rejected_pct=37.0)
-    assert "supersedes" in card.lower()
-    assert "(https://huggingface.co/datasets/RafaelJaime/smartseed-sim-grasp-white)" in card  # links the v1 repo
+    assert "withdrawn" in card.lower() and "git history" in card  # v1 is gone from the Hub, regenerable
+    assert "huggingface.co/datasets/RafaelJaime/smartseed-sim-grasp-white)" not in card  # no link to the deleted repo
+    assert "huggingface.co/datasets/RafaelJaime/smartseed-sim-grasp-white\n" not in card
     assert "pass" in card and "wall" in card and "1 mm" in card  # the v1 problem and the criterion
     assert "37 %" in card  # share of v1 episodes that would be rejected
     assert "640" in card and "300" in card  # placement rejections, no-fit among them
     assert "smartseed-grasp-d2-clean" in card and "BraboRobots" in card.split("---")[1]
+
+
+def test_no_document_links_the_withdrawn_v1_datasets():
+    import re
+    from pathlib import Path
+
+    root = Path(md.ROOT)
+    dead = re.compile(r"datasets/RafaelJaime/smartseed-sim-grasp-(black|white)(?![\w-])")
+    for doc in ("README.md", "sim/README.md", "docs/simulation.md", "odd/tasks/sim-replica.md"):
+        assert not dead.search((root / doc).read_text()), f"{doc} links a deleted v1 dataset"
+
+
+def test_the_narrow_card_states_the_layout_bounds_and_links_no_v1():
+    stats = {"episodes": 300, "frames": 88000, "attempts": 330, "success_rate": 0.9, "collision_rejections": 0,
+             "ik_rejections": 40, "fit_rejections": 10, "reach_rejections": 30}
+    card = md.dataset_card("black", "RafaelJaime/smartseed-sim-grasp-black-v3-narrow", commit="abc1234", stats=stats,
+                           layout_mode="narrow")
+    assert "narrow" in card.lower() and f"+-{N.anchor_yaw_deg:.0f} deg" in card and f"{100 * N.anchor_jitter_m:.0f} cm" in card
+    assert "anywhere on the table" not in card  # the wide-layout row is not claimed
+    assert "https://github.com/alvaromoli13/Robotluces" in card and "BraboRobots" in card.split("---")[1]
+    assert "huggingface.co/datasets/RafaelJaime/smartseed-sim-grasp-black)" not in card
+    assert "(https://huggingface.co/datasets/RafaelJaime/smartseed-sim-grasp-black-v2)" in card  # the wide sibling
+    assert "300" in card and "1 mm" in card
 
 
 def test_the_wall_audit_flags_a_pass_through_plan_and_passes_a_planned_episode(kin):
