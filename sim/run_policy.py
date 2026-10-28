@@ -74,11 +74,22 @@ def policy_name(repo: str, checkpoint: str | None = None) -> str:
     return f"{name}-{checkpoint}" if checkpoint else name
 
 
+def inference_tag(n_action_steps: int | None = None, temporal_ensemble_coeff: float | None = None) -> str:
+    """Media-name suffix for a non-default chunk execution (empty for the trained default)."""
+    if temporal_ensemble_coeff is not None:
+        return f"-te{temporal_ensemble_coeff:g}"
+    return f"-n{n_action_steps}" if n_action_steps is not None else ""
+
+
 def load_policy(repo: str, checkpoint: str | None = None, device: str | None = None, *,
                 resolver: Callable[[str, str | None], str] = resolve_spec,
-                factory: Callable[[str, str | None], PolicyRunner] = LeRobotActPolicy) -> PolicyRunner:
-    """Same path as the backend: `resolve_spec` (final model = repo, checkpoint = local download) then lerobot."""
-    return factory(resolver(repo, checkpoint), device)
+                factory: Callable[..., PolicyRunner] = LeRobotActPolicy,
+                n_action_steps: int | None = None, temporal_ensemble_coeff: float | None = None) -> PolicyRunner:
+    """Same path as the backend: `resolve_spec` (final model = repo, checkpoint = local download) then lerobot.
+    The optional overrides change only how the chunks are executed (see `apply_inference_overrides`)."""
+    overrides = {k: v for k, v in (("n_action_steps", n_action_steps),
+                                   ("temporal_ensemble_coeff", temporal_ensemble_coeff)) if v is not None}
+    return factory(resolver(repo, checkpoint), device, **overrides)
 
 
 def seed_xyz(robot: SimRobot, color: str, index: int) -> np.ndarray:

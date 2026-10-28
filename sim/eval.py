@@ -179,6 +179,10 @@ def parse_args(argv=None) -> argparse.Namespace:
     ap.add_argument("--layout", choices=sorted(md.LAYOUTS), default="wide",
                     help="scene distribution; use the one the policy was trained on (narrow for the v3-narrow datasets)")
     ap.add_argument("--split", choices=["heldout", "train"], default="heldout")
+    ap.add_argument("--n-action-steps", type=int, default=None,
+                    help="actions played per inference (default: the trained chunk, played open loop)")
+    ap.add_argument("--temporal-ensemble", type=float, default=None, metavar="COEFF",
+                    help="re-plan every step and blend the overlapping chunks (ACT paper: 0.01)")
     ap.add_argument("--duration", type=float, default=run_policy.DURATION_S, help="seconds per episode (sim time)")
     ap.add_argument("--device", default=None, help="torch device (default: mps if available, else cpu)")
     ap.add_argument("--out-dir", default=str(OUT_DIR))
@@ -200,9 +204,11 @@ def main(argv=None) -> None:
 
     device = pick_device(args.device)
     name = (run_policy.policy_name(args.repo, args.checkpoint) + ("" if args.split == "heldout" else "-train")
-            + ("" if args.layout == "wide" else f"-{args.layout}"))
+            + ("" if args.layout == "wide" else f"-{args.layout}")
+            + run_policy.inference_tag(args.n_action_steps, args.temporal_ensemble))
     print(f"{name}: loading {args.repo} (checkpoint {args.checkpoint or 'final'}) on {device}", flush=True)
-    policy = run_policy.load_policy(args.repo, args.checkpoint, device)
+    policy = run_policy.load_policy(args.repo, args.checkpoint, device, n_action_steps=args.n_action_steps,
+                                    temporal_ensemble_coeff=args.temporal_ensemble)
     scenes = (heldout_scenes(args.color, args.episodes, seed=args.seed, layout_mode=args.layout)
               if args.split == "heldout" else train_scenes(args.color, args.episodes, args.layout))
     video = Path(args.out_dir) / f"eval_{name}.mp4"

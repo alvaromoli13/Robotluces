@@ -3,7 +3,7 @@ import threading
 import numpy as np
 import pytest
 
-from smartseed_robot.act import ACT_START_FALLBACK, ActConfig, ActGrasp
+from smartseed_robot.act import ACT_START_FALLBACK, ActConfig, ActGrasp, apply_inference_overrides
 from smartseed_robot.robot import JOINTS, CameraUnavailable, FakeRobot
 
 
@@ -219,3 +219,33 @@ def test_a_non_camera_failure_is_not_masked_by_a_reconnect():
     with pytest.raises(OSError):
         act.run("red", robot, threading.Event(), hz=1000)
     assert robot.reconnects == 0
+
+
+class _ActCfg:
+    chunk_size, n_action_steps, temporal_ensemble_coeff = 100, 100, None
+
+
+def test_inference_overrides_shorten_the_open_loop_chunk():
+    cfg = apply_inference_overrides(_ActCfg(), n_action_steps=10)
+    assert (cfg.n_action_steps, cfg.temporal_ensemble_coeff) == (10, None)
+
+
+def test_temporal_ensembling_replans_every_step():
+    cfg = apply_inference_overrides(_ActCfg(), temporal_ensemble_coeff=0.01)
+    assert (cfg.n_action_steps, cfg.temporal_ensemble_coeff) == (1, 0.01)
+
+
+def test_no_overrides_keep_the_trained_config():
+    cfg = apply_inference_overrides(_ActCfg())
+    assert (cfg.n_action_steps, cfg.temporal_ensemble_coeff) == (100, None)
+
+
+@pytest.mark.parametrize("steps", [0, 101])
+def test_n_action_steps_must_fit_the_chunk(steps):
+    with pytest.raises(ValueError):
+        apply_inference_overrides(_ActCfg(), n_action_steps=steps)
+
+
+def test_ensembling_and_a_longer_chunk_are_exclusive():
+    with pytest.raises(ValueError):
+        apply_inference_overrides(_ActCfg(), n_action_steps=10, temporal_ensemble_coeff=0.01)

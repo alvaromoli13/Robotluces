@@ -178,10 +178,25 @@ def pick_device(override: str | None = None) -> str:
     return "mps" if torch.backends.mps.is_available() else "cpu"
 
 
+def apply_inference_overrides(cfg, n_action_steps: int | None = None, temporal_ensemble_coeff: float | None = None):
+    """Change how a trained ACT executes its chunks (no retraining). By default it plays all `chunk_size` actions open
+    loop; fewer steps re-plan more often, and temporal ensembling (the ACT paper's mode) re-plans every step."""
+    if temporal_ensemble_coeff is not None:
+        if n_action_steps not in (None, 1):
+            raise ValueError("temporal ensembling runs one action per inference: n_action_steps must be 1")
+        cfg.temporal_ensemble_coeff, cfg.n_action_steps = temporal_ensemble_coeff, 1
+    elif n_action_steps is not None:
+        if not 1 <= n_action_steps <= cfg.chunk_size:
+            raise ValueError(f"n_action_steps must be within 1..{cfg.chunk_size}, got {n_action_steps}")
+        cfg.n_action_steps = n_action_steps
+    return cfg
+
+
 class LeRobotActPolicy:
     """A lerobot ACT policy with its pre/post processors, loaded the way lerobot's rollout does."""
 
-    def __init__(self, spec: str, device: str | None = None, task: str = TASK):
+    def __init__(self, spec: str, device: str | None = None, task: str = TASK, *,
+                 n_action_steps: int | None = None, temporal_ensemble_coeff: float | None = None):
         import torch
         from lerobot.configs import PreTrainedConfig
         from lerobot.policies import get_policy_class, make_pre_post_processors
@@ -190,6 +205,7 @@ class LeRobotActPolicy:
         self._device, self._task = torch.device(self._device_name), task
         cfg = PreTrainedConfig.from_pretrained(spec)
         cfg.pretrained_path, cfg.device = spec, self._device_name
+        apply_inference_overrides(cfg, n_action_steps, temporal_ensemble_coeff)
         self._policy = get_policy_class(cfg.type).from_pretrained(spec, config=cfg).to(self._device).eval()
         self._pre, self._post = make_pre_post_processors(
             policy_cfg=cfg, pretrained_path=spec, preprocessor_overrides={"device_processor": {"device": self._device_name}})

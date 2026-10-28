@@ -207,3 +207,24 @@ def test_the_closest_approach_of_the_tool_to_a_seed_of_the_colour_is_reported():
 
     near, _ = episode(Stub(carry), duration_s=0.5)
     assert near.min_tool_seed_mm < 20.0
+
+
+def test_inference_overrides_reach_the_lerobot_wrapper_only_when_given():
+    seen = []
+
+    def factory(spec, device, **overrides):
+        seen.append(overrides)
+
+    def resolver(repo, checkpoint):
+        return "local/spec"
+
+    run_policy.load_policy("R/act", None, "cpu", resolver=resolver, factory=factory)
+    run_policy.load_policy("R/act", None, "cpu", resolver=resolver, factory=factory, n_action_steps=10)
+    run_policy.load_policy("R/act", None, "cpu", resolver=resolver, factory=factory, temporal_ensemble_coeff=0.01)
+    assert seen == [{}, {"n_action_steps": 10}, {"temporal_ensemble_coeff": 0.01}]
+
+
+def test_inference_tag_names_the_execution_mode():
+    assert run_policy.inference_tag() == ""
+    assert run_policy.inference_tag(n_action_steps=10) == "-n10"
+    assert run_policy.inference_tag(temporal_ensemble_coeff=0.01) == "-te0.01"
