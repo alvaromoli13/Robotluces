@@ -403,3 +403,35 @@ under-fitting. Recommendation, nothing started: (1) 5-10x more demos per colour 
 policy for both colours with the target colour as a fixed task; (2) a narrower first stage (tray and boxes inside a small
 region, yaw within +-30 deg) to confirm the pipeline reaches >50 % before widening; (3) re-run `eval.py --split train` and the
 held-out split as the acceptance number.
+
+### Eval-driven training length (T5d)
+
+The number of steps is not fixed. `scripts/brev/auto_train.sh <host> <black repo> <white repo>` (instead of `watch_pair.sh`) runs
+on this Mac next to a `launch_two.sh` box:
+
+```bash
+PYTHON=backend/.venv/bin/python scripts/brev/auto_train.sh my-box RafaelJaime/act-sim-black-narrow-c100 RafaelJaime/act-sim-white-narrow-c100
+```
+
+- Every new `checkpoints/<step>` on the Hub is evaluated locally, one at a time, with
+  `sim/eval.py --layout narrow --episodes 30` (held-out seed 1000, the same 30 scenes for every step); step -> successes goes to
+  `sim/out/auto_train/<name>.json`. An eval whose RSS exceeds `RSS_MAX_MB` (6000) is killed; three failed evals stop the model.
+- `sim/auto_stop.py` decides after each eval: stop at >= 90 % success, after 2 consecutive checkpoints without a strictly higher
+  success count (patience 20k steps at `--save_freq=10000`), or at the 120k cap. The best checkpoint is the earliest with the highest count.
+- A run that reaches its `--steps` limit and is not stopped is resumed on the box by `scripts/brev/resume_run.sh`
+  (`lerobot-train --config_path=<out>/checkpoints/last/pretrained_model/train_config.json --resume=true --steps=<+40k, max 120k>`):
+  same output dir and Hub repo. Read in lerobot e595b79 (`lerobot_train.py`, `train_utils.py`): resume restores step, RNG, optimizer
+  and sampler offset; checkpoints are still saved every `save_freq` and pushed (`save_checkpoint_to_hub`, `checkpoints/<step>`,
+  the name is zero-padded to 6 digits, so 050000 etc.); `--steps` on the command line overrides the saved config. Not run on a GPU yet.
+  Stopping a model kills its run on the box (`pkill`), its `FAILED-<name>` marker is then ignored.
+- When both models are done: the best checkpoint of each is printed and written into the model card (`README.md` only, between
+  `<!-- best-checkpoint -->` markers; checkpoints are never deleted or overwritten, but lerobot's own end-of-run push does
+  refresh the repo root with the last step's weights), logs go to `~/brev-logs`, and the box is deleted.
+- Safety as `watch_pair.sh`: delete on setup failure, all runs failed, no step in 40 min, a step stalled 20 min, box unreachable
+  10 min; `brev delete <host> </dev/null` capped at 2 min and confirmed in `brev ls`. Different from the watcher: if the Brev
+  login expired it waits up to `LOGIN_WAIT_MIN` (180) for `brev login` (macOS notification) and only then exits 3 "LOGIN NEEDED".
+  Long runs (up to 80k more steps per model, about 14 h at 1.5 step/s) mean the login will expire: check the notification.
+- Remote scope: ssh to the given host and `brev delete` of it, nothing else. State is kept in files (`sim/out/auto_train/state-<host>`),
+  so the script can be restarted. Tests: `backend/tests/test_auto_stop.py` (decision logic), `backend/tests/test_auto_train_sh.py`
+  (fake ssh, brev and python: patience, resume +40k, cap, target, setup failure, failed runs, stall, no step, unreachable,
+  logged out, eval failures).

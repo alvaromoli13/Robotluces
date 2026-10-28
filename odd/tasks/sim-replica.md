@@ -96,6 +96,19 @@ Strict TDD (session config). Runner: `cd backend && uv run pytest` (via `~/.clau
       `docs/media/sim-dataset-coverage-narrow.png`, 3 mp4 per colour in `sim/out/v3_videos/`. Incident: the first ceiling run
       kept every rendered rollout (51 GB, killed); fixed (render=False, no frames kept, test first), RSS 0.6 GB.
       Training NOT started. Route: delegated, one writer.
+- [x] T5d Eval-driven auto-stop controller for FUTURE Brev runs (route: delegated, one writer; trigger: 2+ non-trivial files).
+      The training length must not be fixed: `scripts/brev/auto_train.sh <host> <black repo> <white repo>` evaluates every new Hub
+      checkpoint locally (`sim/eval.py --layout narrow --episodes 30`), logs step -> successes in
+      `sim/out/auto_train/<name>.json`, resumes a finished run with +40k steps (cap 120k), stops a model after 2 checkpoints
+      without a strictly higher success count or at >= 90 %, deletes the box when both are done and writes the best checkpoint
+      into the Hub model card. Decision logic in `sim/auto_stop.py` (unit-tested, no network); shell paths tested with fake
+      ssh/brev. Scope change (user): the live box `smartseed-narrow` is NOT touched, no handover, old watcher stays.
+      Evidence: RED first for `sim/auto_stop.py` (ImportError, then 17 unit tests
+      green: patience, strict improvement, ties, 90 % target, 120k cap, +40k resume target, eval parsing, JSON log, model card
+      block). `scripts/brev/auto_train.sh` + `resume_run.sh` tested with fake ssh/brev/python, 11 scenarios green (the shell
+      tests were written after the script, not RED first); shellcheck -S warning clean. Resume semantics read in lerobot
+      e595b79 but NOT run on a GPU. Not started on any box: the live `smartseed-narrow` was left to `watch_pair.sh` (user
+      withdrew remote authorisation; only 3 read-only ssh commands had been run on it before that, see the report).
 
 ## Acceptance
 - `SMARTSEED_ROBOT=sim ./scripts/stack.sh` runs the web + executor against the simulated arm.
@@ -119,3 +132,4 @@ Strict TDD (session config). Runner: `cd backend && uv run pytest` (via `~/.clau
   `sim/README.md`, "Evaluating sim-trained policies (T5)".
 - 2026-10-28: T5b/T5c done: v1 links removed, `--layout narrow`, 300 episodes per colour on the Hub as `-v3-narrow`, scripted ceiling
   100 % / 97 %; next step is training on Brev with the narrow datasets and `sim/eval.py --layout narrow` (see T5c).
+- 2026-10-28: T5d done (controller built and tested locally, not deployed); see `sim/README.md`, "Eval-driven training length".
