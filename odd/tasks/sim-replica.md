@@ -110,7 +110,7 @@ Strict TDD (session config). Runner: `cd backend && uv run pytest` (via `~/.clau
       e595b79 but NOT run on a GPU. Not started on any box: the live `smartseed-narrow` was left to `watch_pair.sh` (user
       withdrew remote authorisation; only 3 read-only ssh commands had been run on it before that, see the report).
 
-- [ ] T5e DART recovery demos (route: delegated, one writer; trigger: 2+ non-trivial files plus reading to prepare it).
+- [x] T5e DART recovery demos (route: delegated, one writer; trigger: 2+ non-trivial files plus reading to prepare it).
       Evidence that motivates it (narrow ACT, 30 held-out scenes per colour): success stalls from 20k steps (black 4/7/7/6,
       white 7/7/7/7 at 10k..40k); shorter open-loop chunks make it worse (40k: temporal ensembling black 1 white 5,
       n_action_steps=10 black 0 white 0), so the policy breaks once it leaves the planner's clean path. About 60 % of
@@ -125,6 +125,10 @@ Strict TDD (session config). Runner: `cd backend && uv run pytest` (via `~/.clau
       narrow scenes: black 99/100, white 97/100 (6 deg: 98 / 94, so 4 deg was taken). Commits c8867e4, 8a5e40f. Generation
       (600 per colour, ~17 s per episode, black then white) is running in the background, logs `sim/out/dart_gen_<colour>.log`;
       left unchecked until both datasets are complete and their stats are in `sim/README.md`.
+      Done 2026-10-29: black 600 episodes / 176,997 frames (616 attempts, 97.4 %), white 600 / 176,724 (608, 98.7 %).
+      A crash during white episode 334 left 300 orphan data rows that shifted every later episode; removed and verified
+      (0 misaligned episodes in both datasets), and resume now drops orphan frames (`drop_orphan_frames`, RED-first test;
+      `pytest` 446 passed). Not yet on the Hub; Brev training needs a new user OK.
 
 ## Acceptance
 - `SMARTSEED_ROBOT=sim ./scripts/stack.sh` runs the web + executor against the simulated arm.
@@ -150,3 +154,4 @@ Strict TDD (session config). Runner: `cd backend && uv run pytest` (via `~/.clau
   100 % / 97 %; next step is training on Brev with the narrow datasets and `sim/eval.py --layout narrow` (see T5c).
 - 2026-10-28: T5d done (controller built and tested locally, not deployed); see `sim/README.md`, "Eval-driven training length".
 - 2026-10-29: T5e code done (`--dart-noise`, noisy ceiling 99 / 97 % at 4 deg); dataset generation running, task stays open.
+- 2026-10-29: T5e done: DART datasets (600 per colour) generated locally; resume orphan-frame bug fixed.

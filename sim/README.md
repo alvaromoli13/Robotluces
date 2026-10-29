@@ -387,6 +387,19 @@ clean planner 100 / 97):
 4 deg (about 2 cm at the tool, clipped at 8 deg) keeps both colours at or above the 95 % target, so it is the value used;
 6 deg drops white below it. (20 scenes, black: 2 deg and 4 deg both 20 / 20.)
 
+**Datasets** (`make_dataset.py --layout narrow --episodes 600 --dart-noise 4 --seed 0`, local, about 20-25 s per kept episode on
+an M-series Mac):
+
+| dataset | episodes | frames | attempts | failed | success rate | collision rejections |
+|---|---|---|---|---|---|---|
+| `smartseed-sim-grasp-black-v4-dart` | 600 | 176,997 | 616 | 16 | 97.4 % | 4 |
+| `smartseed-sim-grasp-white-v4-dart` | 600 | 176,724 | 608 | 8 | 98.7 % | 0 |
+
+The white run was killed once (`BrokenProcessPool`, 2026-10-29 15:17) inside `save_episode`: episode 334's frames had reached
+the data file but not its metadata, so the resumed run saved it again and every later episode read the frames of the one
+before. The 300 orphan rows were removed and every episode checked (first and last row carry its own index); resume now
+calls `drop_orphan_frames` first so this cannot recur.
+
 ## What is weak
 
 - **Walls and the jaw proxy.** The moving-jaw hull is a convex hull, larger than the real jaw, and the box and tray walls are
