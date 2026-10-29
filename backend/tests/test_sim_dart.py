@@ -20,7 +20,7 @@ def test_the_cli_takes_a_dart_noise_in_degrees_and_defaults_to_off():
 
 
 def test_the_dart_datasets_have_their_own_name_and_the_default_names_are_unchanged():
-    assert md.dataset_name("black", "narrow", dart=True) == "smartseed-sim-grasp-black-v4-dart"
+    assert md.dataset_name("black", "narrow", dart=True) == "smartseed-sim-grasp-black-v5-dart"
     assert md.dataset_name("white", "narrow") == "smartseed-sim-grasp-white-v3-narrow"
     assert md.dataset_name("white") == "smartseed-sim-grasp-white-v2"
 

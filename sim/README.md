@@ -280,6 +280,8 @@ white-seed episodes command the gripper to ~6.7 at the end, the sim uses 4.2-5.0
 
 ## Narrow layout and the v3-narrow datasets (T5b, T5c)
 
+The `-v3-narrow` Hub datasets were removed (the DART datasets below replace them); regenerate them from commit 3f392cc.
+
 The v2 policies (`act-sim-*-c100`, 100 demos over boxes and tray placed anywhere with any yaw) scored 1/20 and 2/20 on held-out
 scenes (see "Evaluating sim-trained policies"). The next stage shrinks the distribution first: `--layout narrow` keeps the two
 boxes and the tray near their nominal position in the real scene (centre uniform within +-3 cm in x and y of `layout.py`'s
@@ -305,8 +307,8 @@ widest range that keeps it up, so it was taken. The yaw bound is the user's +-30
 300-episode runs measured 42.7 % (black) and 36.1 % (white), see the table below.
 
 ```bash
-backend/.venv/bin/python sim/make_dataset.py --color black --layout narrow --episodes 300 --seed 0 --push-repo RafaelJaime/smartseed-sim-grasp-black-v3-narrow
-backend/.venv/bin/python sim/make_dataset.py --color white --layout narrow --episodes 300 --seed 0 --push-repo RafaelJaime/smartseed-sim-grasp-white-v3-narrow
+backend/.venv/bin/python sim/make_dataset.py --color black --layout narrow --episodes 300 --seed 0   # at commit 3f392cc
+backend/.venv/bin/python sim/make_dataset.py --color white --layout narrow --episodes 300 --seed 0   # at commit 3f392cc
 backend/.venv/bin/python sim/make_dataset.py --layout narrow --videos sim/out/v3_videos      # mp4 of the first 5 (3 kept)
 backend/.venv/bin/python sim/make_dataset.py --layout narrow --coverage docs/media/sim-dataset-coverage-narrow.png
 backend/.venv/bin/python sim/eval.py --planner --color black --layout narrow --episodes 100     # scripted ceiling
@@ -324,10 +326,10 @@ backend/.venv/bin/python sim/eval.py --planner --color black --layout narrow --e
 | Scripted planner on 100 held-out narrow scenes (seed 1000, physics, wall monitor) | **100 / 100** lifted and held, all wall-valid | **97 / 100**, all wall-valid |
 
 The last row is the ceiling for a policy trained on this data: the demonstrator itself succeeds 100 % / 97 % on the scenes
-`eval.py --layout narrow` uses. Hub: https://huggingface.co/datasets/RafaelJaime/smartseed-sim-grasp-black-v3-narrow and
-https://huggingface.co/datasets/RafaelJaime/smartseed-sim-grasp-white-v3-narrow (public, tags `BraboRobots`, `smartseed`, `so101`,
-`simulation`, both in the collection `smartseed-so-101-act-seed-sowing`; `meta/info.json` features, fps, robot type and codebase
-version equal the real `d1-clean` / `d2-clean` ones, read back from the Hub; 300 episodes each). Coverage: `docs/media/sim-dataset-coverage-narrow.png`
+`eval.py --layout narrow` uses. They were on the Hub (public, tags `BraboRobots`, `smartseed`, `so101`, `simulation`;
+features equal the real `d1-clean` / `d2-clean` ones) until the v4-dart ones replaced them: see
+https://huggingface.co/datasets/RafaelJaime/smartseed-sim-grasp-black-v4-dart and
+https://huggingface.co/datasets/RafaelJaime/smartseed-sim-grasp-white-v4-dart (v5 replaces v4 on the Hub). Coverage: `docs/media/sim-dataset-coverage-narrow.png`
 (grasped seeds cluster in the nominal box area); videos `sim/out/v3_videos/` (git-ignored).
 
 Weak: the demos still only show planner-solvable scenes (the planner redraws 57 % / 64 % of the geometrically valid scenes, so
@@ -338,9 +340,11 @@ swept-path check and the monitor (0 collision rejections) are the evidence.
 **Next step (not started here):** train on Brev,
 
 ```bash
-scripts/brev/launch_two.sh <host> RafaelJaime/smartseed-sim-grasp-black-v3-narrow sim-black-narrow-c100 RafaelJaime/smartseed-sim-grasp-white-v3-narrow sim-white-narrow-c100
-backend/.venv/bin/python sim/eval.py --repo RafaelJaime/act-sim-black-narrow-c100 --color black --layout narrow
+scripts/brev/launch_two.sh <host> RafaelJaime/smartseed-sim-grasp-black-v4-dart sim-black-dart-c100 RafaelJaime/smartseed-sim-grasp-white-v4-dart sim-white-dart-c100
+backend/.venv/bin/python sim/eval.py --repo RafaelJaime/act-sim-black-narrow-c100 --color black --layout narrow   # trained on v3-narrow
 ```
+
+(`act-sim-*-narrow-c100` were trained on the v3-narrow datasets, which no longer exist on the Hub.)
 
 and gate on `eval.py --layout narrow` (held-out) against the 100 % / 97 % ceiling.
 
@@ -466,7 +470,7 @@ The number of steps is not fixed. `scripts/brev/auto_train.sh <host> <black repo
 on this Mac next to a `launch_two.sh` box:
 
 ```bash
-PYTHON=backend/.venv/bin/python scripts/brev/auto_train.sh my-box RafaelJaime/act-sim-black-narrow-c100 RafaelJaime/act-sim-white-narrow-c100
+PYTHON=backend/.venv/bin/python scripts/brev/auto_train.sh my-box RafaelJaime/act-sim-black-narrow-c100 RafaelJaime/act-sim-white-narrow-c100   # the v3-narrow models
 ```
 
 - Every new `checkpoints/<step>` on the Hub is evaluated locally, one at a time, with

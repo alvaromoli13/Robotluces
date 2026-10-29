@@ -7,7 +7,7 @@
 
 A scene is `make_dataset.sample_params(color, HELDOUT_SEED, attempt, resample)`: the same layout sampling (boxes and tray
 anywhere in the top view, any yaw, 2-4 seeds per box, light, colours, camera and start-pose noise) as the training data
-(`--layout narrow`: boxes and tray near their nominal pose, as in the `-v3-narrow` datasets),
+(`--layout narrow`: boxes and tray near their nominal pose, as in the narrow datasets; `act-sim-*-narrow-c100` were trained on the removed v3-narrow ones),
 and it is kept only if the scripted planner can grasp in it (`plan_actions` does not raise), exactly like a dataset
 episode. The datasets used seed 0; RNG streams of different seeds are independent, so no held-out scene is a training one.
 `--split train` replays the kept scenes of the training log instead (a policy that fails there memorised nothing).
@@ -178,7 +178,7 @@ def parse_args(argv=None) -> argparse.Namespace:
     ap.add_argument("--episodes", type=int, default=20)
     ap.add_argument("--seed", type=int, default=HELDOUT_SEED, help="generator seed of the held-out scenes")
     ap.add_argument("--layout", choices=sorted(md.LAYOUTS), default="wide",
-                    help="scene distribution; use the one the policy was trained on (narrow for the v3-narrow datasets)")
+                    help="scene distribution; use the one the policy was trained on (narrow for the narrow and dart datasets)")
     ap.add_argument("--dart-noise", type=float, default=0.0, metavar="DEG",
                     help="with --planner: fly the DART perturbation of this size (degrees) to measure the ceiling of the dart demos")
     ap.add_argument("--split", choices=["heldout", "train"], default="heldout")

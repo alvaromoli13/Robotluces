@@ -748,9 +748,18 @@ def simulate_episode(p: EpisodeParams, kin: Kinematics | None = None, *, render:
         robot.close()
 
 
+def invalid_reason(info: dict) -> str:
+    """Why `Rollout.valid` is false: a wall (as before T5f) or the table, the paper and the mat."""
+    if info.get("wall_max_penetration_mm", 0) > 1000 * collision.MAX_PENETRATION_M or \
+            info.get("wall_max_force_n", 0) > collision.MAX_FORCE_N:
+        return (f"collision: arm {info.get('wall_max_penetration_mm', 0):.1f} mm into a wall, "
+                f"{info.get('wall_max_force_n', 0):.0f} N")
+    return f"table: arm {info.get('table_max_penetration_mm', 0):.1f} mm into the table, paper or mat"
+
+
 # -- the dataset ----------------------------------------------------------------------------------------------
 def dataset_name(color: str, layout_mode: str = "wide", dart: bool = False) -> str:
-    suffix = "-v4-dart" if dart else "-v3-narrow" if layout_mode == "narrow" else DATASET_SUFFIX
+    suffix = "-v5-dart" if dart else "-v3-narrow" if layout_mode == "narrow" else DATASET_SUFFIX
     return f"smartseed-sim-grasp-{color}" + suffix
 
 
@@ -851,7 +860,7 @@ def build_dataset(root: str | Path, color: str, episodes: int, seed: int, *, rep
                       "target": params.target, "present": list(params.present), "episode_index": None,
                       "proposals": draws, "ik_rejections": rejected, "fit_rejections": no_fit} | extra
             record |= {k: run.info[k] for k in ("lift_mm", "peak_lift_mm", "wall_max_penetration_mm", "wall_max_force_n",
-                                                "wall_contact_steps") if k in run.info}
+                                                "wall_contact_steps", "table_max_penetration_mm") if k in run.info}
             if run.success and run.valid:
                 for t in range(len(run.actions)):
                     ds.add_frame({"action": run.actions[t], "observation.state": run.states[t],
@@ -861,8 +870,7 @@ def build_dataset(root: str | Path, color: str, episodes: int, seed: int, *, rep
                 record |= {"ok": True, "reason": "kept", "episode_index": ds.meta.total_episodes - 1,
                            "frames": len(run.actions)}
             elif run.success:
-                record["reason"] = (f"collision: arm {run.info.get('wall_max_penetration_mm', 0):.1f} mm into a wall, "
-                                    f"{run.info.get('wall_max_force_n', 0):.0f} N")
+                record["reason"] = invalid_reason(run.info)
             else:
                 record["reason"] = (f"failed: lift {run.info.get('lift_mm', 0):.0f} mm, seed "
                                     f"{run.info.get('seed_to_tool_mm', float('nan')):.0f} mm from the tool")
@@ -1120,7 +1128,7 @@ def parse_args(argv=None) -> argparse.Namespace:
     ap.add_argument("--episodes", type=int, default=100)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--layout", choices=sorted(LAYOUTS), default="wide",
-                    help="box/tray placement: wide = anywhere in the top view (v2), narrow = near the real scene (v3-narrow)")
+                    help="box/tray placement: wide = anywhere in the top view (v2), narrow = near the real scene (v3-narrow, regenerable from commit 3f392cc)")
     ap.add_argument("--out", default=None, help="dataset folder (default sim/out/datasets/smartseed-sim-grasp-<colour>-v2, "
                     "or -v3-narrow with --layout narrow)")
     ap.add_argument("--coverage", default=None, metavar="PNG", help="only draw the placement coverage plot of the "
@@ -1130,7 +1138,7 @@ def parse_args(argv=None) -> argparse.Namespace:
     ap.add_argument("--push-repo", default=None, help="Hub dataset repo to upload to when done (existing HF login)")
     ap.add_argument("--dart-noise", type=float, default=0.0, metavar="DEG",
                     help="DART recovery demos: smooth joint perturbation of this size (degrees) on the executed commands "
-                    "while the recorded action stays the plan (default 0 = clean demos; dataset <colour>-v4-dart)")
+                    "while the recorded action stays the plan (default 0 = clean demos; dataset <colour>-v5-dart)")
     return ap.parse_args(argv)
 
 

@@ -10,7 +10,8 @@ Two modes, same report:
   the contact list is empty there while the geometry overlaps.
 
 An episode is valid only if the deepest penetration is at most `MAX_PENETRATION_M` and no wall contact pushed with
-more than `MAX_FORCE_N`.
+more than `MAX_FORCE_N`, and (T5f, contact mode) no arm geom sank more than `MAX_TABLE_PENETRATION_M` into the table,
+the paper or the mat.
 """
 from __future__ import annotations
 
@@ -20,6 +21,8 @@ import numpy as np
 
 MAX_PENETRATION_M = 0.001
 MAX_FORCE_N = 2.0
+MAX_TABLE_PENETRATION_M = 0.002  # T5f: how deep an arm geom may sink into the table, the paper or the mat
+TABLE_NAMES = ("table", "paper", "mat")
 CULL_M = 0.03  # geometry mode: pairs whose bounding spheres are further apart than this are not measured
 
 
@@ -30,6 +33,11 @@ def is_wall(name: str) -> bool:
 
 def wall_geoms(model) -> list[int]:
     return [g for g in range(model.ngeom) if is_wall(model.geom(g).name or "")]
+
+
+def table_geoms(model) -> list[int]:
+    """The table plane, the paper sheet and the mat: the hard ground the arm must not sink into."""
+    return [model.geom(n).id for n in TABLE_NAMES]
 
 
 def arm_geoms(model) -> list[int]:
@@ -61,14 +69,26 @@ class WallReport:
     contact_steps: int  # physics steps (contact mode) or checks (geometry mode) with any arm-wall overlap
     contacts: int  # arm-wall contacts summed over those steps
     checks: int
+    table_max_penetration_m: float = 0.0  # deepest arm geom below the table, the paper or the mat (contact mode)
+    table_contact_steps: int = 0
+
+    @property
+    def wall_valid(self) -> bool:
+        return self.max_penetration_m <= MAX_PENETRATION_M and self.max_force_n <= MAX_FORCE_N
+
+    @property
+    def table_valid(self) -> bool:
+        return self.table_max_penetration_m <= MAX_TABLE_PENETRATION_M
 
     @property
     def valid(self) -> bool:
-        return self.max_penetration_m <= MAX_PENETRATION_M and self.max_force_n <= MAX_FORCE_N
+        return self.wall_valid and self.table_valid
 
     def as_info(self) -> dict:
         return {"wall_max_penetration_mm": 1000 * self.max_penetration_m, "wall_max_force_n": self.max_force_n,
-                "wall_contact_steps": self.contact_steps, "wall_contacts": self.contacts}
+                "wall_contact_steps": self.contact_steps, "wall_contacts": self.contacts,
+                "table_max_penetration_mm": 1000 * self.table_max_penetration_m,
+                "table_contact_steps": self.table_contact_steps}
 
 
 class WallMonitor:
@@ -85,10 +105,13 @@ class WallMonitor:
         self._is_arm[arm] = True
         self._is_wall = np.zeros(model.ngeom, bool)
         self._is_wall[walls] = True
+        self._is_table = np.zeros(model.ngeom, bool)
+        self._is_table[table_geoms(model)] = True
         self.reset()
 
     def reset(self) -> None:
         self._pen, self._force, self._steps, self._contacts, self._calls, self._checks = 0.0, 0.0, 0, 0, 0, 0
+        self._table_pen, self._table_steps = 0.0, 0
         self.last_penetration_m = 0.0  # of the latest measuring call (geometry mode)
 
     def __call__(self, model, data) -> None:
@@ -105,10 +128,13 @@ class WallMonitor:
         self._checks += 1
         import mujoco
 
-        hit, force = 0, np.zeros(6)
+        hit, table_hit, force = 0, False, np.zeros(6)
         for i in range(data.ncon):
             c = data.contact[i]
             g1, g2 = c.geom1, c.geom2
+            if (self._is_arm[g1] and self._is_table[g2]) or (self._is_arm[g2] and self._is_table[g1]):
+                table_hit = True
+                self._table_pen = max(self._table_pen, -float(c.dist))
             if (self._is_arm[g1] and self._is_wall[g2]) or (self._is_arm[g2] and self._is_wall[g1]):
                 hit += 1
                 self._pen = max(self._pen, -float(c.dist))
@@ -117,6 +143,8 @@ class WallMonitor:
         if hit:
             self._steps += 1
             self._contacts += hit
+        self._table_steps += table_hit
 
     def report(self) -> WallReport:
-        return WallReport(self._pen, self._force, self._steps, self._contacts, self._checks)
+        return WallReport(self._pen, self._force, self._steps, self._contacts, self._checks,
+                          self._table_pen, self._table_steps)

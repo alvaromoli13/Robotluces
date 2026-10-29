@@ -38,11 +38,18 @@ TOP_CAMERA_FOVY = 56.183
 # The wrist camera lives in the vendored MJCF (see sim/assets/README.md): it rides on the `gripper` body.
 
 # MEASURED (FK of the recorded grasp, episode 0 of smartseed-grasp-d1-clean): the jaws close on the black seed
-# with the tool frame at z = -0.0003 m, so the seed centre is at ~0, the box floor top at -0.005 (seed radius
-# 5 mm) and, with a 3 mm floor and a 3 mm mat, the table at -0.011. The taught `home` pose also has tool z = -0.011:
-# the arm rests on the table. The base frame origin is therefore ~1 cm above the table top.
-TABLE_Z = -0.011
-MAT_TOP_Z = -0.008
+# with the tool frame at z = -0.0003 m, so the seed centre is at ~0 and the box floor top at about -0.007. The mat top
+# (-0.008) is what the boxes, the tray and the camera back-projections stand on: visible, so it must not move.
+# T5f: the table PLANE was -0.011 (the tool frame of the taught `home`), but the arm's lowest collision geoms (the
+# fixed pad and hull) sit at -0.0195 at both taught poses (`home`, `act_start`), where the real arm rests on a hard
+# surface, and every frame of the real d1/d2 episodes stays above -0.0202 (see `sim/README.md`, "Table collisions"). A
+# ground at -0.011 or -0.008 put every demo 8-12 mm inside it. So the hard ground (table, paper sheet, mat) now ends at
+# -0.0215 / -0.0205 / -0.0197. `MAT_TOP_Z` below is only the plane the mat was SEEN at: the boxes and the tray still
+# stand with their floors and rims at the heights read off the top frame (the measured seed height depends on them).
+TABLE_Z = -0.0215
+MAT_THICKNESS = 0.0018
+MAT_SURFACE_Z = TABLE_Z + MAT_THICKNESS
+MAT_TOP_Z = -0.008  # the plane the box floors, the tray floor and the mat outline were read at
 
 # The mat, tray and boxes are axis-aligned in the top image, but the camera is yawed against the robot: image up is
 # the base-frame direction at this angle, so the board (everything static on the table) is rotated by it.
@@ -94,7 +101,15 @@ TRAY_OUTER_HALF = (0.096, 0.075)  # along x' (rows) and y' (columns): 19.2 x 15.
 TRAY_WALL = 0.003
 TRAY_TOP_Z = MAT_TOP_Z + 0.045
 CELL_FLOOR_Z = MAT_TOP_Z + 0.008
-MAT_CENTER, MAT_HALF = (0.291, 0.007), (0.224, 0.249)  # ESTIMATED: 44.7 x 49.8 cm, bottom edge guessed
+MAT_CENTER, MAT_HALF = (0.291, 0.007), (0.224, 0.249)  # ESTIMATED: 44.7 x 49.8 cm at MAT_TOP_Z, bottom edge guessed
+
+
+def mat_outline() -> tuple[tuple[float, float], tuple[float, float]]:
+    """(centre, half extents) of the mat in the board frame at its real surface height: the outline that was read off
+    the top frame at MAT_TOP_Z, scaled about the camera axis so it projects to the same pixels from MAT_SURFACE_Z."""
+    k = (TOP_CAMERA_POS[2] - MAT_SURFACE_Z) / (TOP_CAMERA_POS[2] - MAT_TOP_Z)
+    cx, cy = to_board(TOP_CAMERA_POS[:2])
+    return ((cx + k * (MAT_CENTER[0] - cx), cy + k * (MAT_CENTER[1] - cy)), (k * MAT_HALF[0], k * MAT_HALF[1]))
 
 # Black seed 0 is MEASURED: the recorded grasp (episode 0 of d1-clean) closes with the tool frame at base xy
 # (0.1503, -0.1320); the jaws open along the tool z axis (0.844, -0.524) there, so the seed sits one black radius
@@ -166,12 +181,14 @@ def _body(name: str, center, geoms: list[str]) -> list[str]:
 def _open_box(b: OpenBox) -> list[str]:
     center, (cx, cy) = b.center, (0.0, 0.0)  # geoms are relative to the box body
     (hx, hy), h, w, z0 = b.outer_half, b.height, b.wall, MAT_TOP_Z
+    zc, hz = (MAT_SURFACE_Z + z0 + h) / 2, (z0 + h - MAT_SURFACE_Z) / 2  # walls reach down to the mat: no gap under them
     return _body(b.name, center, [
-        _box(f"{b.name}_floor", (cx, cy, z0 + b.floor / 2), (hx, hy, b.floor / 2), b.floor_rgba),
-        _box(f"{b.name}_wall_far", (cx + hx - w / 2, cy, z0 + h / 2), (w / 2, hy, h / 2), b.rim_rgba, "wall"),
-        _box(f"{b.name}_wall_near", (cx - hx + w / 2, cy, z0 + h / 2), (w / 2, hy, h / 2), b.rim_rgba, "wall"),
-        _box(f"{b.name}_wall_left", (cx, cy + hy - w / 2, z0 + h / 2), (hx - w, w / 2, h / 2), b.rim_rgba, "wall"),
-        _box(f"{b.name}_wall_right", (cx, cy - hy + w / 2, z0 + h / 2), (hx - w, w / 2, h / 2), b.rim_rgba, "wall"),
+        _box(f"{b.name}_floor", (cx, cy, (MAT_SURFACE_Z + z0 + b.floor) / 2), (hx, hy, (z0 + b.floor - MAT_SURFACE_Z) / 2),
+             b.floor_rgba),  # solid down to the mat: the top is what the seeds rest on, nothing sinks under it
+        _box(f"{b.name}_wall_far", (cx + hx - w / 2, cy, zc), (w / 2, hy, hz), b.rim_rgba, "wall"),
+        _box(f"{b.name}_wall_near", (cx - hx + w / 2, cy, zc), (w / 2, hy, hz), b.rim_rgba, "wall"),
+        _box(f"{b.name}_wall_left", (cx, cy + hy - w / 2, zc), (hx - w, w / 2, hz), b.rim_rgba, "wall"),
+        _box(f"{b.name}_wall_right", (cx, cy - hy + w / 2, zc), (hx - w, w / 2, hz), b.rim_rgba, "wall"),
     ])
 
 
@@ -179,19 +196,20 @@ def _tray() -> list[str]:
     (cx, cy), (hx, hy), w = (0.0, 0.0), TRAY_OUTER_HALF, TRAY_WALL  # relative to the tray body
     z0, h, fl = MAT_TOP_Z, TRAY_TOP_Z - MAT_TOP_Z, CELL_FLOOR_Z - MAT_TOP_Z  # wall height, floor thickness
     px, py = _pitch()
+    zc, hz = (MAT_SURFACE_Z + z0 + h) / 2, (z0 + h - MAT_SURFACE_Z) / 2  # walls and dividers reach down to the mat
     geoms = [
-        _box("tray_floor", (cx, cy, z0 + fl / 2), (hx, hy, fl / 2), CARDBOARD),
-        _box("tray_wall_far", (cx + hx - w / 2, cy, z0 + h / 2), (w / 2, hy, h / 2), CARDBOARD, "wall"),
-        _box("tray_wall_near", (cx - hx + w / 2, cy, z0 + h / 2), (w / 2, hy, h / 2), CARDBOARD, "wall"),
-        _box("tray_wall_left", (cx, cy + hy - w / 2, z0 + h / 2), (hx - w, w / 2, h / 2), CARDBOARD, "wall"),
-        _box("tray_wall_right", (cx, cy - hy + w / 2, z0 + h / 2), (hx - w, w / 2, h / 2), CARDBOARD, "wall"),
+        _box("tray_floor", (cx, cy, (MAT_SURFACE_Z + z0 + fl) / 2), (hx, hy, (z0 + fl - MAT_SURFACE_Z) / 2), CARDBOARD),
+        _box("tray_wall_far", (cx + hx - w / 2, cy, zc), (w / 2, hy, hz), CARDBOARD, "wall"),
+        _box("tray_wall_near", (cx - hx + w / 2, cy, zc), (w / 2, hy, hz), CARDBOARD, "wall"),
+        _box("tray_wall_left", (cx, cy + hy - w / 2, zc), (hx - w, w / 2, hz), CARDBOARD, "wall"),
+        _box("tray_wall_right", (cx, cy - hy + w / 2, zc), (hx - w, w / 2, hz), CARDBOARD, "wall"),
     ]
     for i in range(1, TRAY_ROWS):  # dividers between rows (across y)
         x = cx - hx + w + i * px
-        geoms.append(_box(f"tray_div_row{i}", (x, cy, z0 + h / 2), (w / 2, hy - w, h / 2), CARDBOARD_DARK, "wall"))
+        geoms.append(_box(f"tray_div_row{i}", (x, cy, zc), (w / 2, hy - w, hz), CARDBOARD_DARK, "wall"))
     for j in range(1, TRAY_COLS):  # dividers between columns (across x)
         y = cy - hy + w + j * py
-        geoms.append(_box(f"tray_div_col{j}", (cx, y, z0 + h / 2), (hx - w, w / 2, h / 2), CARDBOARD_DARK, "wall"))
+        geoms.append(_box(f"tray_div_col{j}", (cx, y, zc), (hx - w, w / 2, hz), CARDBOARD_DARK, "wall"))
     return _body("tray", TRAY_CENTER, geoms)
 
 
@@ -207,7 +225,7 @@ def _seeds() -> list[str]:
 
 
 def build_scene_xml() -> str:
-    mat_t = MAT_TOP_Z - TABLE_Z
+    mat_c, mat_h = mat_outline()
     lines = [
         "<!-- Generated by `python -m sim.layout`; edit sim/layout.py, not this file. -->",
         '<mujoco model="smartseed_scene">',
@@ -221,10 +239,14 @@ def build_scene_xml() -> str:
         '  </visual>',
         '  <default>',
         # bit 1 = arm (contype 1), bit 2 = scene: the arm hits the scene, the scene hits itself and the seeds
-        # the table, paper and mat are soft in reality (the arm rests its jaws on them at `home`): the arm passes
-        # through them, seeds do not
-        '    <default class="ground"><geom contype="4" conaffinity="2" friction="0.9 0.005 0.0001"/></default>',
-        '    <default class="env"><geom contype="2" conaffinity="3" friction="0.9 0.005 0.0001"/></default>',
+        # T5f: the table, the paper and the mat are hard in reality: every arm geom (bits 1 hulls, 8 pads, 16 moving
+        # hull) and the seeds (bit 2) stop at them. Stiff contact, `priority` so it wins over the arm's soft defaults
+        '    <default class="ground"><geom contype="4" conaffinity="27" priority="1" friction="0.9 0.005 0.0001" '
+        'solref="0.004 1" solimp="0.95 0.99 0.001"/></default>',
+        # box and tray floors: cardboard on the hard mat. T5f: stiff like the ground under them (they used to be soft and
+        # rest on the mat 1.5 mm below, which caught a seed that a pad pressed into the floor); they stand on the mat now
+        '    <default class="env"><geom contype="2" conaffinity="3" priority="1" friction="0.9 0.005 0.0001" '
+        'solref="0.004 1" solimp="0.95 0.99 0.001"/></default>',
         # walls and dividers of the boxes and the tray: bit 16 is what the jaw hull and the pads carry, so every jaw
         # geom stops at a wall (and the floors stay as they were); `priority` makes the wall's stiff contact
         # parameters win over the arm's soft defaults
@@ -244,9 +266,9 @@ def build_scene_xml() -> str:
         f'    <geom name="table" type="plane" pos="0 0 {TABLE_Z}" size="1.5 1.5 0.01" rgba="0.80 0.82 0.80 1" '
         'class="ground"/>',
         f'    <body name="board" euler="0 0 {BOARD_YAW:.6f}">',
-        _box("paper", (MAT_CENTER[0], MAT_CENTER[1], TABLE_Z + 0.0005),
-             (MAT_HALF[0] + 0.045, MAT_HALF[1] + 0.045, 0.0005), (0.93, 0.94, 0.95, 1), "ground"),
-        _box("mat", (*MAT_CENTER, TABLE_Z + mat_t / 2), (*MAT_HALF, mat_t / 2), MAT_RGBA, "ground"),
+        _box("paper", (mat_c[0], mat_c[1], TABLE_Z + 0.0005),
+             (mat_h[0] + 0.045, mat_h[1] + 0.045, 0.0005), (0.93, 0.94, 0.95, 1), "ground"),
+        _box("mat", (*mat_c, TABLE_Z + MAT_THICKNESS / 2), (*mat_h, MAT_THICKNESS / 2), MAT_RGBA, "ground"),
         *_tray(), *_open_box(WHITE_BOX), *_open_box(BLACK_BOX),
         '    </body>',
         *_seeds(),

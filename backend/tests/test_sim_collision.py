@@ -48,7 +48,7 @@ def test_wall_geoms_are_the_box_and_tray_walls_but_not_the_floors(model):
 
 def test_every_jaw_geom_collides_with_every_wall_but_with_no_floor(model):
     walls = collision.wall_geoms(model)
-    floors = [model.geom(n).id for n in ("box_white_floor", "box_black_floor", "tray_floor", "mat", "paper", "table")]
+    floors = [model.geom(n).id for n in ("box_white_floor", "box_black_floor", "tray_floor")]
     jaws = jaw_geoms(model)
     assert {"pad_fixed", "pad_moving", "hull:moving_jaw_so101_v1", "hull:wrist_roll_follower_so101_v1"} <= set(jaws)
     for name, g in jaws.items():

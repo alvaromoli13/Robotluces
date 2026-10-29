@@ -87,12 +87,12 @@ Strict TDD (session config). Runner: `cd backend && uv run pytest` (via `~/.clau
 - [x] T5c Generate 300 kept episodes per colour in narrow mode and publish them as `-v3-narrow` Hub repos (public, in the HF
       collection), measure the scripted planner's success on held-out narrow scenes (the ceiling), 3 mp4 per colour in
       `sim/out/v3_videos/`, coverage png in `docs/media`, docs. Next step (NOT started here): train on Brev with
-      `scripts/brev/launch_two.sh <host> RafaelJaime/smartseed-sim-grasp-black-v3-narrow sim-black-narrow-c100
-      RafaelJaime/smartseed-sim-grasp-white-v3-narrow sim-white-narrow-c100`, then `sim/eval.py --layout narrow`.
+      `scripts/brev/launch_two.sh <host> <black repo> sim-black-narrow-c100 <white repo> sim-white-narrow-c100`, then `sim/eval.py --layout narrow`.
       Evidence: 300 kept per colour, seed 0: black 307 attempts (97.7 %), 88,617 frames; white 302 (99.3 %), 88,410 frames; 0
       wall-monitor rejections; planner acceptance 42.7 % / 36.1 %. Scripted planner ceiling on 100 held-out narrow scenes (seed
-      1000): black 100/100, white 97/100 (`eval.py --planner`, RED first). Hub: `RafaelJaime/smartseed-sim-grasp-black-v3-narrow`
-      and `-white-v3-narrow` (public, BraboRobots, in the collection, features equal real info.json). Coverage
+      1000): black 100/100, white 97/100 (`eval.py --planner`, RED first). Hub: the `-v3-narrow` repos (later removed: replaced by
+      the v4-dart ones; v3 is regenerable from commit 3f392cc, `make_dataset.py --layout narrow --episodes 300`; the
+      `act-sim-*-narrow-c100` models were trained on them). Coverage
       `docs/media/sim-dataset-coverage-narrow.png`, 3 mp4 per colour in `sim/out/v3_videos/`. Incident: the first ceiling run
       kept every rendered rollout (51 GB, killed); fixed (render=False, no frames kept, test first), RSS 0.6 GB.
       Training NOT started. Route: delegated, one writer.

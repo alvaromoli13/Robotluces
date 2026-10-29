@@ -8,8 +8,8 @@
     <headlight ambient="0.30 0.30 0.30" diffuse="0.25 0.25 0.25" specular="0 0 0"/>
   </visual>
   <default>
-    <default class="ground"><geom contype="4" conaffinity="2" friction="0.9 0.005 0.0001"/></default>
-    <default class="env"><geom contype="2" conaffinity="3" friction="0.9 0.005 0.0001"/></default>
+    <default class="ground"><geom contype="4" conaffinity="27" priority="1" friction="0.9 0.005 0.0001" solref="0.004 1" solimp="0.95 0.99 0.001"/></default>
+    <default class="env"><geom contype="2" conaffinity="3" priority="1" friction="0.9 0.005 0.0001" solref="0.004 1" solimp="0.95 0.99 0.001"/></default>
     <default class="wall"><geom contype="2" conaffinity="19" priority="1" friction="0.9 0.005 0.0001" solref="0.004 1" solimp="0.95 0.99 0.001"/></default>
     <default class="seed"><geom contype="2" conaffinity="10" friction="1.2 0.02 0.002" condim="4" solref="0.004 1" solimp="0.95 0.99 0.001"/></default>
   </default>
@@ -19,35 +19,35 @@
   <worldbody>
     <light name="ceiling" pos="0.3 0 1.5" dir="0 0 -1" directional="true" diffuse="0.35 0.35 0.35" specular="0 0 0" castshadow="true"/>
     <camera name="top" pos="0.2998 -0.0216 0.4997" xyaxes="-0.15474 -0.98796 0.00057 0.98796 -0.15474 -0.00029" fovy="56.1830"/>
-    <geom name="table" type="plane" pos="0 0 -0.011" size="1.5 1.5 0.01" rgba="0.80 0.82 0.80 1" class="ground"/>
+    <geom name="table" type="plane" pos="0 0 -0.0215" size="1.5 1.5 0.01" rgba="0.80 0.82 0.80 1" class="ground"/>
     <body name="board" euler="0 0 -0.155364">
-    <geom name="paper" type="box" pos="0.291 0.007 -0.0105" size="0.269 0.294 0.0005" rgba="0.93 0.94 0.95 1" class="ground"/>
-    <geom name="mat" type="box" pos="0.291 0.007 -0.0095" size="0.224 0.249 0.0015" rgba="0.2 0.19 0.27 1" class="ground"/>
+    <geom name="paper" type="box" pos="0.2908 0.00658 -0.021" size="0.27416 0.29974 0.0005" rgba="0.93 0.94 0.95 1" class="ground"/>
+    <geom name="mat" type="box" pos="0.2908 0.00658 -0.0206" size="0.22916 0.25474 0.0009" rgba="0.2 0.19 0.27 1" class="ground"/>
     <body name="tray" pos="0.347 0.019 0">
-    <geom name="tray_floor" type="box" pos="0 0 -0.004" size="0.096 0.075 0.004" rgba="0.78 0.6 0.4 1" class="env"/>
-    <geom name="tray_wall_far" type="box" pos="0.0945 0 0.0145" size="0.0015 0.075 0.0225" rgba="0.78 0.6 0.4 1" class="wall"/>
-    <geom name="tray_wall_near" type="box" pos="-0.0945 0 0.0145" size="0.0015 0.075 0.0225" rgba="0.78 0.6 0.4 1" class="wall"/>
-    <geom name="tray_wall_left" type="box" pos="0 0.0735 0.0145" size="0.093 0.0015 0.0225" rgba="0.78 0.6 0.4 1" class="wall"/>
-    <geom name="tray_wall_right" type="box" pos="0 -0.0735 0.0145" size="0.093 0.0015 0.0225" rgba="0.78 0.6 0.4 1" class="wall"/>
-    <geom name="tray_div_row1" type="box" pos="-0.0465 0 0.0145" size="0.0015 0.072 0.0225" rgba="0.62 0.46 0.3 1" class="wall"/>
-    <geom name="tray_div_row2" type="box" pos="0 0 0.0145" size="0.0015 0.072 0.0225" rgba="0.62 0.46 0.3 1" class="wall"/>
-    <geom name="tray_div_row3" type="box" pos="0.0465 0 0.0145" size="0.0015 0.072 0.0225" rgba="0.62 0.46 0.3 1" class="wall"/>
-    <geom name="tray_div_col1" type="box" pos="0 -0.024 0.0145" size="0.093 0.0015 0.0225" rgba="0.62 0.46 0.3 1" class="wall"/>
-    <geom name="tray_div_col2" type="box" pos="0 0.024 0.0145" size="0.093 0.0015 0.0225" rgba="0.62 0.46 0.3 1" class="wall"/>
+    <geom name="tray_floor" type="box" pos="0 0 -0.00985" size="0.096 0.075 0.00985" rgba="0.78 0.6 0.4 1" class="env"/>
+    <geom name="tray_wall_far" type="box" pos="0.0945 0 0.00865" size="0.0015 0.075 0.02835" rgba="0.78 0.6 0.4 1" class="wall"/>
+    <geom name="tray_wall_near" type="box" pos="-0.0945 0 0.00865" size="0.0015 0.075 0.02835" rgba="0.78 0.6 0.4 1" class="wall"/>
+    <geom name="tray_wall_left" type="box" pos="0 0.0735 0.00865" size="0.093 0.0015 0.02835" rgba="0.78 0.6 0.4 1" class="wall"/>
+    <geom name="tray_wall_right" type="box" pos="0 -0.0735 0.00865" size="0.093 0.0015 0.02835" rgba="0.78 0.6 0.4 1" class="wall"/>
+    <geom name="tray_div_row1" type="box" pos="-0.0465 0 0.00865" size="0.0015 0.072 0.02835" rgba="0.62 0.46 0.3 1" class="wall"/>
+    <geom name="tray_div_row2" type="box" pos="0 0 0.00865" size="0.0015 0.072 0.02835" rgba="0.62 0.46 0.3 1" class="wall"/>
+    <geom name="tray_div_row3" type="box" pos="0.0465 0 0.00865" size="0.0015 0.072 0.02835" rgba="0.62 0.46 0.3 1" class="wall"/>
+    <geom name="tray_div_col1" type="box" pos="0 -0.024 0.00865" size="0.093 0.0015 0.02835" rgba="0.62 0.46 0.3 1" class="wall"/>
+    <geom name="tray_div_col2" type="box" pos="0 0.024 0.00865" size="0.093 0.0015 0.02835" rgba="0.62 0.46 0.3 1" class="wall"/>
     </body>
     <body name="box_white" pos="0.178 0.173 0">
-    <geom name="box_white_floor" type="box" pos="0 0 -0.00725" size="0.092 0.06 0.00075" rgba="0.78 0.6 0.4 1" class="env"/>
-    <geom name="box_white_wall_far" type="box" pos="0.09 0 0.0095" size="0.002 0.06 0.0175" rgba="0.78 0.6 0.4 1" class="wall"/>
-    <geom name="box_white_wall_near" type="box" pos="-0.09 0 0.0095" size="0.002 0.06 0.0175" rgba="0.78 0.6 0.4 1" class="wall"/>
-    <geom name="box_white_wall_left" type="box" pos="0 0.058 0.0095" size="0.088 0.002 0.0175" rgba="0.78 0.6 0.4 1" class="wall"/>
-    <geom name="box_white_wall_right" type="box" pos="0 -0.058 0.0095" size="0.088 0.002 0.0175" rgba="0.78 0.6 0.4 1" class="wall"/>
+    <geom name="box_white_floor" type="box" pos="0 0 -0.0131" size="0.092 0.06 0.0066" rgba="0.78 0.6 0.4 1" class="env"/>
+    <geom name="box_white_wall_far" type="box" pos="0.09 0 0.00365" size="0.002 0.06 0.02335" rgba="0.78 0.6 0.4 1" class="wall"/>
+    <geom name="box_white_wall_near" type="box" pos="-0.09 0 0.00365" size="0.002 0.06 0.02335" rgba="0.78 0.6 0.4 1" class="wall"/>
+    <geom name="box_white_wall_left" type="box" pos="0 0.058 0.00365" size="0.088 0.002 0.02335" rgba="0.78 0.6 0.4 1" class="wall"/>
+    <geom name="box_white_wall_right" type="box" pos="0 -0.058 0.00365" size="0.088 0.002 0.02335" rgba="0.78 0.6 0.4 1" class="wall"/>
     </body>
     <body name="box_black" pos="0.183 -0.158 0">
-    <geom name="box_black_floor" type="box" pos="0 0 -0.00725" size="0.085 0.065 0.00075" rgba="0.78 0.6 0.4 1" class="env"/>
-    <geom name="box_black_wall_far" type="box" pos="0.083 0 0.0095" size="0.002 0.065 0.0175" rgba="0.07 0.06 0.05 1" class="wall"/>
-    <geom name="box_black_wall_near" type="box" pos="-0.083 0 0.0095" size="0.002 0.065 0.0175" rgba="0.07 0.06 0.05 1" class="wall"/>
-    <geom name="box_black_wall_left" type="box" pos="0 0.063 0.0095" size="0.081 0.002 0.0175" rgba="0.07 0.06 0.05 1" class="wall"/>
-    <geom name="box_black_wall_right" type="box" pos="0 -0.063 0.0095" size="0.081 0.002 0.0175" rgba="0.07 0.06 0.05 1" class="wall"/>
+    <geom name="box_black_floor" type="box" pos="0 0 -0.0131" size="0.085 0.065 0.0066" rgba="0.78 0.6 0.4 1" class="env"/>
+    <geom name="box_black_wall_far" type="box" pos="0.083 0 0.00365" size="0.002 0.065 0.02335" rgba="0.07 0.06 0.05 1" class="wall"/>
+    <geom name="box_black_wall_near" type="box" pos="-0.083 0 0.00365" size="0.002 0.065 0.02335" rgba="0.07 0.06 0.05 1" class="wall"/>
+    <geom name="box_black_wall_left" type="box" pos="0 0.063 0.00365" size="0.081 0.002 0.02335" rgba="0.07 0.06 0.05 1" class="wall"/>
+    <geom name="box_black_wall_right" type="box" pos="0 -0.063 0.00365" size="0.081 0.002 0.02335" rgba="0.07 0.06 0.05 1" class="wall"/>
     </body>
     </body>
     <body name="seed_white_0" pos="0.24317 0.15018 0.001">
