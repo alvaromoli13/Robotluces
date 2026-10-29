@@ -464,6 +464,36 @@ def _wobble(rng_seed: int, n: int, amp: float) -> np.ndarray:
     return amp * out / 2.0
 
 
+DART_SIGMA_S = 0.4  # smoothing time of the DART perturbation (Gaussian kernel sigma): slow drift, not a fresh draw per frame
+DART_RAMP_FRAMES = 15  # the perturbation fades in over half a second
+
+
+def dart_offsets(rng_seed: int, marks: dict, n: int, amp_deg: float) -> np.ndarray:
+    """DART perturbation of the commanded arm joints, (n, 5) degrees: white noise low-passed by a Gaussian kernel of
+    `DART_SIGMA_S`, scaled to standard deviation `amp_deg` per joint and clipped to +-2 `amp_deg`. It is silent while
+    idle, fades in half-way through the transit, stays full until the descent starts and fades out over the first 3/4 of
+    the descent: the jaws reach the seed on the planned pose (a perturbed jaw shoves the seed away), and the close, the
+    lift and the fold-back are the plan. The transit, the hover and the start of the descent visit off-path states that
+    the expert has to pull back from. Reproducible from `rng_seed`; all zeros when `amp_deg` is 0."""
+    if amp_deg <= 0:
+        return np.zeros((n, len(ARM_JOINTS)))
+    rng = np.random.default_rng(rng_seed ^ 0xDA67)
+    sigma = DART_SIGMA_S * FPS
+    half = int(4 * sigma)
+    kernel = np.exp(-0.5 * (np.arange(-half, half + 1) / sigma) ** 2)
+    kernel /= kernel.sum()
+    white = rng.standard_normal((n + 2 * half, len(ARM_JOINTS)))
+    smooth = np.stack([np.convolve(white[:, j], kernel, mode="valid") for j in range(len(ARM_JOINTS))], axis=1)
+    smooth *= amp_deg / math.sqrt((kernel ** 2).sum())  # unit variance before the amplitude
+    out = np.clip(smooth, -2 * amp_deg, 2 * amp_deg)
+    start = marks["transit"] + (marks["descend_start"] - marks["transit"]) // 2
+    fade_end = marks["descend_start"] + (3 * (marks["settle"] - marks["descend_start"])) // 4
+    t = np.arange(n)
+    envelope = np.interp(t, [start, start + DART_RAMP_FRAMES, marks["descend_start"], fade_end], [0.0, 1.0, 1.0, 0.0])
+    envelope[(t <= start) | (t >= fade_end)] = 0.0
+    return out * envelope[:, None]
+
+
 def _aimed(p: EpisodeParams, force_seed_xyz=None) -> np.ndarray:
     seed_true = np.asarray(force_seed_xyz if force_seed_xyz is not None else p.seed_xyz(p.target), dtype=float)
     aimed = seed_true + np.array([*p.aim_error, 0.0])  # the operator sees the seed a millimetre or two off
@@ -657,6 +687,7 @@ class Rollout:
     success: bool  # the seed was lifted and is still in the jaws
     info: dict = field(default_factory=dict)
     valid: bool = True  # no arm geom went through a wall (`collision.WallReport.valid`); only valid successes are kept
+    commands: np.ndarray | None = None  # DART only: what the follower was sent (`actions` + the perturbation)
 
 
 @functools.lru_cache(maxsize=1)
@@ -665,11 +696,22 @@ def _kinematics() -> Kinematics:
 
 
 def simulate_episode(p: EpisodeParams, kin: Kinematics | None = None, *, render: bool = True,
-                     plan: tuple[np.ndarray, dict] | None = None) -> Rollout:
+                     plan: tuple[np.ndarray, dict] | None = None, dart_noise_deg: float = 0.0) -> Rollout:
     """Plan the episode, then play it through the simulated follower while recording what the policy would see and
     watching every physics step for contacts between the arm and a wall. `render=False` leaves the frames blank (tests
-    and audits); `plan` replays given actions instead of planning (the audit of the v1 planner)."""
+    and audits); `plan` replays given actions instead of planning (the audit of the v1 planner).
+
+    `dart_noise_deg` > 0 (DART): the arm is sent the plan plus `dart_offsets` (clipped to the joint limits) while the
+    recorded `actions` stay the plan, the expert's target from wherever the perturbation left the arm; the position
+    controller pulls it back to the plan, and `commands` holds what was really sent."""
     actions, marks = plan if plan is not None else plan_actions(kin or _kinematics(), p)
+    commands = None
+    if dart_noise_deg > 0:
+        commands = actions.copy()
+        offsets = dart_offsets(p.wobble_seed, marks, len(actions), dart_noise_deg)
+        for j, (lo, hi) in enumerate(joint_limits_deg().values()):  # perturbed frames only: the plan is never clipped
+            moved = actions[:, j] + offsets[:, j]
+            commands[:, j] = np.where(offsets[:, j] != 0, np.clip(moved, lo + JOINT_MARGIN_DEG, hi - JOINT_MARGIN_DEG), actions[:, j])
     robot = SimRobot(initial=dict(zip(JOINTS, map(float, actions[0]))))
     try:
         apply_scene(robot, p)
@@ -689,7 +731,7 @@ def simulate_episode(p: EpisodeParams, kin: Kinematics | None = None, *, render:
                 states[t], top[t], wrist[t] = obs["observation.state"], obs["observation.images.top"], obs["observation.images.wrist"]
             else:
                 states[t] = [robot.read_joints()[j] for j in JOINTS]
-            robot.send_joints(dict(zip(JOINTS, map(float, actions[t]))))
+            robot.send_joints(dict(zip(JOINTS, map(float, (actions if commands is None else commands)[t]))))
             peak = max(peak, float(grasp_test.seed_xyz(robot, p.color, p.target)[2] - seed_rest[2]))
         seed_end, tool_end = grasp_test.seed_xyz(robot, p.color, p.target), grasp_test.tool_xyz(robot)
         moved = [float(np.linalg.norm(grasp_test.seed_xyz(robot, p.color, i)[:2] - p.seed_xyz(i)[:2]))
@@ -698,15 +740,18 @@ def simulate_episode(p: EpisodeParams, kin: Kinematics | None = None, *, render:
         info = {"lift_mm": 1000 * float(seed_end[2] - seed_rest[2]), "peak_lift_mm": 1000 * peak,
                 "seed_to_tool_mm": 1000 * float(np.linalg.norm(seed_end - tool_end)),
                 "other_seed_moved_mm": 1000 * max(moved, default=0.0), "phases": {k: int(v) for k, v in marks.items()}}
+        if commands is not None:
+            info["dart_noise_deg"] = dart_noise_deg
         report = monitor.report()
-        return Rollout(actions, states, top, wrist, ok, info | report.as_info(), valid=report.valid)
+        return Rollout(actions, states, top, wrist, ok, info | report.as_info(), valid=report.valid, commands=commands)
     finally:
         robot.close()
 
 
 # -- the dataset ----------------------------------------------------------------------------------------------
-def dataset_name(color: str, layout_mode: str = "wide") -> str:
-    return f"smartseed-sim-grasp-{color}" + ("-v3-narrow" if layout_mode == "narrow" else DATASET_SUFFIX)
+def dataset_name(color: str, layout_mode: str = "wide", dart: bool = False) -> str:
+    suffix = "-v4-dart" if dart else "-v3-narrow" if layout_mode == "narrow" else DATASET_SUFFIX
+    return f"smartseed-sim-grasp-{color}" + suffix
 
 
 def _read_log(root: Path) -> list[dict]:
@@ -749,14 +794,16 @@ def summarise(log: list[dict]) -> dict:
 
 def build_dataset(root: str | Path, color: str, episodes: int, seed: int, *, repo_id: str | None = None,
                   layout_mode: str = "wide", rollout: Callable[..., Rollout] = simulate_episode, kin: Kinematics | None = None,
-                  progress: Callable[[str], None] = lambda msg: None) -> dict:
+                  progress: Callable[[str], None] = lambda msg: None, dart_noise_deg: float = 0.0) -> dict:
     """Record successful scripted episodes until the dataset holds `episodes`; resumes an existing one.
 
     Attempts are numbered from 0 and drawn from `sample_params(color, seed, attempt, resample)`; a placement the
     planner cannot reach (`Unreachable`) is replaced by the next `resample` of the same attempt. Every attempt (kept
-    or failed) is one line of `<root>/sim_generation.jsonl`."""
+    or failed) is one line of `<root>/sim_generation.jsonl`. `dart_noise_deg` > 0 records DART demos (see
+    `simulate_episode`); the rollout is only given the keyword when it is set."""
     root = Path(root)
-    repo_id = repo_id or f"{HF_USER}/{dataset_name(color, layout_mode)}"
+    repo_id = repo_id or f"{HF_USER}/{dataset_name(color, layout_mode, dart_noise_deg > 0)}"
+    extra = {"dart_noise_deg": dart_noise_deg} if dart_noise_deg > 0 else {}
     ds = _open_dataset(root, repo_id)
     root.mkdir(parents=True, exist_ok=True)
     log = _read_log(root)
@@ -774,7 +821,7 @@ def build_dataset(root: str | Path, color: str, episodes: int, seed: int, *, rep
                 params = sample_params(color, seed, attempt, rejected, LAYOUTS[layout_mode])
                 draws += params.proposals
                 try:
-                    run = rollout(params) if kin is None else rollout(params, kin)
+                    run = rollout(params, **extra) if kin is None else rollout(params, kin, **extra)
                     break
                 except Unreachable as exc:
                     rejected += 1
@@ -783,7 +830,7 @@ def build_dataset(root: str | Path, color: str, episodes: int, seed: int, *, rep
                         raise RuntimeError(f"attempt {attempt}: {MAX_REJECTIONS} placements in a row were unreachable")
             record = {"attempt": attempt, "ok": False, "reason": "", "color": color, "seed": seed,
                       "target": params.target, "present": list(params.present), "episode_index": None,
-                      "proposals": draws, "ik_rejections": rejected, "fit_rejections": no_fit}
+                      "proposals": draws, "ik_rejections": rejected, "fit_rejections": no_fit} | extra
             record |= {k: run.info[k] for k in ("lift_mm", "peak_lift_mm", "wall_max_penetration_mm", "wall_max_force_n",
                                                 "wall_contact_steps") if k in run.info}
             if run.success and run.valid:
@@ -1048,7 +1095,7 @@ def export_videos(root: Path, repo_id: str, episodes: int, out_dir: Path, prefix
     return paths
 
 
-def main() -> None:
+def parse_args(argv=None) -> argparse.Namespace:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--color", choices=["black", "white"], default=None)
     ap.add_argument("--episodes", type=int, default=100)
@@ -1062,26 +1109,34 @@ def main() -> None:
     ap.add_argument("--videos", default=None, metavar="DIR", help="only write DIR/<colour>_epNN.mp4 (top | wrist) of the "
                     "first 5 episodes of the black and white datasets under sim/out/datasets and exit")
     ap.add_argument("--push-repo", default=None, help="Hub dataset repo to upload to when done (existing HF login)")
-    args = ap.parse_args()
+    ap.add_argument("--dart-noise", type=float, default=0.0, metavar="DEG",
+                    help="DART recovery demos: smooth joint perturbation of this size (degrees) on the executed commands "
+                    "while the recorded action stays the plan (default 0 = clean demos; dataset <colour>-v4-dart)")
+    return ap.parse_args(argv)
+
+
+def main() -> None:
+    args = parse_args()
+    dart = args.dart_noise > 0
     if args.coverage:
         base = ROOT / "sim" / "out" / "datasets"
-        coverage_plot({c: logged_scenes(_read_log(base / dataset_name(c, args.layout)), args.layout)
+        coverage_plot({c: logged_scenes(_read_log(base / dataset_name(c, args.layout, dart)), args.layout)
                        for c in ("black", "white")},
                       Path(args.coverage))
         return
     if args.videos:
         base = ROOT / "sim" / "out" / "datasets"
         for c in ("black", "white"):
-            for path in export_videos(base / dataset_name(c, args.layout), f"{HF_USER}/{dataset_name(c, args.layout)}", 5,
+            for path in export_videos(base / dataset_name(c, args.layout, dart), f"{HF_USER}/{dataset_name(c, args.layout, dart)}", 5,
                                       Path(args.videos), c):
                 print(path)
         return
     if not args.color:
         ap.error("--color is required")
-    root = Path(args.out or ROOT / "sim" / "out" / "datasets" / dataset_name(args.color, args.layout))
-    repo_id = args.push_repo or f"{HF_USER}/{dataset_name(args.color, args.layout)}"
+    root = Path(args.out or ROOT / "sim" / "out" / "datasets" / dataset_name(args.color, args.layout, dart))
+    repo_id = args.push_repo or f"{HF_USER}/{dataset_name(args.color, args.layout, dart)}"
     summary = build_dataset(root, args.color, args.episodes, args.seed, repo_id=repo_id, layout_mode=args.layout,
-                            progress=lambda msg: print(msg, flush=True))
+                            progress=lambda msg: print(msg, flush=True), dart_noise_deg=args.dart_noise)
     print(json.dumps(summary))
     if args.push_repo:
         from lerobot.datasets.lerobot_dataset import LeRobotDataset
