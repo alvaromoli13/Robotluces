@@ -1004,13 +1004,14 @@ Every episode is simulated under a wall monitor (`sim/collision.py`): after each
 contacts between any arm geom (all links, both jaw hulls, both pads) and any box or tray wall. An episode is kept only if
 
 1. the seed rose over 3 cm and is still in the jaws at the end,
-2. no arm geom went deeper than **1 mm** into a wall (contact `dist`), and no wall contact pushed with more than 2 N,
+2. no arm geom went deeper than **1 mm** into a wall (contact `dist`), no wall contact pushed with more than 2 N, and no arm
+   geom went deeper than **2 mm** into the table, the paper or the mat,
 3. before it was recorded the planner checked the whole commanded motion against every wall (forward kinematics): the
    open jaws stay 5 mm clear of walls and neighbouring seeds from the descent to the end of the lift, the transit and
    the retract stay 2 cm clear, and a scene where no jaw yaw fits is redrawn.
 
-Walls are solid for every jaw geom in this scene (the floors, mat and table are not: the jaws rest on them at the
-taught pose, see `sim/README.md`, "Collision model").
+Walls are solid for every jaw geom in this scene, and so are the table, the paper and the mat (T5f): no arm geom went
+more than 2 mm into them (see `sim/README.md`, "Collision model" and "Table collisions").
 
 ## Generator statistics
 

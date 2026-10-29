@@ -121,13 +121,13 @@ once a box had been moved. v2 gives walls their own collision bit:
 | fixed-jaw hull, wrist, links (`collision` class) | 1 | 0 | walls and floors, not seeds, not each other |
 | moving-jaw hull | 16 | 0 | walls only |
 | fingertip pads | 24 (8+16) | 0 | seeds (bit 8) and walls (bit 16), not floors |
-| box and tray floors (`env`) | 2 | 3 | the arm hulls, seeds |
-| table, paper, mat (`ground`) | 4 | 2 | seeds only (the arm passes through: the arm rests its jaws on the table at `home`) |
+| box and tray floors (`env`) | 2 | 3 | the arm hulls, seeds; stiff since T5f, solid down to the mat |
+| table, paper, mat (`ground`) | 4 | 27 (1+2+8+16) | every arm geom and the seeds; stiff (`priority 1`). T5f: before this the arm passed through them |
 | seeds | 2 | 10 | pads, walls, floors, ground, seeds |
 
 So every jaw geom (fixed hull, moving hull, both pads) and every other arm geom stops at every box and tray wall,
-rims included (the rim is the top face of the wall box). The floors, mat and table stay non-solid for the jaws: the
-moving hull's nib dragged on the 1.5 mm box floor (T2b) and the pads and the home pose sit at or below those surfaces.
+rims included (the rim is the top face of the wall box). The box floors stay non-solid for the pads (the moving hull's
+nib dragged on the 1.5 mm floor, T2b); the table, paper and mat are solid for every arm geom since T5f (next section).
 A jaw driven 4 cm through a box wall is stopped within 0.4 mm (30-40 N of servo push, test
 `test_a_tool_pushed_through_a_box_wall_is_stopped_by_it`). The moving hull is MuJoCo's convex hull of an L-shaped part,
 so it is a conservative proxy: it can touch a wall slightly before the real jaw would.
@@ -155,6 +155,63 @@ descent to the end of the lift and at the still poses (start and fold), and 2 cm
 before any motion). The hover at tool height 7 cm and the vertical descent keep the jaw above the 3.5 cm walls until it is
 over the seed. If an axis fails, the next one is tried; if none passes the scene is redrawn (`NoFit`, a placement
 rejection counted separately from out-of-reach ones).
+
+## Table collisions (T5f)
+
+Until T5f the ground class (table, paper, mat) collided with seeds only, "because the arm rests its jaws on it at home", and
+the wall monitor watched walls only. Audit of the `-v4-dart` datasets (every episode, arm geoms against the ground; the
+ground opened to the arm's bits at the geom AND body level, the broad phase filters on body bits): the taught `act_start`
+sank the gripper 8-9 mm into the table plane in all 1200 episodes, and afterwards about 43 % of the episodes went over 2 mm,
+36 % over 5 mm (max 13 mm), mostly the fixed jaw during the grasp (wrist roll 135-150 deg). The real table is hard, so those
+demos were physically impossible.
+
+**What changed** (`layout.py`, `collision.py`, `make_dataset.py`):
+
+- The ground class collides with every arm geom (conaffinity 27) and the seeds, with stiff contact (`solref 0.004 1`,
+  `priority 1`, so it wins over the arm's soft defaults). Hard on purpose: with a stiff mat the servo's push sinks the jaw 0.5-0.7 mm
+  at most, even when driven 40 deg past the surface (test `test_a_pose_pushed_below_the_table_makes_contacts_with_bounded_penetration`).
+- Box and tray floors are stiff too, and floors and walls are solid down to the mat. They used to be soft plates 1.5 mm above
+  a soft mat; the mat was the invisible second support that caught a seed a pad pressed into a floor (the recorded-grasp
+  replay stopped lifting without it).
+- `collision.WallMonitor` also tracks arm-vs-table/paper/mat contacts (`table_max_penetration_m`, `table_contact_steps`);
+  an episode is invalid when the deepest exceeds `MAX_TABLE_PENETRATION_M = 2 mm`, with its own rejection reason
+  (`table: arm X mm into the table, paper or mat`, the wall one stays `collision: ...`) and `table_*` keys in the log.
+  The start pose is written, not driven, and the start noise can put it a few mm into the table: the table statistics
+  restart after the settle steps (`forget_table`).
+- `sim/audit_table.py <dataset>...` replays the recorded states and prints the per-episode penetration; `--gate` also checks
+  alignment (every episode one contiguous run, first and last row carry its index, rows == `total_frames`) and the generation
+  log (wall 1 mm / 2 N, table 2 mm) and exits 1 on a violation; `--prune` removes violating episodes with lerobot's
+  `dataset_tools.delete_episodes` and re-audits.
+
+**Pose or table height?** The table. Evidence, all from this repo:
+
+1. The taught `home` and `act_start` are the real arm at rest on a hard surface. The lowest collision geoms there (fixed pad
+   -0.0195, fixed hull -0.0184 m in the base frame) are 8.5 / 7.3 mm below the old table (-0.011, which was just the tool frame
+   height at `home`). No hard surface can be there.
+2. Every frame of the real episodes (`d1-clean`, `d2-clean`, forward kinematics through this model) stays above -0.0138 m (fixed
+   hull) / -0.0122 (fixed pad) / -0.0202 (moving-jaw hull, a conservative convex hull); a real arm cannot go lower than the real
+   surface, so the surface is at or below about -0.0200.
+3. The measured grasp (tool at z = -0.0003 on a seed) fixes the box floor top (about -0.007), not the table: the box
+   floors, rims and the mat outline read off the top frame do not move, so the camera fit and the replay residual are untouched.
+   The top-camera fit uses the arm silhouette and heights of what is visible; the table plane is not visible.
+
+So the ground (table -0.0215, paper top -0.0205, mat top -0.0197) now ends 0.2-2 mm under the lowest point of the taught poses
+and of the real episodes; the mat keeps its outline in the top image (scaled 2 % about the camera axis, <= 6 mm at the edge, to
+project to the same pixels from its new height). Moving the pose up instead would have meant a different start state than
+the real policies were trained on. Both taught poses and the real `d1`/`d2` frames now have at most 0.5 mm penetration.
+`sim/config/poses.json` is unchanged. The real backend is untouched.
+
+**Planner ceiling with DART noise 4 deg**, 100 held-out narrow scenes per colour (seed 1000, physics, wall and table monitor;
+the table limit is part of "valid"):
+
+| | black | white |
+|---|---|---|
+| lifted and held | 99 / 100 | 98 / 100 |
+| also valid (wall and table) | 99 / 100 | 98 / 100 |
+
+(v4 numbers: 99 / 97.) Before the start-pose fix the first run read 96 / 93 valid: 8 scenes rejected for 2.0-2.8 mm, all at the
+very first physics step (the start noise had placed the arm in the table), none during the motion.
+
 
 ## Running the real ACT in sim (T3)
 
@@ -357,7 +414,7 @@ things worse). DART (Disturbances for Augmenting Robot Trajectories) records the
 data contains off-path states and the expert's way back.
 
 ```bash
-backend/.venv/bin/python sim/make_dataset.py --color black --layout narrow --episodes 600 --dart-noise 4 --seed 0   # -> sim/out/datasets/smartseed-sim-grasp-black-v4-dart
+backend/.venv/bin/python sim/make_dataset.py --color black --layout narrow --episodes 600 --dart-noise 4 --seed 0   # -> sim/out/datasets/smartseed-sim-grasp-black-v5-dart
 backend/.venv/bin/python sim/eval.py --planner --color black --layout narrow --episodes 100 --dart-noise 4         # ceiling with the noise on
 ```
 
@@ -377,8 +434,8 @@ backend/.venv/bin/python sim/eval.py --planner --color black --layout narrow --e
   before the close, so the final pose is the nominal one anyway, and a re-solve would add a second planner path
   (IK branch changes, wall re-checks) for no precision gain.
 - Every safety rule stays: the plan keeps its swept-path wall check, and the noisy rollout is watched by the same wall monitor
-  (rejected above 1 mm or 2 N); only successful, wall-valid episodes are written. The log lines of a dart dataset carry
-  `dart_noise_deg`; the dataset folder is `<colour>-v4-dart`.
+  (rejected above 1 mm or 2 N, and since T5f above 2 mm into the table); only successful, valid episodes are written. The log lines of a dart dataset carry
+  `dart_noise_deg`; the dataset folder is `<colour>-v5-dart` (v4 was generated before the arm collided with the table).
 
 **Ceiling with the noise on** (`eval.py --planner --dart-noise`, 100 held-out narrow scenes per colour, seed 1000, physics, wall monitor;
 clean planner 100 / 97):

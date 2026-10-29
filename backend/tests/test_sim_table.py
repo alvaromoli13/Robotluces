@@ -168,3 +168,51 @@ def test_a_start_pose_a_few_mm_under_the_table_is_pushed_out_and_is_not_an_episo
     actions = np.tile([low[j] for j in JOINTS], (60, 1)).astype(np.float32)
     run = md.simulate_episode(p, kin, render=False, plan=(actions, {"descend_start": 30}))
     assert run.info["table_max_penetration_mm"] <= 1000 * collision.MAX_TABLE_PENETRATION_M
+
+
+def fake_dataset(root, episodes: dict[int, int], log: list[dict], total: int | None = None):
+    """A tiny on-disk dataset: `episodes` maps episode index to frame count; `log` is the generation log."""
+    import pandas as pd
+
+    (root / "data" / "chunk-000").mkdir(parents=True)
+    (root / "meta").mkdir()
+    rows = [(ep, [0.0] * 6) for ep, n in episodes.items() for _ in range(n)]
+    pd.DataFrame({"episode_index": [r[0] for r in rows], "observation.state": [r[1] for r in rows]}).to_parquet(
+        root / "data" / "chunk-000" / "file-000.parquet")
+    (root / "meta" / "info.json").write_text(json.dumps({"total_frames": len(rows) if total is None else total}))
+    (root / md.LOG_NAME).write_text("".join(json.dumps(r) + "\n" for r in log))
+
+
+def kept(ep: int, **kw) -> dict:
+    return {"ok": True, "reason": "kept", "episode_index": ep, "wall_max_penetration_mm": 0.2, "wall_max_force_n": 0.5,
+            "table_max_penetration_mm": 0.3} | kw
+
+
+def test_the_alignment_check_passes_a_consistent_dataset_and_names_the_broken_episode(tmp_path):
+    from sim import audit_table
+
+    fake_dataset(tmp_path / "ok", {0: 3, 1: 4}, [kept(0), kept(1)])
+    assert audit_table.alignment_problems(tmp_path / "ok") == []
+    fake_dataset(tmp_path / "bad", {0: 3, 1: 4}, [kept(0), kept(1)], total=9)
+    assert any("total_frames" in p for p in audit_table.alignment_problems(tmp_path / "bad"))
+
+
+def test_the_alignment_check_flags_rows_out_of_episode_order(tmp_path):
+    import pandas as pd
+    from sim import audit_table
+
+    fake_dataset(tmp_path, {0: 3, 1: 3}, [kept(0), kept(1)])
+    path = tmp_path / "data" / "chunk-000" / "file-000.parquet"
+    df = pd.read_parquet(path)
+    df.loc[1, "episode_index"] = 1  # a row of episode 1 inside episode 0
+    df.to_parquet(path)
+    assert any("episode 0" in p for p in audit_table.alignment_problems(tmp_path))
+
+
+def test_the_log_gate_lists_kept_episodes_over_the_wall_or_table_limits(tmp_path):
+    from sim import audit_table
+
+    log = [kept(0), kept(1, wall_max_penetration_mm=1.5), kept(2, wall_max_force_n=3.0), kept(3, table_max_penetration_mm=2.5),
+           {"ok": False, "reason": "failed", "episode_index": None}]
+    fake_dataset(tmp_path, {0: 1, 1: 1, 2: 1, 3: 1}, log)
+    assert audit_table.log_violations(tmp_path) == {1: "wall 1.5 mm", 2: "wall force 3.0 N", 3: "table 2.5 mm"}
