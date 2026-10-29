@@ -764,10 +764,29 @@ def _append_log(root: Path, record: dict) -> None:
         f.write(json.dumps(record) + "\n")
 
 
+def drop_orphan_frames(root: Path) -> int:
+    """Remove data rows of episodes past `total_episodes`: a crash inside `save_episode` can write an episode's frames
+    without its metadata, and the resumed run then saves that episode again, so every later episode would read the frames
+    of the one before (seen on 2026-10-29). Returns the number of rows removed."""
+    import pyarrow.compute as pc
+    import pyarrow.parquet as pq
+
+    total = json.loads((root / "meta" / "info.json").read_text())["total_episodes"]
+    removed = 0
+    for path in sorted((root / "data").glob("*/*.parquet")):
+        table = pq.read_table(path)
+        kept = table.filter(pc.less(table["episode_index"], total))
+        if kept.num_rows < table.num_rows:
+            removed += table.num_rows - kept.num_rows
+            pq.write_table(kept, path)
+    return removed
+
+
 def _open_dataset(root: Path, repo_id: str):
     from lerobot.datasets.lerobot_dataset import LeRobotDataset
 
     if (root / "meta" / "info.json").exists():
+        drop_orphan_frames(root)
         return LeRobotDataset.resume(repo_id, root=root)
     if root.exists() and not any(root.iterdir()):
         root.rmdir()

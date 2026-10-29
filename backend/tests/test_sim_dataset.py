@@ -659,3 +659,22 @@ def test_the_first_episodes_of_a_dataset_export_as_side_by_side_mp4(tmp_path):
     assert [p.name for p in paths] == ["black_ep00.mp4", "black_ep01.mp4"]
     frames = imageio.mimread(str(paths[0]), memtest=False)
     assert len(frames) == 6 and frames[0].shape[1] == 2 * IMAGE_SHAPE[1] and frames[0].shape[0] == IMAGE_SHAPE[0]
+
+
+def test_resume_drops_frames_of_an_episode_whose_save_crashed(tmp_path):
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    # The 2026-10-29 crash: episode 1's frames reached the data file, its metadata never did (total_episodes = 1).
+    (tmp_path / "meta").mkdir()
+    (tmp_path / "meta" / "info.json").write_text(json.dumps({"total_episodes": 1}))
+    data = tmp_path / "data" / "chunk-000"
+    data.mkdir(parents=True)
+    pq.write_table(pa.table({"episode_index": [0, 0, 1, 1, 1], "index": [0, 1, 2, 3, 4]}), data / "file-000.parquet")
+    untouched = pa.table({"episode_index": [0], "index": [0]})
+    pq.write_table(untouched, data / "file-001.parquet")
+
+    assert md.drop_orphan_frames(tmp_path) == 3
+    assert pq.read_table(data / "file-000.parquet").column("episode_index").to_pylist() == [0, 0]
+    assert pq.read_table(data / "file-001.parquet").equals(untouched)
+    assert md.drop_orphan_frames(tmp_path) == 0
