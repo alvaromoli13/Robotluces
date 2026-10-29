@@ -139,6 +139,17 @@ Strict TDD (session config). Runner: `cd backend && uv run pytest` (via `~/.clau
       table/paper/mat; the monitor also rejects table/mat penetration (> 2 mm); the start pose (or the table height) is
       corrected after checking real frames; planner ceiling stays >= 95 %; regenerate 600 DART episodes per colour as
       `-v5-dart`; keep the v4 folders until v5 is verified. Hub and Brev remain separate steps (Brev needs a user OK).
+      Evidence so far (route: delegated, one writer; TDD runner pytest in backend/.venv, RED first for the table, monitor,
+      start-pose, start-noise and gate tests, the audit tool itself was written before its first test): ground is hard and
+      collides with every arm geom; the pose was NOT the problem, the table was (taught `home`/`act_start` have the fixed pad
+      8.5 mm under the old table plane, real d1/d2 frames never go under -0.020), so the table moved to -0.0215 (paper -0.0205,
+      mat top -0.0197, outline re-projected), floors and walls solid down to the mat and stiff, `poses.json` untouched; monitor
+      limit 2 mm with its own reason; `sim/audit_table.py --gate [--prune]` (alignment, log, table; prune with lerobot
+      `delete_episodes`). Real d1/d2 frames now <= 0.5 mm, both taught poses 0. Planner ceiling DART 4 deg, 100 held-out narrow
+      scenes: black 99/100 lifted and valid, white 98/100 lifted and valid. v4 audited against the new table: black max 2.0 mm,
+      white max 1.28 mm, 0 episodes over 2 mm. Backend suite 462 passed. Commits 509d66c, f91adb8, 784742e.
+      PENDING (task stays open): v5 generation running (`sim/out/dart5_gen_<colour>.log`, black then white, ~17 s per kept
+      episode); then `sim/audit_table.py --gate --prune` on both, record removed counts here and in `sim/README.md`.
 
 ## Acceptance
 - `SMARTSEED_ROBOT=sim ./scripts/stack.sh` runs the web + executor against the simulated arm.
