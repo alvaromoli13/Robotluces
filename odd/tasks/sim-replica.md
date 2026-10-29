@@ -110,6 +110,22 @@ Strict TDD (session config). Runner: `cd backend && uv run pytest` (via `~/.clau
       e595b79 but NOT run on a GPU. Not started on any box: the live `smartseed-narrow` was left to `watch_pair.sh` (user
       withdrew remote authorisation; only 3 read-only ssh commands had been run on it before that, see the report).
 
+- [ ] T5e DART recovery demos (route: delegated, one writer; trigger: 2+ non-trivial files plus reading to prepare it).
+      Evidence that motivates it (narrow ACT, 30 held-out scenes per colour): success stalls from 20k steps (black 4/7/7/6,
+      white 7/7/7/7 at 10k..40k); shorter open-loop chunks make it worse (40k: temporal ensembling black 1 white 5,
+      n_action_steps=10 black 0 white 0), so the policy breaks once it leaves the planner's clean path. About 60 % of
+      failures end 10-25 mm from the seed with the jaws closed beside it. Fix: inject noise into the executed joints and
+      record the corrective expert action, so the demos contain off-path states and their recovery; about 600 kept
+      episodes per colour, narrow layout, `-v4-dart` datasets. Done when: the generator flag is unit-tested, the planner
+      ceiling with noise stays >= 95 % on held-out scenes, both datasets exist locally with stats in `sim/README.md`.
+      Hub publishing and Brev training stay separate steps (Brev needs a new user OK).
+      Status 2026-10-29: code done (RED first: 10 tests failed on the missing `md.parse_args`/`dart_offsets`/`commands`, then
+      green; `pytest` 445 passed). Design: noise on the executed arm joints (Gaussian-smoothed, faded out before the grasp),
+      recorded action = nominal plan, see `sim/README.md`, "DART recovery demos". Ceiling with noise 4 deg on 100 held-out
+      narrow scenes: black 99/100, white 97/100 (6 deg: 98 / 94, so 4 deg was taken). Commits c8867e4, 8a5e40f. Generation
+      (600 per colour, ~17 s per episode, black then white) is running in the background, logs `sim/out/dart_gen_<colour>.log`;
+      left unchecked until both datasets are complete and their stats are in `sim/README.md`.
+
 ## Acceptance
 - `SMARTSEED_ROBOT=sim ./scripts/stack.sh` runs the web + executor against the simulated arm.
 - Replay of a real episode in sim lines up with the real top-camera frames (overlay image saved).
@@ -133,3 +149,4 @@ Strict TDD (session config). Runner: `cd backend && uv run pytest` (via `~/.clau
 - 2026-10-28: T5b/T5c done: v1 links removed, `--layout narrow`, 300 episodes per colour on the Hub as `-v3-narrow`, scripted ceiling
   100 % / 97 %; next step is training on Brev with the narrow datasets and `sim/eval.py --layout narrow` (see T5c).
 - 2026-10-28: T5d done (controller built and tested locally, not deployed); see `sim/README.md`, "Eval-driven training length".
+- 2026-10-29: T5e code done (`--dart-noise`, noisy ceiling 99 / 97 % at 4 deg); dataset generation running, task stays open.
