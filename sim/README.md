@@ -344,6 +344,49 @@ backend/.venv/bin/python sim/eval.py --repo RafaelJaime/act-sim-black-narrow-c10
 
 and gate on `eval.py --layout narrow` (held-out) against the 100 % / 97 % ceiling.
 
+### DART recovery demos (T5e, `--dart-noise`)
+
+Why: narrow ACT trained on 300 clean planner demos plateaus at about 23 % held-out success. The planner is an open-loop joint
+trajectory, so the demos only contain states on that one clean path; once the policy drifts off it, it has never seen a way
+back (about 60 % of the failures end 10-25 mm from the seed with the jaws closed beside it, and re-planning more often made
+things worse). DART (Disturbances for Augmenting Robot Trajectories) records the demonstrator while it is perturbed, so the
+data contains off-path states and the expert's way back.
+
+```bash
+backend/.venv/bin/python sim/make_dataset.py --color black --layout narrow --episodes 600 --dart-noise 4 --seed 0   # -> sim/out/datasets/smartseed-sim-grasp-black-v4-dart
+backend/.venv/bin/python sim/eval.py --planner --color black --layout narrow --episodes 100 --dart-noise 4         # ceiling with the noise on
+```
+
+**Design** (`make_dataset.dart_offsets`, `simulate_episode(dart_noise_deg=...)`):
+
+- The executed command is the plan plus a perturbation of the five arm joints: white noise low-passed by a Gaussian kernel
+  (sigma 0.4 s), standard deviation `DEG` per joint, clipped to +-2 `DEG`, clipped to the joint limits. It is seeded by the
+  scene, so a dataset is reproducible and `--dart-noise 0` (the default) takes exactly the old code path (same bytes).
+- The envelope is zero while idle, fades in half-way through the transit, is full until the descent starts and fades out over
+  the first 3/4 of the descent. The jaws therefore reach the seed on the planned pose (a perturbed jaw shoves the seed away:
+  with the noise held through the grasp, a 2 deg scene lost the seed), and the close, the lift and the fold-back are the plain
+  plan. The gripper is never perturbed.
+- The recorded `action` is the plan's nominal waypoint at that frame, not the noisy command; `observation.state` is what the
+  follower really measured. The planner is open loop (a joint trajectory fixed by the scene, aimed at the seed), so the
+  nominal waypoint already is what the expert would command from the perturbed state: the position controller pulls the arm
+  back to the path that ends at the seed. Re-solving the approach from the current state was not needed: the noise is gone
+  before the close, so the final pose is the nominal one anyway, and a re-solve would add a second planner path
+  (IK branch changes, wall re-checks) for no precision gain.
+- Every safety rule stays: the plan keeps its swept-path wall check, and the noisy rollout is watched by the same wall monitor
+  (rejected above 1 mm or 2 N); only successful, wall-valid episodes are written. The log lines of a dart dataset carry
+  `dart_noise_deg`; the dataset folder is `<colour>-v4-dart`.
+
+**Ceiling with the noise on** (`eval.py --planner --dart-noise`, 100 held-out narrow scenes per colour, seed 1000, physics, wall monitor;
+clean planner 100 / 97):
+
+| noise (std per joint) | black lifted and held / wall-valid | white lifted and held / wall-valid |
+|---|---|---|
+| 4 deg | 99 / 99 | 97 / 97 |
+| 6 deg | 98 / 96 | 94 / 92 |
+
+4 deg (about 2 cm at the tool, clipped at 8 deg) keeps both colours at or above the 95 % target, so it is the value used;
+6 deg drops white below it. (20 scenes, black: 2 deg and 4 deg both 20 / 20.)
+
 ## What is weak
 
 - **Walls and the jaw proxy.** The moving-jaw hull is a convex hull, larger than the real jaw, and the box and tray walls are
