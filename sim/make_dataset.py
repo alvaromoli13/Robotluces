@@ -719,6 +719,7 @@ def simulate_episode(p: EpisodeParams, kin: Kinematics | None = None, *, render:
         hold = robot.read_joints()
         for _ in range(SETTLE_STEPS):
             robot.send_joints(hold)
+        monitor.forget_table()  # the noisy start pose may sit a few mm in the table until the contact pushed it out
         seed_rest = grasp_test.seed_xyz(robot, p.color, p.target)
         n = len(actions)
         states = np.zeros((n, 6), np.float32)

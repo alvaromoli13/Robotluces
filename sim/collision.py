@@ -114,6 +114,11 @@ class WallMonitor:
         self._table_pen, self._table_steps = 0.0, 0
         self.last_penetration_m = 0.0  # of the latest measuring call (geometry mode)
 
+    def forget_table(self) -> None:
+        """Drop the table statistics so far: the start pose is written, not driven there, and the start noise can put
+        it a few mm into the table; the settle steps push it out and are not part of the motion."""
+        self._table_pen, self._table_steps = 0.0, 0
+
     def __call__(self, model, data) -> None:
         self._calls += 1
         if self.mode == "geometry":

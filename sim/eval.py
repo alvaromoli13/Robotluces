@@ -153,7 +153,7 @@ def planner_ceiling(color: str, n: int, *, seed: int = HELDOUT_SEED, layout_mode
                     rollout: Callable[..., md.Rollout] = md.simulate_episode, kin: Kinematics | None = None,
                     log: Callable[[str], None] = lambda msg: None, dart_noise_deg: float = 0.0) -> dict:
     """The ceiling for a policy: the scripted planner (the demonstrator) on the same held-out scenes, through the physics
-    and the wall monitor, no rendering. `successes`: the seed was lifted and held; `kept`: also wall-valid (what the
+    and the wall monitor, no rendering. `successes`: the seed was lifted and held; `kept`: also valid, wall and table (what the
     dataset generator would keep). `dart_noise_deg` > 0 flies the DART perturbation (as `make_dataset.py --dart-noise`)."""
     kin = kin or Kinematics()
     extra = {"dart_noise_deg": dart_noise_deg} if dart_noise_deg > 0 else {}
@@ -162,7 +162,8 @@ def planner_ceiling(color: str, n: int, *, seed: int = HELDOUT_SEED, layout_mode
         r = rollout(p, kin, render=False, **extra)  # physics only; only three numbers per episode are kept, never the frames
         episodes, successes, valid = episodes + 1, successes + bool(r.success), valid + bool(r.valid)
         kept += bool(r.success and r.valid)
-        log(f"scene {p.attempt}: lift {r.info.get('lift_mm', float('nan')):6.1f} mm  success {r.success}  wall-valid {r.valid}")
+        log(f"scene {p.attempt}: lift {r.info.get('lift_mm', float('nan')):6.1f} mm  success {r.success}  valid {r.valid}"
+            + ("" if r.valid else f"  ({md.invalid_reason(r.info)})"))
         del r
     return {"episodes": episodes, "successes": successes, "valid": valid, "kept": kept,
             "success_rate": successes / episodes, "kept_rate": kept / episodes}
@@ -201,7 +202,7 @@ def main(argv=None) -> None:
         res = planner_ceiling(args.color, args.episodes, seed=args.seed, layout_mode=args.layout,
                               log=lambda msg: print(msg, flush=True), dart_noise_deg=args.dart_noise)
         print(f"scripted planner ({args.color}, {args.layout}, seed {args.seed}, dart noise {args.dart_noise:g} deg): {res['successes']}/{res['episodes']} lifted and held "
-              f"({100 * res['success_rate']:.0f} %), {res['kept']}/{res['episodes']} also wall-valid ({100 * res['kept_rate']:.0f} %)")
+              f"({100 * res['success_rate']:.0f} %), {res['kept']}/{res['episodes']} also valid, wall and table ({100 * res['kept_rate']:.0f} %)")
         return
     from smartseed_robot.act import pick_device
 

@@ -140,3 +140,31 @@ def test_the_taught_poses_of_the_sim_do_not_penetrate_the_table(pose):
 def test_the_v5_dart_datasets_have_their_own_name():
     assert md.dataset_name("black", "narrow", dart=True) == "smartseed-sim-grasp-black-v5-dart"
     assert md.dataset_name("white", "narrow", dart=True) == "smartseed-sim-grasp-white-v5-dart"
+
+
+def test_the_audit_reports_penetration_of_recorded_states_and_zero_for_a_clean_pose():
+    from sim import audit_table
+
+    robot = SimRobot()
+    try:
+        m, d = robot._model, robot._data
+        clean = np.array([POSES["act_start"][j] for j in JOINTS], np.float32)
+        sunk = np.array([pushed_down(POSES["act_start"], 12.0)[j] for j in JOINTS], np.float32)
+        result = audit_table.episode_penetrations(m, d, np.stack([clean, clean, sunk, sunk]), np.array([0, 0, 1, 1]))
+        assert result[0][0] == 0.0 and result[0][1] == 0.0
+        assert result[1][0] > 0.002 and result[1][1] > 0.002 and result[1][2]
+        text = audit_table.summarise(result)
+        assert "episodes 2" in text and ">2 mm 1" in text
+    finally:
+        robot.close()
+
+
+def test_a_start_pose_a_few_mm_under_the_table_is_pushed_out_and_is_not_an_episode_rejection(kin):
+    """The start noise can place the arm a few mm into the table; the placement is not a motion, the servo and the
+    stiff contact lift it out, and only what happens afterwards counts."""
+    p = md.sample_params("black", seed=0, attempt=0)
+    start = {j: load_act_start()[j] for j in JOINTS}
+    low = start | {"elbow_flex": start["elbow_flex"] + 2.0}
+    actions = np.tile([low[j] for j in JOINTS], (60, 1)).astype(np.float32)
+    run = md.simulate_episode(p, kin, render=False, plan=(actions, {"descend_start": 30}))
+    assert run.info["table_max_penetration_mm"] <= 1000 * collision.MAX_TABLE_PENETRATION_M
