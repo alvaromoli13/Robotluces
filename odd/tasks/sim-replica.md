@@ -130,6 +130,16 @@ Strict TDD (session config). Runner: `cd backend && uv run pytest` (via `~/.clau
       (0 misaligned episodes in both datasets), and resume now drops orphan frames (`drop_orphan_frames`, RED-first test;
       `pytest` 446 passed). Not yet on the Hub; Brev training needs a new user OK.
 
+- [ ] T5f Table collisions (reopens T4b/T5e): the user asked whether the arm also passes through the table. It does: the
+      ground class (table, paper, mat) never collides with the arm (`sim/layout.py`, by design: "soft in reality"), and the
+      wall monitor only watches box and tray walls. Audit of the v4-dart datasets (arm geoms against table/paper/mat, world
+      body conaffinity patched as well because the broad phase filters on body bits): the `act_start` pose sinks the gripper
+      8-9 mm below the table plane in all 1200 episodes; after leaving it ~43 % of episodes go > 2 mm and ~36 % > 5 mm
+      (max 13 mm), mostly the fixed jaw during the grasp. Fix (route: delegated, one writer): arm collides with
+      table/paper/mat; the monitor also rejects table/mat penetration (> 2 mm); the start pose (or the table height) is
+      corrected after checking real frames; planner ceiling stays >= 95 %; regenerate 600 DART episodes per colour as
+      `-v5-dart`; keep the v4 folders until v5 is verified. Hub and Brev remain separate steps (Brev needs a user OK).
+
 ## Acceptance
 - `SMARTSEED_ROBOT=sim ./scripts/stack.sh` runs the web + executor against the simulated arm.
 - Replay of a real episode in sim lines up with the real top-camera frames (overlay image saved).
