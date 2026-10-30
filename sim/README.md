@@ -188,6 +188,20 @@ demos were physically impossible.
 0 violating episodes, 0 alignment problems, nothing pruned; deepest arm-vs-table penetration 0.11 mm (p90 0.02 mm),
 start pose 0.05 mm at most.
 
+**ACT on v5** (2026-10-30, `launch_two.sh` on one Brev L40S at 1.06 $/h, 1.55 step/s per run, `auto_train.sh` deciding;
+`RafaelJaime/act-sim-{black,white}-dart-c100`, held-out narrow eval, 30 episodes, seed lifted over 3 cm):
+
+| step | black | white |
+|---|---|---|
+| 10k | 8 | 3 |
+| 20k | **9** | **6** |
+| 30k | 8 | 6 |
+| 40k | 6 | 5 |
+
+Both stopped on patience at 40k; best `checkpoints/020000` (written into the model cards); box deleted after about 8.4 h,
+about 9 $. Against the v3-narrow ACT (best 7 / 7): black +2, white -1, inside 30-episode noise. DART plus the table fix did
+not move the plateau: both datasets peak at 20k and then fall, so the limit is not the clean-path coverage alone.
+
 **Pose or table height?** The table. Evidence, all from this repo:
 
 1. The taught `home` and `act_start` are the real arm at rest on a hard surface. The lowest collision geoms there (fixed pad

@@ -151,6 +151,8 @@ Strict TDD (session config). Runner: `cd backend && uv run pytest` (via `~/.clau
       v5 done 2026-10-30: black 600 kept / 606 attempts (99.0 %), white 600 / 605 (99.2 %); `audit_table.py --gate --prune`
       on both: 0 violations, 0 alignment problems, 0 pruned, max penetration 0.11 mm. Not yet on the Hub (user: tomorrow);
       Brev training still needs a user OK.
+      2026-10-30 ACT on v5 (user OK; L40S, auto_train.sh): best 20k, black 9/30, white 6/30 (v3-narrow 7/7); stopped on
+      patience at 40k, box deleted, about 9 $. v5 uploaded, v4 deleted from the Hub (user OK), collection swapped (5c24cfe).
 
 ## Acceptance
 - `SMARTSEED_ROBOT=sim ./scripts/stack.sh` runs the web + executor against the simulated arm.
