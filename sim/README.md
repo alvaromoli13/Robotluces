@@ -183,6 +183,11 @@ demos were physically impossible.
   log (wall 1 mm / 2 N, table 2 mm) and exits 1 on a violation; `--prune` removes violating episodes with lerobot's
   `dataset_tools.delete_episodes` and re-audits.
 
+**v5 result** (`-v5-dart`, DART 4 deg, narrow, seed 0, 600 episodes per colour): black 606 attempts, 6 failed (99.0 %),
+4 wall rejections; white 605 attempts, 5 failed (99.2 %), 0 wall rejections. `audit_table.py --gate --prune` on both:
+0 violating episodes, 0 alignment problems, nothing pruned; deepest arm-vs-table penetration 0.11 mm (p90 0.02 mm),
+start pose 0.05 mm at most.
+
 **Pose or table height?** The table. Evidence, all from this repo:
 
 1. The taught `home` and `act_start` are the real arm at rest on a hard surface. The lowest collision geoms there (fixed pad

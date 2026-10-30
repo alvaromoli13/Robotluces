@@ -130,7 +130,7 @@ Strict TDD (session config). Runner: `cd backend && uv run pytest` (via `~/.clau
       (0 misaligned episodes in both datasets), and resume now drops orphan frames (`drop_orphan_frames`, RED-first test;
       `pytest` 446 passed). Not yet on the Hub; Brev training needs a new user OK.
 
-- [ ] T5f Table collisions (reopens T4b/T5e): the user asked whether the arm also passes through the table. It does: the
+- [x] T5f Table collisions (reopens T4b/T5e): the user asked whether the arm also passes through the table. It does: the
       ground class (table, paper, mat) never collides with the arm (`sim/layout.py`, by design: "soft in reality"), and the
       wall monitor only watches box and tray walls. Audit of the v4-dart datasets (arm geoms against table/paper/mat, world
       body conaffinity patched as well because the broad phase filters on body bits): the `act_start` pose sinks the gripper
@@ -148,8 +148,9 @@ Strict TDD (session config). Runner: `cd backend && uv run pytest` (via `~/.clau
       `delete_episodes`). Real d1/d2 frames now <= 0.5 mm, both taught poses 0. Planner ceiling DART 4 deg, 100 held-out narrow
       scenes: black 99/100 lifted and valid, white 98/100 lifted and valid. v4 audited against the new table: black max 2.0 mm,
       white max 1.28 mm, 0 episodes over 2 mm. Backend suite 462 passed. Commits 509d66c, f91adb8, 784742e.
-      PENDING (task stays open): v5 generation running (`sim/out/dart5_gen_<colour>.log`, black then white, ~17 s per kept
-      episode); then `sim/audit_table.py --gate --prune` on both, record removed counts here and in `sim/README.md`.
+      v5 done 2026-10-30: black 600 kept / 606 attempts (99.0 %), white 600 / 605 (99.2 %); `audit_table.py --gate --prune`
+      on both: 0 violations, 0 alignment problems, 0 pruned, max penetration 0.11 mm. Not yet on the Hub (user: tomorrow);
+      Brev training still needs a user OK.
 
 ## Acceptance
 - `SMARTSEED_ROBOT=sim ./scripts/stack.sh` runs the web + executor against the simulated arm.
