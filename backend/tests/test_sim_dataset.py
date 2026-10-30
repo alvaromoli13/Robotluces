@@ -635,6 +635,17 @@ def test_no_document_links_the_removed_v3_narrow_hub_datasets():
         assert not dead.search((root / doc).read_text()), f"{doc} links a removed v3-narrow Hub dataset"
 
 
+def test_no_document_links_the_removed_v4_dart_hub_datasets():
+    import re
+    from pathlib import Path
+
+    root = Path(md.ROOT)
+    dead = re.compile(r"RafaelJaime/smartseed-sim-grasp-(black|white)-v4-dart")
+    for doc in ("README.md", "sim/README.md", "sim/eval.py", "sim/make_dataset.py", "docs/simulation.md",
+                "odd/tasks/sim-replica.md"):
+        assert not dead.search((root / doc).read_text()), f"{doc} links a removed v4-dart Hub dataset"
+
+
 def test_the_narrow_card_states_the_layout_bounds_and_links_no_v1():
     stats = {"episodes": 300, "frames": 88000, "attempts": 330, "success_rate": 0.9, "collision_rejections": 0,
              "ik_rejections": 40, "fit_rejections": 10, "reach_rejections": 30}

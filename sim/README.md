@@ -389,9 +389,9 @@ backend/.venv/bin/python sim/eval.py --planner --color black --layout narrow --e
 
 The last row is the ceiling for a policy trained on this data: the demonstrator itself succeeds 100 % / 97 % on the scenes
 `eval.py --layout narrow` uses. They were on the Hub (public, tags `BraboRobots`, `smartseed`, `so101`, `simulation`;
-features equal the real `d1-clean` / `d2-clean` ones) until the v4-dart ones replaced them: see
-https://huggingface.co/datasets/RafaelJaime/smartseed-sim-grasp-black-v4-dart and
-https://huggingface.co/datasets/RafaelJaime/smartseed-sim-grasp-white-v4-dart (v5 replaces v4 on the Hub). Coverage: `docs/media/sim-dataset-coverage-narrow.png`
+features equal the real `d1-clean` / `d2-clean` ones) until the DART datasets replaced them; the current ones are
+https://huggingface.co/datasets/RafaelJaime/smartseed-sim-grasp-black-v5-dart and
+https://huggingface.co/datasets/RafaelJaime/smartseed-sim-grasp-white-v5-dart (v4-dart was removed from the Hub, the arm could pass through the table; regenerable from commit d143312, before the table fix). Coverage: `docs/media/sim-dataset-coverage-narrow.png`
 (grasped seeds cluster in the nominal box area); videos `sim/out/v3_videos/` (git-ignored).
 
 Weak: the demos still only show planner-solvable scenes (the planner redraws 57 % / 64 % of the geometrically valid scenes, so
@@ -402,7 +402,7 @@ swept-path check and the monitor (0 collision rejections) are the evidence.
 **Next step (not started here):** train on Brev,
 
 ```bash
-scripts/brev/launch_two.sh <host> RafaelJaime/smartseed-sim-grasp-black-v4-dart sim-black-dart-c100 RafaelJaime/smartseed-sim-grasp-white-v4-dart sim-white-dart-c100
+scripts/brev/launch_two.sh <host> RafaelJaime/smartseed-sim-grasp-black-v5-dart sim-black-dart-c100 RafaelJaime/smartseed-sim-grasp-white-v5-dart sim-white-dart-c100
 backend/.venv/bin/python sim/eval.py --repo RafaelJaime/act-sim-black-narrow-c100 --color black --layout narrow   # trained on v3-narrow
 ```
 
@@ -460,6 +460,10 @@ an M-series Mac):
 |---|---|---|---|---|---|---|
 | `smartseed-sim-grasp-black-v4-dart` | 600 | 176,997 | 616 | 16 | 97.4 % | 4 |
 | `smartseed-sim-grasp-white-v4-dart` | 600 | 176,724 | 608 | 8 | 98.7 % | 0 |
+| `smartseed-sim-grasp-black-v5-dart` (T5f table) | 600 | 176,974 | 606 | 6 | 99.0 % | 4 |
+| `smartseed-sim-grasp-white-v5-dart` (T5f table) | 600 | 176,729 | 605 | 5 | 99.2 % | 0 |
+
+v4 is no longer on the Hub (arm through the table, see Table collisions); v5 is.
 
 The white run was killed once (`BrokenProcessPool`, 2026-10-29 15:17) inside `save_episode`: episode 334's frames had reached
 the data file but not its metadata, so the resumed run saved it again and every later episode read the frames of the one
