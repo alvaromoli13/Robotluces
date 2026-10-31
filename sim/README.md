@@ -33,6 +33,7 @@ the executor's own 30 Hz sleeps make plans run in real time. Torque off holds th
 | `grasp_test.py` | scripted IK grasp by contact physics, N jittered trials per colour, mp4 + PNG strip of a success |
 | `collision.py` | wall pass-through detector: per physics step, arm-geom vs box/tray-wall contacts (max penetration, max force, count); a `geometry` mode for scenes whose jaws did not collide (v1) |
 | `audit_walls.py`, `wall_check.py` | replay the kept episodes of a generation log and measure wall overlap (the v1 audit); the v1-vs-v2 close-up `docs/media/sim-wall-check.png` |
+| `detect_eval.py` | A1: seed detector precision on held-out narrow scenes (detections vs `seed_xy`, mm), annotated PNGs to `out/detect/` |
 | `eval.py` | T5 metric: a policy on held-out generator scenes (seed 1000, `--layout wide|narrow`, `--planner` for the scripted ceiling), success = target-colour seed lifted > 3 cm, mp4 of the first 5 episodes to `out/eval/` |
 | `scan_layout.py` | planner acceptance of candidate narrow-layout ranges (planning only), the evidence behind `--layout narrow` |
 | `make_dataset.py` | scripted demos with randomised scenes -> LeRobotDatasets in the real schema, Hub push, previews (see "Generating sim datasets") |
@@ -626,3 +627,55 @@ backend/.venv/bin/python sim/eval.py --repo RafaelJaime/sim-black-target-c100 --
 The value is the scene's true target seed (x, y, base frame) plus one `--target-noise-mm` Gaussian draw per scene (default 0, seeded by
 the scene, so every run and every checkpoint sees the same errors). `run_policy.py` takes `--target-seed INDEX` (the nominal
 scene has no designated target) and the same noise option. The success metric is unchanged. Tests: `backend/tests/test_sim_target.py`.
+
+## Seed detector precision (A1)
+
+**What.** `backend/smartseed_robot/seed_detector.py`: classic CV on the 640x480 top frame, no model and no sim-only input.
+`detect_seeds(rgb, "black"|"white")` returns sub-pixel pixel centres; `seeds_to_robot(calibration, centres)` maps them to
+base-frame metres with the existing `Calibration.pixel_to_robot` homography. Method: the cardboard floor is found by colour
+(hue 5-28, saturation 60-190; the orange arm is the same hue at about 245, so it is excluded); the seed colour mask (black:
+value below 45 % of the floor's; white: saturation below 45 % of the floor's and not dark) is kept only inside the floor mask
+closed over seed-sized holes, so mat, black box walls, tray dividers and arm shadows never count; blobs must be 60-450 px,
+round (box aspect >= 0.6, extent >= 0.6) and at least 70 % surrounded by floor (a chunk of box wall on the floor edge has
+about 30 %, real seeds 97-100 %; a seed closer than about 14 px to the floor edge is lost, none of the 279 was). The centre is a centroid weighted by the colour distance to the local floor. No existing
+backend code finds the boxes (`smartseed_vision` finds the tray with OWLv2 + contours), so the floor colour is the box region.
+The tray cells are cardboard too: a seed in a tray cell would be found there as well (that is the same detector, not a bug).
+
+**Calibration decision.** The real `backend/data/calibration.json` does not correspond to the sim camera (28-60 px off, see
+"What is weak"), and sim mode's `config/calibration.json` is a homography at the tray-top height (4.7 cm above the seed
+centres). A homography is one plane: used for seeds it is wrong by (offset from the optical axis) x (height gap) / (camera
+height), 15 mm median here. So the measurement uses `detect_eval.seed_plane_calibration`: the same `Calibration` object, the
+same pixel / base-xy pairs a web calibration collects, built from the NOMINAL sim camera (`measure_layout.project`) with 12
+points over the mat at the height of the seed centres (box floor + seed radius). For the real arm the equivalent is
+calibrating with the gripper tip at that height, not at the tray top. The scene's own top-camera randomisation (+-5 mm,
++-1 deg, per axis) is not in the calibration: it is the calibration error, and it is kept.
+
+**Measure.** `sim/detect_eval.py` renders the top camera at the start of the episode as the policy sees it
+(`read_observation` after `apply_scene`), detects, matches one-to-one to `EpisodeParams.seed_xy` of every seed present
+(gate 20 mm; a farther detection is false, an unmatched truth a miss). 50 held-out narrow scenes per colour (seed 1000):
+
+```bash
+backend/.venv/bin/python sim/detect_eval.py --episodes 50                    # camera noise, seed-plane calibration
+backend/.venv/bin/python sim/detect_eval.py --episodes 50 --no-camera-noise  # detector error alone
+backend/.venv/bin/python sim/detect_eval.py --episodes 50 --tray-plane       # calibration of sim mode
+```
+
+| colour | case | seeds | matched | misses | false | median mm | p90 mm | max mm |
+|---|---|---|---|---|---|---|---|---|
+| black | nominal camera, seed-plane cal | 133 | 133 | 0 | 0 | 0.8 | 1.1 | 1.2 |
+| white | nominal camera, seed-plane cal | 146 | 146 | 0 | 0 | 0.8 | 1.0 | 1.9 |
+| black | **camera noise, seed-plane cal** | 133 | 133 | 0 | 0 | **7.0** | **12.3** | **15.3** |
+| white | **camera noise, seed-plane cal** | 146 | 146 | 0 | 0 | **7.7** | **13.2** | **14.9** |
+| black | camera noise, tray-plane cal | 133 | 91 | 42 | 42 | 14.8 | 19.2 | 19.9 |
+| white | camera noise, tray-plane cal | 146 | 119 | 27 | 27 | 14.4 | 19.0 | 20.0 |
+
+(The tray-plane rows lose seeds to the 20 mm gate: their real errors are larger than the numbers shown.)
+
+**Reading.** The detector itself is about 1 mm (0 misses, 0 false in 279 seeds). Almost all the error is the camera pose:
+a 1 deg tilt is 8.7 mm at 0.5 m, a 5 mm shift is 5 mm. With a calibration that is wrong by the sim's randomisation the
+position is 7-8 mm median and 12-13 mm p90, over the 5 mm a scripted grasp tolerates (planner ceiling 37/37 at 5 mm,
+10/7 at 10 mm, 4/3 at 15 mm, black/white), so a scripted IK grasp from this detection would succeed on roughly half of the
+seeds. If the camera moves less than the sim assumes (the real calibration is done on the real setup, and a fit with the tool at seed
+height should leave about the nominal 1 mm), the detector is enough. Otherwise a wrist-camera correction is needed.
+Annotated frames (green: detection, red cross: where the nominal camera puts the true seed): `sim/out/detect/` (git-ignored).
+Tests: `backend/tests/test_seed_detector.py` (drawn discs, 0.3 px), `backend/tests/test_sim_detect_eval.py`.
