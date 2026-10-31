@@ -61,6 +61,12 @@
         <div id="calPanel" class="cal-panel" hidden>
           <p class="cal-help"><strong>Calibrar robot.</strong> Pulsa «Soltar brazo», lleva la punta de la pinza a un punto de la bandeja y haz clic en ese punto de la imagen. Repite con al menos 4 puntos repartidos por la bandeja, ajusta, guarda la pose de inicio y bloquea el brazo.</p>
           <p id="calStatus" class="scan-status" aria-live="polite"></p>
+          <fieldset class="cal-kind">
+            <legend>Calibración</legend>
+            <label><input type="radio" name="calKind" id="calKindPlace" value="place" checked> Soltar (altura de la bandeja)</label>
+            <label><input type="radio" name="calKind" id="calKindGrasp" value="grasp"> Coger (altura de las semillas)</label>
+          </fieldset>
+          <p id="calKindHelp" class="cal-help"></p>
           <div class="cal-row">
             <button type="button" class="secondary-btn" id="calTorqueOffBtn">Soltar brazo</button>
             <button type="button" class="secondary-btn" id="calTorqueOnBtn">Bloquear brazo</button>
@@ -266,6 +272,6 @@
 <script src="./vendor/aruco.js?v=20261025c"></script>
 <script src="./app.js?v=20261025c"></script>
 <script src="./scanner.js?v=20261025c"></script>
-<script src="./calibrate.js?v=20261025c"></script>
+<script src="./calibrate.js?v=20261031a"></script>
 </body>
 </html>

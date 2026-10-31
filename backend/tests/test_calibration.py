@@ -66,3 +66,19 @@ def test_clear_drops_points_and_fit():
     cal.fit()
     cal.clear()
     assert not cal.fitted and cal.points == []
+
+
+def test_points_may_carry_the_tool_height_and_the_mean_survives_save_and_load(tmp_path):
+    cal = Calibration()
+    assert cal.mean_z is None
+    for i, (u, v) in enumerate([(0, 0), (10, 0), (10, 10), (0, 10)]):
+        cal.add_point(u, v, u * 0.001, v * 0.001, image_size=(640, 480), z=0.01 + 0.002 * i)
+    assert cal.mean_z == pytest.approx(0.013)
+    cal.fit()
+    cal.save(tmp_path / "grasp_calibration.json")
+    assert Calibration.load(tmp_path / "grasp_calibration.json").mean_z == pytest.approx(0.013)
+
+
+def test_points_without_a_height_leave_the_mean_height_unknown_and_the_file_format_unchanged(tmp_path):
+    cal = filled(4)
+    assert cal.mean_z is None and all("z" not in p for p in cal.points)

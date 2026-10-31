@@ -1,4 +1,7 @@
-// Camera-robot calibration from the browser. The user drags the gripper tip by hand over
+// Camera-robot calibration from the browser. Two are kept: "place" (tool tip at the tray top, releases in the cells;
+// the default, paths without a query as before) and "grasp" (tool tip at the seed centres, finds seeds by itself;
+// `?kind=grasp`). A radio picks which one the clicks, Ajustar and Borrar act on.
+// The user drags the gripper tip by hand over
 // a point of the tray (torque off), clicks that point on the camera image, and repeats;
 // the backend pairs each click with the tool position from forward kinematics and fits
 // the homography. Clicks use the same pixel frame as the plan cells: video resolution.
@@ -16,6 +19,12 @@
   let active = false;
   let points = []; // normalised [0..1] click positions, kept for the markers
   let fitted = false;
+  let kind = 'place';
+  const KIND_HELP = {
+    place: 'Lleva la punta de la pinza a puntos de la bandeja (altura de la boca de las casillas); sirve para soltar la semilla en cada casilla.',
+    grasp: 'Lleva la punta de la pinza a la altura de las semillas, a ras de la base de las cajas (unos 7 mm sobre el suelo), con 4 o más puntos repartidos por las dos cajas; sirve para que el robot encuentre las semillas solo.',
+  };
+  const withKind = path => (kind === 'grasp' ? path + '?kind=grasp' : path);
 
   const frame = () => [video.videoWidth, video.videoHeight];
 
@@ -64,19 +73,22 @@
       line.textContent = (st.robot === 'real' ? 'Robot real' : `Robot simulado (${st.robot || 'fake'})`) +
         ' · par ' + (st.torque ? 'activado' : 'desactivado') +
         ' · ' + (st.calibrated ? 'calibrado' : 'sin calibrar') +
+        ' · coger ' + (st.grasp_calibrated ? 'calibrado' : 'sin calibrar') +
         ' · políticas ACT: ' + ((st.policies || []).join(', ') || 'ninguna');
     } catch (e) { line.textContent = 'Sin conexión con el robot (¿está arrancado el backend?)'; }
   }
 
   async function loadPoints() {
     try {
-      const cal = await call('/robot/calibration');
+      const cal = await call(withKind('/robot/calibration'));
       const [w, h] = cal.image_size || frame();
       points = cal.points.map(p => [p.u / w, p.v / h]);
       fitted = cal.fitted;
     } catch (e) { points = []; fitted = false; }
     render();
   }
+
+  function showKindHelp() { q('calKindHelp').textContent = KIND_HELP[kind]; }
 
   async function open() {
     if (window.smartseedApp.isRunning()) { notify('Para el robot antes de calibrar.'); return; }
@@ -85,6 +97,7 @@
     panel.hidden = false;
     stage.classList.add('calibrating');
     q('calibrateBtn').setAttribute('aria-pressed', 'true');
+    showKindHelp();
     await Promise.all([loadPoints(), refreshStatus()]);
   }
 
@@ -106,12 +119,18 @@
     const rect = canvas.getBoundingClientRect();
     const nx = (e.clientX - rect.left) / rect.width, ny = (e.clientY - rect.top) / rect.height;
     const [w, h] = frame();
-    await call('/robot/calibration/points', 'POST', { u: nx * w, v: ny * h, image_size: [w, h] });
+    await call(withKind('/robot/calibration/points'), 'POST', { u: nx * w, v: ny * h, image_size: [w, h] });
     points.push([nx, ny]);
     fitted = false;
     render();
   }));
 
+  document.querySelectorAll('input[name="calKind"]').forEach(radio => radio.addEventListener('change', act('No se ha podido cambiar de calibración', async () => {
+    kind = radio.value;
+    q('calResult').textContent = '';
+    showKindHelp();
+    await loadPoints();
+  })));
   q('calibrateBtn').addEventListener('click', () => (active ? close() : open()));
   q('calCloseBtn').addEventListener('click', close);
   q('calTorqueOffBtn').addEventListener('click', act('No se ha podido soltar el brazo', async () => {
@@ -123,13 +142,13 @@
     notify('Brazo bloqueado.');
   }));
   q('calFitBtn').addEventListener('click', act('No se ha podido ajustar', async () => {
-    const st = await call('/robot/calibration/fit', 'POST');
+    const st = await call(withKind('/robot/calibration/fit'), 'POST');
     fitted = true;
     q('calResult').textContent = 'Error medio ' + st.mean_error_mm.toFixed(1) + ' mm · máximo ' + st.max_error_mm.toFixed(1) + ' mm (' + st.n + ' puntos)';
     render();
   }));
   q('calClearBtn').addEventListener('click', act('No se han podido borrar los puntos', async () => {
-    await call('/robot/calibration/points', 'DELETE');
+    await call(withKind('/robot/calibration/points'), 'DELETE');
     points = [];
     fitted = false;
     q('calResult').textContent = '';

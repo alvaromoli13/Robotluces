@@ -41,12 +41,32 @@ wants an end-to-end Multi-Task DiT attempt (lerobot `multi_task_dit`) that finds
 - [ ] A2 Multi-Task DiT preparation (route: delegated; read-only research first, then one writer after A1). Acceptance: a
       written plan (inputs, image resolution for precision, one model for both colours with a language task, batch/GPU,
       steps, eval) in `sim/README.md`; tooling to build its dataset and to train/eval it in sim; tests; not trained.
-- [ ] A3 Backend auto-target loop (not started; needs the A1 number and the user's choice of grasp method). Includes a
-      second, seed-height grasp calibration slot next to the tray-height place calibration (web + API), documented in
-      README step 3b (2026-10-31).
+- [x] A3a Grasp calibration slot (route: delegated writer, with A3b-A4). A second, seed-height calibration next to the
+      tray-height place calibration: own file (`grasp_calibration.json`), API points/fit/delete with a `kind` selector
+      (place default, backwards compatible), web toggle in the calibration flow, status shows both. README step 3b
+      updated from "pending" to how-to. Acceptance: tests for both kinds, old clients unchanged.
+      Evidence (2026-10-31): route delegated writer (A3a-A4 in one session; triggers: 2+ non-trivial files plus reading to
+      prepare them). RED first: `test_calibration` (`mean_z` AttributeError) and the web smoke (`calKindGrasp` missing),
+      GREEN after. `Calibration` points may carry the tool `z` (grasp slot only; place file format unchanged);
+      `GET|POST|DELETE /robot/calibration[/points|/fit]?kind=place|grasp` (default place, unknown kind 422), file
+      `grasp_calibration.json` next to `calibration.json`, `/robot/status` gains `grasp_calibrated`; web radio
+      "Soltar / Coger" in the calibration panel (`?kind=grasp` only for grasp, place paths byte-identical); sim config ships
+      `sim/config/grasp_calibration.json` (12 points at seed-centre height, in sync test). Full suite 513 passed, web smoke
+      135 + 202 passed.
+- [ ] A3b Auto-sow loop in the backend executor. Mode "auto": top frame -> `seed_detector` (colour of the run) ->
+      grasp calibration -> scripted IK grasp of the nearest seed -> place in the next free cell (place calibration) ->
+      repeat until no seed of that colour is detected or no cell is left; bounded retries per seed; existing ACT path
+      unchanged. Acceptance: unit tests with a fake robot/frames; refuses with a clear error without grasp calibration.
+- [ ] A3c End-to-end in the sim (`SMARTSEED_ROBOT=sim`): auto mode empties a box into the tray; per-colour count of
+      seeds sown vs present over held-out scenes; one recorded video in `sim/out/`. Acceptance: numbers in
+      `sim/README.md`.
+- [ ] A4 Detector on real top-camera frames taken from the hackathon datasets (d1/d2, black/white). Report detections
+      per frame with annotated images; retune thresholds only with tests that keep the sim numbers. Acceptance: counts
+      on N real frames in `sim/README.md` (or README), annotated frames git-ignored.
 
 ## Progress
 - 2026-10-31: created. Tolerance numbers above from a scratch run of the scripted planner (`eval.planner_ceiling` with a
   fixed-magnitude aim error; a planner refusal for a wall in the way counts as a failure).
 - 2026-10-31: A1 done. The detector is about 1 mm; the 7-8 mm median under camera noise is calibration/pose error, not
   detection. The calibration plane must be the seed-centre height (tray-top costs 15 mm). Commit: see git log (feat(sim): seed detector).
+- 2026-10-31: A3a done (grasp calibration slot, route: delegated writer). Full suite 513 passed.

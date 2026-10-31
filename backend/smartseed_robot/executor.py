@@ -74,8 +74,9 @@ class TaughtGrasp:
 class Executor:
     def __init__(self, robot: RobotPort, poses: PoseStore, calibration: Calibration, kin: Kinematics,
                  grasper: Grasper | None = None, config: ExecutorConfig | None = None, mode: str = "fake",
-                 act: ActGrasp | None = None):
+                 act: ActGrasp | None = None, grasp_calibration: Calibration | None = None):
         self.robot, self.poses, self.calibration, self.kin = robot, poses, calibration, kin
+        self.grasp_calibration = grasp_calibration or Calibration()
         self.cfg = config or ExecutorConfig()
         self.grasper = grasper or TaughtGrasp(poses, self.cfg)
         self.mode, self.act = mode, act
@@ -98,6 +99,7 @@ class Executor:
     def status(self) -> dict:
         return {"state": self._state, "robot": self.mode, "plan_id": self._plan_id, "current_cell": self._current,
                 "done": list(self._done), "failed": list(self._failed), "calibrated": self.calibration.fitted,
+                "grasp_calibrated": self.grasp_calibration.fitted,
                 "poses": sorted(self.poses.all()), "policies": self.act.colors if self.act else []}
 
     def stop(self) -> bool:

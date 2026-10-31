@@ -77,7 +77,7 @@ vc.on('error', m => errs.push('console.error: ' + m));
       window.fetch = async (url, opts) => {
         if (MODE !== 'robot') throw new Error('connection refused');
         if (String(url).endsWith('/robot/status')) {
-          return { ok: true, status: 200, json: async () => ({ state: 'idle', robot: 'fake', calibrated: true }) };
+          return { ok: true, status: 200, json: async () => ({ state: 'idle', robot: 'fake', calibrated: true, grasp_calibrated: false }) };
         }
         if (String(url).endsWith('/robot/act/models')) return { ok: true, status: 200, json: async () => window.__actModels };
         if (String(url).endsWith('/robot/act/select')) {
@@ -98,8 +98,8 @@ vc.on('error', m => errs.push('console.error: ' + m));
         if (String(url).includes('/robot/calibration') || String(url).includes('/robot/torque-') || String(url).includes('/robot/poses/')) {
           const path = String(url).replace(/^https?:\/\/[^/]+/, '');
           window.__calls.push({ method: (opts && opts.method) || 'GET', path, body: opts && opts.body ? JSON.parse(opts.body) : null });
-          const reply = path === '/robot/calibration' ? { fitted: false, n: 0, image_size: null, points: [] }
-            : path.endsWith('/fit') ? { n: 4, mean_error_mm: 1.234, max_error_mm: 2.5 } : {};
+          const reply = path.startsWith('/robot/calibration') && !path.includes('/points') && !path.includes('/fit') ? { fitted: false, n: 0, image_size: null, points: [] }
+            : path.includes('/fit') ? { n: 4, mean_error_mm: 1.234, max_error_mm: 2.5 } : {};
           return { ok: true, status: 200, json: async () => reply };
         }
         if (String(url).endsWith('/stop')) { window.__stopped = true; return { ok: true, json: async () => ({ stopped: true }) }; }
@@ -740,6 +740,32 @@ vc.on('error', m => errs.push('console.error: ' + m));
     ok('clearing empties the counter', $('calCount').textContent.startsWith('0 puntos'), $('calCount').textContent);
     $('calCloseBtn').click();
     ok('terminar closes the panel', $('calPanel').hidden);
+
+    // the toggle picks which calibration is being made: place (default, no query) or grasp (?kind=grasp)
+    $('calibrateBtn').click();
+    await sleep(100);
+    ok('the status line names both calibrations', $('calStatus').textContent.includes('calibrado') && $('calStatus').textContent.includes('coger sin calibrar'), $('calStatus').textContent);
+    ok('the place calibration is the default', $('calKindPlace').checked && !$('calKindGrasp').checked);
+    window.__calls.length = 0;
+    $('calKindGrasp').click();
+    await sleep(100);
+    ok('choosing grasp loads the grasp calibration', calls().includes('GET /robot/calibration?kind=grasp'), calls());
+    ok('the help names the seed height', $('calKindHelp').textContent.includes('semillas'), $('calKindHelp').textContent);
+    window.__calls.length = 0;
+    click(10 + 100, 20 + 100); click(10 + 200, 20 + 100); click(10 + 300, 20 + 200); click(10 + 150, 20 + 250);
+    await sleep(100);
+    $('calFitBtn').click();
+    $('calClearBtn').click();
+    await sleep(100);
+    ok('grasp points, fit and clear carry kind=grasp', calls().filter(c => c === 'POST /robot/calibration/points?kind=grasp').length === 4 &&
+      calls().includes('POST /robot/calibration/fit?kind=grasp') && calls().includes('DELETE /robot/calibration/points?kind=grasp'), calls());
+    window.__calls.length = 0;
+    $('calKindPlace').click();
+    await sleep(100);
+    click(10 + 100, 20 + 100);
+    await sleep(50);
+    ok('back on place the paths carry no kind', calls().includes('GET /robot/calibration') && calls().includes('POST /robot/calibration/points'), calls());
+    $('calCloseBtn').click();
   }
 
   // ── Tray hint: the backend skips its detector while the tray stays put ──────

@@ -218,3 +218,20 @@ def test_sim_config_is_in_sync_with_the_camera():
 
     committed = json.loads((make_config.CONFIG_DIR / "calibration.json").read_text())
     assert committed == json.loads(json.dumps(make_config.calibration()))
+
+
+def test_sim_config_ships_a_grasp_calibration_at_the_seed_centre_height(monkeypatch):
+    import json
+
+    from sim import layout, make_config
+
+    committed = json.loads((make_config.CONFIG_DIR / "grasp_calibration.json").read_text())
+    assert committed == json.loads(json.dumps(make_config.grasp_calibration()))
+    monkeypatch.delenv("SMARTSEED_DATA_DIR", raising=False)
+    rt = build_runtime(mode="sim")
+    try:
+        assert rt.grasp_calibration.fitted and rt.executor.status()["grasp_calibrated"] is True
+        seed_z = layout.BLACK_BOX.floor_z + sum(layout.SEED_RADIUS.values()) / 2
+        assert rt.grasp_calibration.mean_z == pytest.approx(seed_z, abs=1e-4)
+    finally:
+        rt.robot.close()

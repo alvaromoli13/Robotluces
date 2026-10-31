@@ -121,7 +121,7 @@ placeholders or auto-detected (`HF_USER` comes from `hf auth whoami` when empty)
 | `SMARTSEED_ACT_DEBUG_DIR` | none | if set, the ACT loop logs timing and first frames there |
 | `SMARTSEED_CAM_TOP` / `SMARTSEED_CAM_WRIST` | `0` / `1` | OpenCV index or path of each camera |
 | `SMARTSEED_POLICY_DEVICE` | `mps` if available, else `cpu` | inference device |
-| `SMARTSEED_DATA_DIR` | `backend/data/` (`sim/config/` when `sim`) | where `poses.json` and `calibration.json` live (git-ignored) |
+| `SMARTSEED_DATA_DIR` | `backend/data/` (`sim/config/` when `sim`) | where `poses.json`, `calibration.json` and `grasp_calibration.json` live (git-ignored) |
 | `SMARTSEED_SIM_VIEWER` | none | `1` opens the live MuJoCo window in `sim` mode (macOS: `backend/run.sh` then uses `mjpython`) |
 | `SMARTSEED_SIM_RECORD_DIR` | none | in `sim` mode, saves one `plan-<id>.mp4` of the top camera per plan there |
 | `SMARTSEED_SIM_SCENE` | `sim/scene.xml` | alternative MJCF scene for `sim` mode |
@@ -189,17 +189,21 @@ mode** and never sends robot commands; only a local backend controls the arm.
      points press *Ajustar*; it reports the error in mm. Same thing by HTTP:
      `POST /robot/calibration/points {"u","v","image_size":[w,h]}` then
      `POST /robot/calibration/fit`. Check it with a 10-hole test before continuing.
-   - **3b. Grasp calibration (seed height), used to find seeds automatically.** Same procedure,
-     but the gripper tip touches the **floor of the seed boxes** (seed centre height, about
-     4.7 cm below the tray top) at 4 or more points spread over both boxes. Using the tray-height
-     calibration for seeds costs about 15 mm, which a scripted grasp does not survive (measured
-     in the sim, see [`sim/README.md`](sim/README.md#seed-detector-precision-a1)). The seed
-     detector (`backend/smartseed_robot/seed_detector.py`) turns its pixels into robot (x, y)
-     with this calibration; z is fixed (box floor plus seed radius). *Status:* the web app and
-     the API still store a single calibration; a separate grasp calibration slot and the
-     detect → grasp → place loop are pending (task A3 in
-     [`odd/tasks/auto-target.md`](odd/tasks/auto-target.md)). The ACT grasp used at the
-     hackathon needs neither, only 3a.
+   - **3b. Grasp calibration (seed height), used to find seeds automatically.** Same procedure with the
+     *Coger (altura de las semillas)* option of the calibration panel (or `?kind=grasp` on the HTTP
+     calls): the gripper tip goes to the height of the seed centres (touching the floor of the seed
+     boxes, about 7 mm above it) at 4 or more points spread over both boxes, click each one, then
+     *Ajustar*. It is stored apart in `backend/data/grasp_calibration.json`, and each point also
+     records the tool height, which the auto mode uses as the grasp height. By HTTP:
+     `POST /robot/calibration/points?kind=grasp {"u","v","image_size":[w,h]}` then
+     `POST /robot/calibration/fit?kind=grasp` (`GET` and `DELETE` take the same `kind`; without it
+     everything is the place calibration, as before). `GET /robot/status` reports `calibrated`
+     (place) and `grasp_calibrated`. Using the tray-height calibration for seeds costs about 15 mm,
+     which a scripted grasp does not survive (measured in the sim, see
+     [`sim/README.md`](sim/README.md#seed-detector-precision-a1)). The seed detector
+     (`backend/smartseed_robot/seed_detector.py`) turns its pixels into robot (x, y) with this
+     calibration. Sim mode ships both, `sim/config/{calibration,grasp_calibration}.json`. The ACT
+     grasp used at the hackathon needs neither this nor the auto mode, only 3a.
 4. **Teach poses** (torque off, place the arm, then `POST /robot/poses/<name>` or the *Guardar*
    buttons):
    - `act_start`: the arm where the training episodes begin. Without it the mean of the recorded
@@ -386,7 +390,7 @@ corrections), then tilts the wrist +5° and opens. The final error travels in th
 | `GET /robot/joints` | joint angles and tool position (forward kinematics) |
 | `GET /robot/poses` · `POST /robot/poses/{name}` | list / teach poses |
 | `POST /robot/goto/{name}` | move to a taught pose |
-| `POST /robot/calibration/points` · `/fit` · `DELETE …/points` | camera-robot calibration and its error in mm |
+| `POST /robot/calibration/points` · `/fit` · `DELETE …/points` (`?kind=place` default, `grasp`) | camera-robot calibration and its error in mm; `kind=grasp` is the seed-height one |
 | `POST /robot/torque-on` · `/robot/torque-off` | enable / release motors |
 | `GET /robot/act/models` · `POST /robot/act/select` | Hub ACT catalog with checkpoints; hot-swap a colour's policy (`409 busy`, `422` unknown, `502` download failed) |
 | `POST /plan` · `POST /stop` | sow a plan (optional `mode`, `drop_z`) / stop it |

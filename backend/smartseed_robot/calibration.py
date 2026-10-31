@@ -23,12 +23,21 @@ class Calibration:
     def fitted(self) -> bool:
         return self.homography is not None
 
-    def add_point(self, u: float, v: float, x: float, y: float, image_size) -> None:
+    @property
+    def mean_z(self) -> float | None:
+        """Mean tool height (m) of the points that recorded one (a grasp calibration does), else None."""
+        heights = [p["z"] for p in self.points if "z" in p]
+        return float(np.mean(heights)) if heights else None
+
+    def add_point(self, u: float, v: float, x: float, y: float, image_size, z: float | None = None) -> None:
         size = (int(image_size[0]), int(image_size[1]))
         if self.image_size not in (None, size):
             raise CalibrationError(f"all points must use image size {self.image_size}, got {size}")
         self.image_size = size
-        self.points.append({"u": float(u), "v": float(v), "x": float(x), "y": float(y)})
+        point = {"u": float(u), "v": float(v), "x": float(x), "y": float(y)}
+        if z is not None:
+            point["z"] = float(z)
+        self.points.append(point)
         self.homography = None  # the old fit no longer matches the points
 
     def clear(self) -> None:
@@ -68,7 +77,7 @@ class Calibration:
             return cal
         data = json.loads(path.read_text())
         for p in data["points"]:
-            cal.add_point(p["u"], p["v"], p["x"], p["y"], data["image_size"])
+            cal.add_point(p["u"], p["v"], p["x"], p["y"], data["image_size"], p.get("z"))
         if len(cal.points) >= 4:
             cal.fit()
         return cal

@@ -24,7 +24,7 @@ the executor's own 30 Hz sleeps make plans run in real time. Torque off holds th
 | `layout.py` | every scene constant, tagged MEASURED / FITTED / ESTIMATED; `python -m sim.layout` regenerates `scene.xml` (a test fails if they disagree) |
 | `scene.xml` | generated MJCF: includes the vendored arm, adds table, mat, tray, boxes, seeds, lights, `top` camera |
 | `assets/` | vendored SO-101 MJCF + meshes with license and provenance (`assets/README.md`), incl. the `wrist` camera |
-| `config/` | `calibration.json` + `poses.json` for sim mode (`python -m sim.make_config`) |
+| `config/` | `calibration.json` (place, tray height), `grasp_calibration.json` (seed height) + `poses.json` for sim mode (`python -m sim.make_config`) |
 | `export_episode.py` | dumps a recorded LeRobot episode to `out/ep0.npz` (run it with a lerobot interpreter) |
 | `fit_top_camera.py`, `fit_wrist_camera.py` | camera fits against real frames, print the constants |
 | `measure_layout.py` | back-projects pixels read off the real top frame to metres |

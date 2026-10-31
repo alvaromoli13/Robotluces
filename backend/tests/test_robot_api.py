@@ -59,7 +59,8 @@ def client(tmp_path, kin):
 def test_status_contract_when_idle(client):
     assert client.get("/robot/status").json() == {
         "state": "idle", "robot": "fake", "plan_id": None, "current_cell": None, "done": [], "failed": [],
-        "calibrated": False, "poses": [], "policies": [], "torque": True, "cameras": True}
+        "calibrated": False, "grasp_calibrated": False, "poses": [], "policies": [], "torque": True,
+        "cameras": True}
 
 
 def test_joints_endpoint_returns_joints_and_tool_position(client):
@@ -84,6 +85,57 @@ def test_calibration_persists_across_restarts(tmp_path, kin):
     calibrate(client)
     again, _ = make_client(tmp_path, kin)
     assert again.get("/robot/status").json()["calibrated"] is True
+
+
+def calibrate_grasp(client, z=0.0074):
+    for u, v in [(60, 70), (580, 80), (590, 410), (50, 420)]:
+        r = client.post("/robot/calibration/points?kind=grasp",
+                        json={"u": u, "v": v, "image_size": SIZE, "x": 0.16 + u * 0.00011, "y": (v - 240) * 0.00035})
+        assert r.status_code == 200
+    r = client.post("/robot/calibration/fit?kind=grasp")
+    assert r.status_code == 200 and r.json()["max_error_mm"] < 0.5
+
+
+def test_grasp_calibration_is_its_own_slot_and_leaves_the_place_one_alone(client):
+    calibrate_grasp(client)
+    status = client.get("/robot/status").json()
+    assert status["grasp_calibrated"] is True and status["calibrated"] is False
+    assert client.get("/robot/calibration?kind=grasp").json()["fitted"] is True
+    assert client.get("/robot/calibration").json() == {"fitted": False, "n": 0, "image_size": None, "points": []}
+    calibrate(client)
+    assert client.get("/robot/calibration?kind=place").json()["n"] == 4
+    assert client.get("/robot/calibration?kind=grasp").json()["n"] == 4
+
+
+def test_grasp_calibration_points_default_to_the_tool_position_with_its_height(client):
+    body = client.post("/robot/calibration/points?kind=grasp", json={"u": 10, "v": 20, "image_size": SIZE}).json()
+    assert body["n"] == 1 and {"x", "y", "z"} <= set(body)
+    assert client.get("/robot/calibration?kind=grasp").json()["points"][0]["z"] == pytest.approx(body["z"])
+
+
+def test_clearing_one_kind_keeps_the_other(client):
+    calibrate(client)
+    calibrate_grasp(client)
+    assert client.delete("/robot/calibration/points?kind=grasp").json() == {"n": 0}
+    status = client.get("/robot/status").json()
+    assert status["calibrated"] is True and status["grasp_calibrated"] is False
+    assert client.delete("/robot/calibration/points").json() == {"n": 0}
+    assert client.get("/robot/status").json()["calibrated"] is False
+
+
+def test_grasp_calibration_persists_in_its_own_file(tmp_path, kin):
+    client, _ = make_client(tmp_path, kin)
+    calibrate_grasp(client)
+    assert (tmp_path / "grasp_calibration.json").exists() and not (tmp_path / "calibration.json").exists()
+    again, _ = make_client(tmp_path, kin)
+    status = again.get("/robot/status").json()
+    assert status["grasp_calibrated"] is True and status["calibrated"] is False
+
+
+def test_unknown_calibration_kind_is_refused(client):
+    for call in (client.get("/robot/calibration?kind=floor"), client.delete("/robot/calibration/points?kind=floor"),
+                 client.post("/robot/calibration/fit?kind=floor")):
+        assert call.status_code == 422
 
 
 def test_plan_without_calibration_or_poses_is_a_409_with_code(client):

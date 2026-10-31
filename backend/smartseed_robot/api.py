@@ -21,6 +21,7 @@ from .poses import PoseError, PoseStore
 from .robot import FakeRobot, RobotPort
 
 DEFAULT_DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+GRASP_CALIBRATION_FILE = "grasp_calibration.json"  # next to calibration.json (the tray-height place calibration)
 SIM_DATA_DIR = Path(__file__).resolve().parents[2] / "sim" / "config"  # committed, self-consistent data for sim mode
 
 
@@ -34,6 +35,8 @@ class Runtime:
     kin: object
     executor: Executor
     catalog: ModelCatalog | None = None
+    grasp_calibration: Calibration | None = None  # seed height; finds seeds for the auto mode
+    grasp_calibration_path: Path | None = None
 
 
 def build_runtime(mode: str | None = None, port: str | None = None, data_dir=None, robot: RobotPort | None = None,
@@ -68,10 +71,13 @@ def build_runtime(mode: str | None = None, port: str | None = None, data_dir=Non
     kin = kin or LazyKinematics()
     poses, cal_path = PoseStore(data / "poses.json"), data / "calibration.json"
     calibration = Calibration.load(cal_path)
+    grasp_path = data / GRASP_CALIBRATION_FILE
+    grasp_calibration = Calibration.load(grasp_path)
     return Runtime(mode, robot, poses, calibration, cal_path, kin,
                    Executor(robot, poses, calibration, kin, config=config, mode=mode,
-                            act=ActGrasp(act, policy_factory, spec_resolver) if act.enabled else None),
-                   catalog or ModelCatalog())
+                            act=ActGrasp(act, policy_factory, spec_resolver) if act.enabled else None,
+                            grasp_calibration=grasp_calibration),
+                   catalog or ModelCatalog(), grasp_calibration, grasp_path)
 
 
 class Cell(BaseModel):
@@ -94,6 +100,9 @@ class ActSelectBody(BaseModel):
     color: str = Field(pattern=r"^[a-z][a-z_-]{0,19}$")
     repo: str = Field(min_length=1)
     checkpoint: str | None = Field(default=None, pattern=r"^\d{1,12}$")  # None = the final model
+
+
+CalibrationKind = Literal["place", "grasp"]  # place: tray height, releases in cells; grasp: seed height, finds seeds
 
 
 class PointBody(BaseModel):
@@ -192,39 +201,47 @@ def create_router(rt: Runtime) -> APIRouter:
         move_to(rt.robot, pose, threading.Event(), MotionConfig(ex.cfg.hz, ex.cfg.max_speed))
         return {"name": name}
 
+    def slot(kind: str) -> tuple[Calibration, Path]:
+        if kind == "grasp":
+            return rt.grasp_calibration, rt.grasp_calibration_path
+        return rt.calibration, rt.calibration_path
+
     @router.get("/robot/calibration")
-    def calibration():
-        cal = rt.calibration
+    def calibration(kind: CalibrationKind = "place"):
+        cal = slot(kind)[0]
         return {"fitted": cal.fitted, "n": len(cal.points), "image_size": cal.image_size, "points": cal.points}
 
     @router.post("/robot/calibration/points")
-    def add_point(body: PointBody):
-        x, y = body.x, body.y
+    def add_point(body: PointBody, kind: CalibrationKind = "place"):
+        cal, path = slot(kind)
+        x, y, z = body.x, body.y, None
         if x is None or y is None:
             try:
-                x, y, _ = rt.kin.tool_xyz(rt.robot.read_joints())
+                x, y, z = rt.kin.tool_xyz(rt.robot.read_joints())
             except IKError as exc:  # pragma: no cover - FK does not fail on valid joints
                 raise HTTPException(422, str(exc)) from exc
         try:
-            rt.calibration.add_point(body.u, body.v, x, y, body.image_size)
+            cal.add_point(body.u, body.v, x, y, body.image_size, z if kind == "grasp" else None)
         except CalibrationError as exc:
             raise HTTPException(422, str(exc)) from exc
-        rt.calibration.save(rt.calibration_path)
-        return {"n": len(rt.calibration.points), "x": x, "y": y}
+        cal.save(path)
+        return {"n": len(cal.points), "x": x, "y": y} | ({"z": z} if kind == "grasp" and z is not None else {})
 
     @router.delete("/robot/calibration/points")
-    def clear_points():
-        rt.calibration.clear()
-        rt.calibration.save(rt.calibration_path)
+    def clear_points(kind: CalibrationKind = "place"):
+        cal, path = slot(kind)
+        cal.clear()
+        cal.save(path)
         return {"n": 0}
 
     @router.post("/robot/calibration/fit")
-    def fit():
+    def fit(kind: CalibrationKind = "place"):
+        cal, path = slot(kind)
         try:
-            stats = rt.calibration.fit()
+            stats = cal.fit()
         except CalibrationError as exc:
             raise HTTPException(422, str(exc)) from exc
-        rt.calibration.save(rt.calibration_path)
+        cal.save(path)
         return stats
 
     @router.post("/plan", status_code=202)
