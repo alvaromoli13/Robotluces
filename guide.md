@@ -313,6 +313,11 @@ table that gets mistaken for the tray, and whether it counts the cells correctly
 - The calibration is saved in `backend/data/calibration.json` and reloaded at startup; if
   the frame arrives at another size, the pixels are rescaled automatically.
 - About 15 minutes. It is only repeated if the overhead camera or the robot is moved.
+- **This is the place calibration, made at tray height.** A homography is valid on one
+  plane only. Finding seeds automatically with the top camera (after the hackathon, see
+  `backend/smartseed_robot/seed_detector.py`) needs a second **grasp calibration** made the
+  same way with the tip on the floor of the seed boxes, about 4.7 cm lower; the tray-height
+  one puts the seeds about 15 mm off. README, "One-time robot setup", step 3b.
 
 ### 3. Release in the cell
 - For each cell: pixel → robot (x, y) → **inverse kinematics** to 6 cm above the

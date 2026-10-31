@@ -41,7 +41,9 @@ wants an end-to-end Multi-Task DiT attempt (lerobot `multi_task_dit`) that finds
 - [ ] A2 Multi-Task DiT preparation (route: delegated; read-only research first, then one writer after A1). Acceptance: a
       written plan (inputs, image resolution for precision, one model for both colours with a language task, batch/GPU,
       steps, eval) in `sim/README.md`; tooling to build its dataset and to train/eval it in sim; tests; not trained.
-- [ ] A3 Backend auto-target loop (not started; needs the A1 number and the user's choice of grasp method).
+- [ ] A3 Backend auto-target loop (not started; needs the A1 number and the user's choice of grasp method). Includes a
+      second, seed-height grasp calibration slot next to the tray-height place calibration (web + API), documented in
+      README step 3b (2026-10-31).
 
 ## Progress
 - 2026-10-31: created. Tolerance numbers above from a scratch run of the scripted planner (`eval.planner_ceiling` with a

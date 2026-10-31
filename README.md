@@ -23,6 +23,12 @@ chosen seed.
 Built by team **BraboRobots** at the Robotekin LeRobot hackathon (Vitoria-Gasteiz, 23-25 October
 2026). The event is over; this repository is the finished, replicable result.
 
+> **Hackathon snapshot vs later work.** The code exactly as it ran at the event is the release
+> [`v1.0-hackathon`](https://github.com/alvaromoli13/Robotluces/releases/tag/v1.0-hackathon)
+> (commit `9e17195`, 25 October 2026). Everything after it (English docs, MIT license, the MuJoCo
+> twin, sim datasets and sim-trained policies, the seed detector) came after the event and lives
+> on `main`.
+
 > **The web UI is in Spanish.** It is the product UI used at the event, so labels such as
 > *Escanear* (scan), *Sembrar* (sow), *Parar* (stop) and *Ajustes* (settings) are kept as they
 > were. Everything else (code, docs, API) is in English. Project idea, architecture and the
@@ -173,11 +179,27 @@ mode** and never sends robot commands; only a local backend controls the arm.
    ```
 2. **Scene**: mark the tray zone and one zone per box colour, fix `top` and `wrist` cameras. From
    here on cameras and robot do not move.
-3. **Camera-robot calibration** (in the web): *Escanear* → *Calibrar robot* → *Soltar brazo*
-   (torque off), move the gripper tip to a visible point on the tray and click that point in the
-   image. With at least 4 spread points press *Ajustar*; it reports the error in mm. Same thing
-   by HTTP: `POST /robot/calibration/points {"u","v","image_size":[w,h]}` then
-   `POST /robot/calibration/fit`. Check it with a 10-hole test before continuing.
+3. **Camera-robot calibrations.** A calibration maps a pixel of the top camera to the robot's
+   (x, y) in metres, but only on the plane where it was made: the camera sees in perspective, so a
+   point 5 cm lower lands on another pixel. Two heights are used, so there are two calibrations.
+   Both are made once and only repeated if the top camera or the robot moves.
+   - **3a. Place calibration (tray height), used to release in the cells.** In the web:
+     *Escanear* → *Calibrar robot* → *Soltar brazo* (torque off), move the gripper tip to a
+     visible point on the **tray top** and click that point in the image. With at least 4 spread
+     points press *Ajustar*; it reports the error in mm. Same thing by HTTP:
+     `POST /robot/calibration/points {"u","v","image_size":[w,h]}` then
+     `POST /robot/calibration/fit`. Check it with a 10-hole test before continuing.
+   - **3b. Grasp calibration (seed height), used to find seeds automatically.** Same procedure,
+     but the gripper tip touches the **floor of the seed boxes** (seed centre height, about
+     4.7 cm below the tray top) at 4 or more points spread over both boxes. Using the tray-height
+     calibration for seeds costs about 15 mm, which a scripted grasp does not survive (measured
+     in the sim, see [`sim/README.md`](sim/README.md#seed-detector-precision-a1)). The seed
+     detector (`backend/smartseed_robot/seed_detector.py`) turns its pixels into robot (x, y)
+     with this calibration; z is fixed (box floor plus seed radius). *Status:* the web app and
+     the API still store a single calibration; a separate grasp calibration slot and the
+     detect → grasp → place loop are pending (task A3 in
+     [`odd/tasks/auto-target.md`](odd/tasks/auto-target.md)). The ACT grasp used at the
+     hackathon needs neither, only 3a.
 4. **Teach poses** (torque off, place the arm, then `POST /robot/poses/<name>` or the *Guardar*
    buttons):
    - `act_start`: the arm where the training episodes begin. Without it the mean of the recorded
