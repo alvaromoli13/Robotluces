@@ -56,6 +56,27 @@ def test_ignores_blobs_of_the_wrong_size_or_shape():
     assert len(found) == 1 and nearest(found, 150.0, 150.0) < 0.3
 
 
+def test_a_black_seed_with_a_bright_reflection_in_the_middle_is_one_seed():
+    # real black seeds shine: the core is lighter than the dark rim, so the dark mask is a ring (real frames, A4)
+    core = (105, 118, 110)
+    img = frame([(150.3, 150.7, 7, BLACK), (150.3, 150.7, 3.6, core), (300.0, 200.0, 7, BLACK)])
+    found = seed_detector.detect_seeds(img, "black")
+    assert len(found) == 2 and nearest(found, 150.3, 150.7) < 0.5 and nearest(found, 300.0, 200.0) < 0.3
+
+
+def test_a_black_seed_whose_reflection_reads_as_cardboard_and_opens_the_dark_mask_is_still_found():
+    # real frames (A4): the glare is brown and mid-dark, so it counts as floor and the dark mask is a C, not a ring
+    glare = (85, 62, 38)
+    img = frame([(150.3, 150.7, 7, BLACK), (154.3, 150.7, 5.2, glare)])
+    found = seed_detector.detect_seeds(img, "black")
+    assert len(found) == 1 and nearest(found, 150.3, 150.7) < 2.0
+
+
+def test_a_ring_that_is_too_big_for_a_seed_is_still_refused_once_filled():
+    img = frame([(300.0, 200.0, 18, BLACK), (300.0, 200.0, 12, (105, 118, 110))])
+    assert seed_detector.detect_seeds(img, "black") == []
+
+
 def test_no_seeds_on_an_empty_floor():
     assert seed_detector.detect_seeds(frame(), "black") == []
     assert seed_detector.detect_seeds(frame(), "white") == []

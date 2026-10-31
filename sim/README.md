@@ -34,6 +34,7 @@ the executor's own 30 Hz sleeps make plans run in real time. Torque off holds th
 | `collision.py` | wall pass-through detector: per physics step, arm-geom vs box/tray-wall contacts (max penetration, max force, count); a `geometry` mode for scenes whose jaws did not collide (v1) |
 | `audit_walls.py`, `wall_check.py` | replay the kept episodes of a generation log and measure wall overlap (the v1 audit); the v1-vs-v2 close-up `docs/media/sim-wall-check.png` |
 | `auto_sow_eval.py` | A3c: the backend's auto mode end to end in process (executor + SimRobot, no HTTP): seeds sown into cells vs present on held-out narrow scenes, failures by cause, mp4 to `out/auto_sow_<colour>.mp4` |
+| `detect_real.py` | A4: the seed detector on the first top frame of real hackathon episodes (d1 black, d2 white), annotated PNGs to `out/detect_real/` |
 | `detect_eval.py` | A1: seed detector precision on held-out narrow scenes (detections vs `seed_xy`, mm), annotated PNGs to `out/detect/` |
 | `eval.py` | T5 metric: a policy on held-out generator scenes (seed 1000, `--layout wide|narrow`, `--planner` for the scripted ceiling), success = target-colour seed lifted > 3 cm, mp4 of the first 5 episodes to `out/eval/` |
 | `scan_layout.py` | planner acceptance of candidate narrow-layout ranges (planning only), the evidence behind `--layout narrow` |
@@ -681,6 +682,10 @@ height should leave about the nominal 1 mm), the detector is enough. Otherwise a
 Annotated frames (green: detection, red cross: where the nominal camera puts the true seed): `sim/out/detect/` (git-ignored).
 Tests: `backend/tests/test_seed_detector.py` (drawn discs, 0.3 px), `backend/tests/test_sim_detect_eval.py`.
 
+Retune after A4 (real frames, below): a black seed's mask is now closed (5 px) and its holes are filled before the shape
+tests, because real black seeds shine in the middle. Sim numbers above rerun unchanged (50 scenes per colour, all three
+cases identical to the table).
+
 ## Auto sow in the sim (A3c)
 
 **What.** `sim/auto_sow_eval.py` drives the backend's real `Executor` in plan mode `auto` (`backend/smartseed_robot/executor.py`,
@@ -729,3 +734,36 @@ or a wrist-camera correction of the last centimetre; a cell-centred release woul
 approached along another jaw axis only after the radial grasp failed.
 Video of the first scene of each colour with camera noise: `sim/out/auto_sow_black.mp4`, `auto_sow_white.mp4`
 (git-ignored, 30 fps, top camera). Tests: `backend/tests/test_sim_auto_sow.py`, `test_auto_sow.py`, `test_scripted_grasp.py`.
+
+## Seed detector on real frames (A4)
+
+**What.** `sim/detect_real.py` takes the first top frame (arm still, every seed in view) of episodes of the real hackathon
+datasets `RafaelJaime/smartseed-grasp-d1-clean` (black seeds, 96 episodes) and `-d2-clean` (white, 91), read from the
+local LeRobot copy (`~/.cache/huggingface/lerobot`, nothing downloaded or uploaded), runs `detect_seeds` and saves the
+annotated frame to `sim/out/detect_real/` (git-ignored; green circle = detection). Real frames have no ground truth
+position, so this is counts and a visual check, not millimetres.
+
+```bash
+backend/.venv/bin/python sim/detect_real.py --episodes 12      # 12 evenly spaced episodes of each dataset
+```
+
+First pass (A1 detector, unchanged): white 24 of the 24 seeds visible in 12 frames, black 18 of 24: in 6 of the 12 frames
+the upper black seed was missed. Cause (pixel dump of one frame): a real black seed shines in the middle, the glare is
+brown and mid-dark, so the colour test calls it floor and the dark mask is a C-shaped ring (area 109, extent 0.56 under
+the 0.6 rule), not a disc. Fix, test first (`test_seed_detector.py`: a ring seed and a C seed, red before): black mask
+closed with a 5 px ellipse, then holes filled (`_fill_holes`). Closing the white mask too made three false detections on
+the tray cell edges, so it is black only. The sim numbers did not move (rerun of `detect_eval.py`, 50 scenes per colour:
+identical table above).
+
+Final, same 12 evenly spaced episodes per dataset, counts against what I counted by eye on the saved images:
+
+| colour | frames | seeds visible | detected | missed | false |
+|---|---|---|---|---|---|
+| black (d1) | 12 | 24 | 24 | 0 | 0 |
+| white (d2) | 12 | 24 | 24 | 0 | 0 |
+
+The same code over the first frame of every episode (counts only, outliers looked at): black 96 frames, 94 with 2 detections
+and 2 with 1 (episodes 5 and 27: the upper seed is missed, a seed 2 of 192), white 91 frames, 90 with 2 detections and 1 with 3
+(episode 33: the third is a tray cell edge, not a seed; in auto mode detections on the tray are ignored). The small dark specks
+of the box floor and the seeds of the other colour are never reported. Frames: `sim/out/detect_real/` (12 per dataset),
+`sim/out/detect_real_all/` (every episode).

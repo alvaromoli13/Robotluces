@@ -82,9 +82,21 @@ wants an end-to-end Multi-Task DiT attempt (lerobot `multi_task_dit`) that finds
       `sim/README.md` "Auto sow in the sim (A3c)": noisy, 20 seeds finish in a box corner or against a wall where the
       detector loses them, 12 are given up after failed grasps, 13 are shoved out of the box; nominal, 6 land on a tray rim or divider, 2
       bounce out onto the table and 1 stays in a box corner undetected. Video: `sim/out/auto_sow_black.mp4`, `auto_sow_white.mp4`.
-- [ ] A4 Detector on real top-camera frames taken from the hackathon datasets (d1/d2, black/white). Report detections
+- [x] A4 Detector on real top-camera frames taken from the hackathon datasets (d1/d2, black/white). Report detections
       per frame with annotated images; retune thresholds only with tests that keep the sim numbers. Acceptance: counts
       on N real frames in `sim/README.md` (or README), annotated frames git-ignored.
+      Evidence (2026-10-31): route delegated writer. Datasets read from `~/.cache/huggingface/lerobot/RafaelJaime/
+      smartseed-grasp-d1-clean` (black, 96 episodes) and `-d2-clean` (white, 91); no download, no upload. `sim/detect_real.py`
+      (+ `test_sim_detect_real.py`, 3, written after the script) saves annotated and raw first top frames to
+      `sim/out/detect_real/` (12 evenly spaced episodes) and `detect_real_all/` (every episode). First pass with the A1
+      detector: white 24/24 seeds, black 18/24 (the upper black seed missed in 6 of 12 frames: a shiny seed's glare reads as
+      cardboard so the dark mask is a C, extent 0.56 < 0.6). Retune test first (`test_seed_detector.py`: ring seed passes
+      with the hole fill, C seed RED with `CLOSE_PX=1`, GREEN with 5): black mask closed 5 px + holes filled; white
+      untouched (closing it gave 3 false detections on tray cell edges). Checked by eye on the saved images: black 24/24,
+      white 24/24, 0 false in 12 frames each. Whole datasets (counts, outliers viewed): black 94/96 frames with 2 detections
+      and 2 with 1 (ep 5, 27: upper seed missed); white 90/91 frames with 2 and 1 with 3 (ep 33: a tray cell edge). A1 sim
+      numbers rerun and identical (black/white 133/133 and 146/146, 0.8/1.1/1.2 and 0.8/1.0/1.9 mm nominal; 7.0/12.3/15.3
+      and 7.7/13.2/14.9 mm noisy; tray-plane 91/133 and 119/146). Full suite 546 passed.
 
 ## Progress
 - 2026-10-31: created. Tolerance numbers above from a scratch run of the scripted planner (`eval.planner_ceiling` with a
@@ -94,3 +106,4 @@ wants an end-to-end Multi-Task DiT attempt (lerobot `multi_task_dit`) that finds
 - 2026-10-31: A3a done (grasp calibration slot, route: delegated writer). Full suite 513 passed.
 - 2026-10-31: A3b done (auto-sow loop, route: delegated writer). Full suite 532 passed. Found while measuring: the sim clock only advances on commands, so the grasp must command the close until the reading stalls (a sleeping settle read an open gripper), and the descent must be slow (0.3 m/s knocked seeds away).
 - 2026-10-31: A3c done. The auto mode empties the box 89-95 % of the time with an exact calibration and 51-69 % under the sim's camera noise: the grasp itself holds 98 % of the time, the loss is the 7-8 mm position error (as A1 predicted), seeds against walls, and the release landing on dividers.
+- 2026-10-31: A4 done. The detector reads real frames: 48/48 seeds in 24 sampled frames, 372 of 374 over all episodes (2 missed, 1 false on the tray). One retune (black mask closed and filled), sim numbers unchanged.

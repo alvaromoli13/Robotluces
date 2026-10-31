@@ -1,7 +1,7 @@
 """Seed detector for the top camera: classic CV, no model, no sim-only input.
 
 A seed is a small round blob that is much darker (black seeds) or much less saturated (white seeds) than the
-cardboard floor it lies on. The boxes are found by their floor colour: the seed colour mask is kept only inside the
+cardboard floor it lies on (holes in a blob are filled: real black seeds shine in the middle). The boxes are found by their floor colour: the seed colour mask is kept only inside the
 cardboard mask closed over seed-sized holes, so a dark mat, a black box wall, an arm shadow or the tray dividers
 never count (the tray cells are cardboard too: seeds dropped in a cell would be found there as well). The centre is a
 weighted centroid of how far each pixel is from the local floor colour, which is sub-pixel.
@@ -21,6 +21,7 @@ COLORS = ("black", "white")
 CARDBOARD_HUE = (5, 28)  # OpenCV hue, 0-179: orange-brown
 CARDBOARD_SAT = (60, 190)  # the orange arm plastic is the same hue at about 245
 CARDBOARD_MIN_VAL = 70
+CLOSE_PX = 5  # closing of the seed mask: a shiny seed's reflection can read as cardboard and split the mask in a C
 FILL_PX = 25  # closing kernel: wider than a seed (about 15 px across at 640x480) so a seed counts as inside the floor
 AREA_PX = (60, 450)  # a seed covers about 150 px
 MIN_ASPECT, MIN_EXTENT = 0.6, 0.6  # bounding-box shortest/longest side, and blob area / box area (a disc gives 0.79)
@@ -33,6 +34,14 @@ MIN_RING_FLOOR = 0.7  # share of that ring that must be floor: a seed lies insid
 def _cardboard(hsv: np.ndarray) -> np.ndarray:
     h, s, v = cv2.split(hsv)
     return ((h >= CARDBOARD_HUE[0]) & (h <= CARDBOARD_HUE[1]) & (s >= CARDBOARD_SAT[0]) & (s <= CARDBOARD_SAT[1]) & (v >= CARDBOARD_MIN_VAL)).astype(np.uint8)
+
+
+def _fill_holes(mask: np.ndarray) -> np.ndarray:
+    """Solid blobs: a shiny black seed has a light reflection in the middle, so its dark mask is a ring (real frames)."""
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    filled = np.zeros_like(mask)
+    cv2.drawContours(filled, contours, -1, 1, thickness=cv2.FILLED)
+    return filled
 
 
 def _round_enough(stats_row) -> bool:
@@ -78,7 +87,10 @@ def detect_seeds(rgb: np.ndarray, color: str) -> list[tuple[float, float]]:
     else:
         mask = (s < WHITE_SAT_RATIO * floor_s) & (v > WHITE_VALUE_RATIO * floor_v)
     mask = (mask & (inside > 0) & (floor == 0)).astype(np.uint8)
+    if color == "black":  # white has no such split, and closing it would join the light edges of the tray cells
+        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (CLOSE_PX, CLOSE_PX)))
     mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
+    mask = _fill_holes(mask)
     count, labels, stats, _ = cv2.connectedComponentsWithStats(mask, connectivity=8)
     found = []
     for i in range(1, count):
