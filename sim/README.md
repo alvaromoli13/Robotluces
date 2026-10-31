@@ -33,6 +33,7 @@ the executor's own 30 Hz sleeps make plans run in real time. Torque off holds th
 | `grasp_test.py` | scripted IK grasp by contact physics, N jittered trials per colour, mp4 + PNG strip of a success |
 | `collision.py` | wall pass-through detector: per physics step, arm-geom vs box/tray-wall contacts (max penetration, max force, count); a `geometry` mode for scenes whose jaws did not collide (v1) |
 | `audit_walls.py`, `wall_check.py` | replay the kept episodes of a generation log and measure wall overlap (the v1 audit); the v1-vs-v2 close-up `docs/media/sim-wall-check.png` |
+| `auto_sow_eval.py` | A3c: the backend's auto mode end to end in process (executor + SimRobot, no HTTP): seeds sown into cells vs present on held-out narrow scenes, failures by cause, mp4 to `out/auto_sow_<colour>.mp4` |
 | `detect_eval.py` | A1: seed detector precision on held-out narrow scenes (detections vs `seed_xy`, mm), annotated PNGs to `out/detect/` |
 | `eval.py` | T5 metric: a policy on held-out generator scenes (seed 1000, `--layout wide|narrow`, `--planner` for the scripted ceiling), success = target-colour seed lifted > 3 cm, mp4 of the first 5 episodes to `out/eval/` |
 | `scan_layout.py` | planner acceptance of candidate narrow-layout ranges (planning only), the evidence behind `--layout narrow` |
@@ -679,3 +680,52 @@ seeds. If the camera moves less than the sim assumes (the real calibration is do
 height should leave about the nominal 1 mm), the detector is enough. Otherwise a wrist-camera correction is needed.
 Annotated frames (green: detection, red cross: where the nominal camera puts the true seed): `sim/out/detect/` (git-ignored).
 Tests: `backend/tests/test_seed_detector.py` (drawn discs, 0.3 px), `backend/tests/test_sim_detect_eval.py`.
+
+## Auto sow in the sim (A3c)
+
+**What.** `sim/auto_sow_eval.py` drives the backend's real `Executor` in plan mode `auto` (`backend/smartseed_robot/executor.py`,
+`scripted_grasp.py`) on a `SimRobot` in process (no HTTP server, no port), with the data the sim backend ships
+(`sim/config`: place calibration at the tray top, grasp calibration at the seed centres, taught poses) and the real seed
+detector on the rendered top frame. Per scene: 6 target cells of the scene's tray (their pixels taken from the scene's own
+top camera at the tray-top height), colour = the scene's colour. The executor loops detect -> grasp the nearest reachable
+seed -> release in the next cell until no seed is detected or none is left to try. The result is read from the true seed
+positions afterwards: in a tray cell = sown. The controller's 30 Hz sleeps are skipped (simulated time still advances
+1/30 s per command), so a scene takes about 2-5 s of wall time.
+
+```bash
+backend/.venv/bin/python sim/auto_sow_eval.py --episodes 20 --video-dir sim/out     # camera noise, one video per colour
+backend/.venv/bin/python sim/auto_sow_eval.py --episodes 20 --no-camera-noise       # nominal camera
+```
+
+20 held-out narrow scenes per colour (seed 1000), 2-4 seeds per scene (measured with the detector after the A4 retune; with
+the A1 detector the same runs gave black 37 and white 31 sown under camera noise, 48 and 56 at nominal):
+
+| colour | case | seeds | sown into cells | scenes fully emptied | grasp attempts | held | empty | dropped |
+|---|---|---|---|---|---|---|---|---|
+| black | nominal camera | 55 | **49 (89 %)** | 14 / 20 | 55 | 55 | 0 | 0 |
+| white | nominal camera | 59 | **56 (95 %)** | 17 / 20 | 62 | 60 | 2 | 0 |
+| black | **camera noise** (+-5 mm, +-1 deg) | 55 | **38 (69 %)** | 9 / 20 | 74 | 44 | 30 | 0 |
+| white | **camera noise** (+-5 mm, +-1 deg) | 59 | **30 (51 %)** | 6 / 20 | 141 | 51 | 90 | 0 |
+
+Seeds that did not end in a cell, by cause (what the run did about them):
+
+| colour | case | still in the box, not detected | still in the box, given up after failed grasps | on the tray rim or a divider | out of the box onto the table |
+|---|---|---|---|---|---|
+| black | nominal | 1 | 0 | 4 | 1 |
+| white | nominal | 0 | 0 | 2 | 1 |
+| black | noise | 12 | 1 | 1 | 3 |
+| white | noise | 8 | 11 | 0 | 10 |
+
+**Reading.** With the camera as the calibration assumes it, the loop empties the box 89-95 % of the time: the grasp
+works (115 of 117 grasps hold a seed, none is dropped on the lift) and the detector sees every seed that sits in the open.
+Misses at nominal are the release (8 seeds, 5 black and 3 white, land on a tray divider or bounce out of the cell: the cell is about 4.5 cm wide
+and the seed is dropped from 6 cm up with a 5 degree wrist tilt) and 1 seed in a box corner. With the sim's camera
+randomisation (the calibration error A1 measured, 7-8 mm median seed position error) 40 % (black) and 64 % (white) of the grasps close on
+nothing, as the A1 planner-ceiling numbers predict, and each miss can shove the seed: white then loses 10
+seeds out of the box and gives up on 11. 20 seeds (12 black, 8 white) finish in a box corner or against a wall where the detector no
+longer sees them (its floor rule needs 70 % of a ring of floor around the blob, A1), so the loop stops with them still in the box. None of it is a detector
+miss in the open. What would move the number: a real calibration that is as exact as the nominal one (the real one is made with the tool at seed height, A3a),
+or a wrist-camera correction of the last centimetre; a cell-centred release would fix the nominal misses. The planner knows no walls: a seed against one is
+approached along another jaw axis only after the radial grasp failed.
+Video of the first scene of each colour with camera noise: `sim/out/auto_sow_black.mp4`, `auto_sow_white.mp4`
+(git-ignored, 30 fps, top camera). Tests: `backend/tests/test_sim_auto_sow.py`, `test_auto_sow.py`, `test_scripted_grasp.py`.

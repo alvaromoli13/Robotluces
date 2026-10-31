@@ -70,9 +70,18 @@ wants an end-to-end Multi-Task DiT attempt (lerobot `multi_task_dit`) that finds
       ignored (`_on_tray`: hull of the plan cells plus 3/4 pitch). Real hardware: `SMARTSEED_AUTO_SOW=1` opens the cameras
       without ACT. Web: "Sembrar solo" checkbox in Ajustes (plan mode auto, never for the half tests). Full suite 532
       passed; web smoke 135 + 207.
-- [ ] A3c End-to-end in the sim (`SMARTSEED_ROBOT=sim`): auto mode empties a box into the tray; per-colour count of
+- [x] A3c End-to-end in the sim (`SMARTSEED_ROBOT=sim`): auto mode empties a box into the tray; per-colour count of
       seeds sown vs present over held-out scenes; one recorded video in `sim/out/`. Acceptance: numbers in
       `sim/README.md`.
+      Evidence (2026-10-31): route delegated writer. `sim/auto_sow_eval.py` (in process, executor + SimRobot, no port 8000/8080)
+      + `test_sim_auto_sow.py` (7; written right after the script, so no separate RED; they exercise projector, tray
+      cells, where/blame and one nominal scene per colour). 20 held-out narrow scenes per colour (seed 1000), seeds
+      sown into cells / present: nominal camera black 49/55 (89 %), white 56/59 (95 %); sim camera noise black 38/55 (69 %),
+      white 30/59 (51 %) (A1 detector instead of the A4 retune: 37 and 31 noisy, 48 and 56 nominal). Grasps: nominal 115 of
+      117 held; noisy 44/74 black, 51/141 white held, the rest empty (7-8 mm calibration error). Failures by cause in
+      `sim/README.md` "Auto sow in the sim (A3c)": noisy, 20 seeds finish in a box corner or against a wall where the
+      detector loses them, 12 are given up after failed grasps, 13 are shoved out of the box; nominal, 6 land on a tray rim or divider, 2
+      bounce out onto the table and 1 stays in a box corner undetected. Video: `sim/out/auto_sow_black.mp4`, `auto_sow_white.mp4`.
 - [ ] A4 Detector on real top-camera frames taken from the hackathon datasets (d1/d2, black/white). Report detections
       per frame with annotated images; retune thresholds only with tests that keep the sim numbers. Acceptance: counts
       on N real frames in `sim/README.md` (or README), annotated frames git-ignored.
@@ -84,3 +93,4 @@ wants an end-to-end Multi-Task DiT attempt (lerobot `multi_task_dit`) that finds
   detection. The calibration plane must be the seed-centre height (tray-top costs 15 mm). Commit: see git log (feat(sim): seed detector).
 - 2026-10-31: A3a done (grasp calibration slot, route: delegated writer). Full suite 513 passed.
 - 2026-10-31: A3b done (auto-sow loop, route: delegated writer). Full suite 532 passed. Found while measuring: the sim clock only advances on commands, so the grasp must command the close until the reading stalls (a sleeping settle read an open gripper), and the descent must be slow (0.3 m/s knocked seeds away).
+- 2026-10-31: A3c done. The auto mode empties the box 89-95 % of the time with an exact calibration and 51-69 % under the sim's camera noise: the grasp itself holds 98 % of the time, the loss is the 7-8 mm position error (as A1 predicted), seeds against walls, and the release landing on dividers.
