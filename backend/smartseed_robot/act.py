@@ -14,6 +14,9 @@ from .robot import JOINTS, RobotPort
 
 TASK = "grasp the seed below the gripper"
 ROBOT_TYPE = "so101_follower"
+# Goal-conditioned ACT (T5g): the target seed (x, y), robot base frame, metres. A policy trained with it declares it in
+# its config (`env_state_feature`); the caller then adds this key to the observation.
+ENV_STATE_KEY = "observation.environment_state"
 # Mean start of the recorded episodes (pan, lift, elbow, wrist_flex, roll, gripper); used until `act_start` is taught.
 ACT_START_FALLBACK = dict(zip(JOINTS, (1.1, -102.7, 96.8, 47.7, -6.0, 6.3)))
 
@@ -21,7 +24,8 @@ ACT_START_FALLBACK = dict(zip(JOINTS, (1.1, -102.7, 96.8, 47.7, -6.0, 6.3)))
 class PolicyRunner(Protocol):
     def reset(self) -> None: ...
     def step(self, observation: dict) -> dict[str, float]:
-        """Policy frame (`observation.state`, `observation.images.<cam>`) -> joint targets in degrees."""
+        """Policy frame (`observation.state`, `observation.images.<cam>`, and `observation.environment_state` for a
+        policy that sets `wants_environment_state`) -> joint targets in degrees."""
 
 
 def _camera(value: str) -> int | str:
@@ -210,6 +214,7 @@ class LeRobotActPolicy:
         self._pre, self._post = make_pre_post_processors(
             policy_cfg=cfg, pretrained_path=spec, preprocessor_overrides={"device_processor": {"device": self._device_name}})
         self._use_amp = bool(getattr(cfg, "use_amp", False))
+        self.wants_environment_state = cfg.env_state_feature is not None
 
     def reset(self) -> None:
         self._policy.reset()
@@ -219,6 +224,8 @@ class LeRobotActPolicy:
     def step(self, observation: dict) -> dict[str, float]:
         from lerobot.common.control_utils import predict_action
 
+        if self.wants_environment_state and ENV_STATE_KEY not in observation:
+            raise ValueError(f"this policy takes the target seed position: the observation needs {ENV_STATE_KEY}")
         action = predict_action(dict(observation), self._policy, self._device, self._pre, self._post,
                                 self._use_amp, task=self._task, robot_type=ROBOT_TYPE)
         values = action.squeeze(0).cpu().tolist()

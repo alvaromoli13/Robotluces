@@ -27,7 +27,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT)), sys.path.insert(0, str(ROOT / "backend"))
 
 from sim import layout  # noqa: E402
-from smartseed_robot.act import ACT_START_FALLBACK, LeRobotActPolicy, PolicyRunner  # noqa: E402
+from smartseed_robot.act import ACT_START_FALLBACK, ENV_STATE_KEY, LeRobotActPolicy, PolicyRunner  # noqa: E402
 from smartseed_robot.catalog import resolve_spec  # noqa: E402
 from smartseed_robot.robot import IMAGE_SHAPE  # noqa: E402
 from smartseed_robot.sim_robot import SimRobot  # noqa: E402
@@ -106,17 +106,33 @@ def jitter_seeds(robot: SimRobot, color: str, jitter: float, rng: np.random.Gene
         robot._data.qvel[dof:dof + 6] = 0
 
 
+def target_noise(rng: np.random.Generator, sigma_mm: float) -> np.ndarray:
+    """One detector error on the target seed (x, y), metres: Gaussian, `sigma_mm` per axis, zero for sigma 0."""
+    return rng.normal(0.0, sigma_mm / 1000.0, 2) if sigma_mm > 0 else np.zeros(2)
+
+
 def _tool_xyz(robot: SimRobot) -> np.ndarray:
     return robot._data.site_xpos[robot._model.site("gripperframe").id].copy()
 
 
 def run_episode(robot: SimRobot, policy: PolicyRunner, color: str, *, duration_s: float = DURATION_S,
                 jitter: float = 0.0, rng: np.random.Generator | None = None, record: bool = False,
-                on_frame: Callable[[int, np.ndarray, float], None] | None = None) -> EpisodeResult:
-    """One closed-loop run. The robot is used as is (it starts at the pose it was built with)."""
+                on_frame: Callable[[int, np.ndarray, float], None] | None = None,
+                target_seed: int | None = None, target_noise_mm: float = 0.0) -> EpisodeResult:
+    """One closed-loop run. The robot is used as is (it starts at the pose it was built with).
+
+    A goal-conditioned policy (`wants_environment_state`) also gets `observation.environment_state`: the x, y of seed
+    `target_seed` in the base frame, plus one `target_noise_mm` draw from `rng` for the whole episode (a detector error).
+    Other policies see the observation unchanged."""
     rng = rng or np.random.default_rng(0)
+    wants_target = bool(getattr(policy, "wants_environment_state", False))
+    if wants_target and target_seed is None:
+        raise ValueError("this policy takes the target seed position: pass target_seed")
     if jitter:
         jitter_seeds(robot, color, jitter, rng)
+    target = None
+    if wants_target:
+        target = (seed_xyz(robot, color, target_seed)[:2] + target_noise(rng, target_noise_mm)).astype(np.float32)
     hold = robot.read_joints()
     for _ in range(SETTLE_STEPS):
         robot.send_joints(hold)
@@ -126,6 +142,8 @@ def run_episode(robot: SimRobot, policy: PolicyRunner, color: str, *, duration_s
     steps = max(1, round(duration_s * HZ))
     for step in range(steps):
         observation = robot.read_observation()
+        if target is not None:
+            observation[ENV_STATE_KEY] = target
         action = policy.step(observation)
         robot.send_joints(action)
         lift = max(seed_xyz(robot, color, i)[2] - rest[i] for i in range(SEEDS_PER_BOX)) * 1000
@@ -195,6 +213,10 @@ def parse_args(argv=None) -> argparse.Namespace:
     ap.add_argument("--duration", type=float, default=DURATION_S, help="seconds per episode (sim time)")
     ap.add_argument("--jitter", type=float, default=0.005, help="seed position error per axis, metres")
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--target-seed", type=int, default=0, metavar="INDEX",
+                    help="goal-conditioned policies: the seed (0-3) of the colour whose position they are given")
+    ap.add_argument("--target-noise-mm", type=float, default=0.0,
+                    help="goal-conditioned policies: Gaussian error on that position, mm per axis, drawn once per episode")
     ap.add_argument("--device", default=None, help="torch device (default: mps if available, else cpu)")
     ap.add_argument("--video-dir", default=str(OUT_DIR))
     ap.add_argument("--media-dir", default=str(MEDIA_DIR), help="where the PNG strip goes")
@@ -239,7 +261,7 @@ def main(argv=None) -> None:
 
             try:
                 r = run_episode(robot, policy, args.color, duration_s=args.duration, jitter=args.jitter, rng=rng,
-                                on_frame=on_frame)
+                                on_frame=on_frame, target_seed=args.target_seed, target_noise_mm=args.target_noise_mm)
             finally:
                 robot.close()
             results.append(r)

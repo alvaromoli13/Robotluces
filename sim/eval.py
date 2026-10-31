@@ -16,6 +16,8 @@ The loop is `run_policy.run_episode`: the arm starts at the taught `act_start` p
 the `RobotPort` observation each 1/30 s and its action goes out through `send_joints`. SUCCESS = a seed of the target
 colour rose more than 3 cm above its resting height at some moment (as in the generator). "Lands in the target hole" is
 NOT measured: the scripted demos never place the seed either (they fold back holding it), so there is nothing to compare to.
+A goal-conditioned policy (T5g, trained with `observation.environment_state`) is also given the scene's target seed (x, y in the
+base frame), plus `--target-noise-mm` of Gaussian error drawn once per scene; the success metric is unchanged.
 `held` additionally reports the episodes that end with a seed within 2 cm of the tool frame.
 """
 from __future__ import annotations
@@ -23,6 +25,7 @@ from __future__ import annotations
 import argparse
 import functools
 import sys
+import zlib
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
@@ -106,21 +109,25 @@ def _kin() -> Kinematics:
 
 def run_scene(policy, p: md.EpisodeParams, *, duration_s: float = run_policy.DURATION_S, record: bool = False,
               on_frame: Callable[[int, np.ndarray, float], None] | None = None,
-              on_robot: Callable[[SimRobot], None] | None = None) -> run_policy.EpisodeResult:
-    """One episode in scene `p`; `on_robot` sees the robot once the scene is applied (tests poke at it)."""
+              on_robot: Callable[[SimRobot], None] | None = None, target_noise_mm: float = 0.0) -> run_policy.EpisodeResult:
+    """One episode in scene `p`; `on_robot` sees the robot once the scene is applied (tests poke at it). A
+    goal-conditioned policy is given the scene's target seed position, off by one `target_noise_mm` draw seeded by the
+    scene (the same for every policy and every run)."""
     robot = SimRobot(initial=start_pose(p))
     try:
         md.apply_scene(robot, p)
         if on_robot:
             on_robot(robot)
-        return run_policy.run_episode(robot, policy, p.color, duration_s=duration_s, record=record, on_frame=on_frame)
+        rng = np.random.default_rng([p.seed, p.attempt, zlib.crc32(p.color.encode())])
+        return run_policy.run_episode(robot, policy, p.color, duration_s=duration_s, record=record, on_frame=on_frame,
+                                      rng=rng, target_seed=p.target, target_noise_mm=target_noise_mm)
     finally:
         robot.close()
 
 
 def evaluate(policy, color: str, scenes: list[md.EpisodeParams], *, duration_s: float = run_policy.DURATION_S,
              video: Path | None = None, video_episodes: int = VIDEO_EPISODES, name: str = "",
-             log: Callable[[str], None] = lambda msg: None) -> Summary:
+             log: Callable[[str], None] = lambda msg: None, target_noise_mm: float = 0.0) -> Summary:
     """Run the policy once per scene; film the first `video_episodes` into one mp4 when `video` is given."""
     import imageio.v2 as imageio
 
@@ -135,7 +142,7 @@ def evaluate(policy, color: str, scenes: list[md.EpisodeParams], *, duration_s: 
                     writer.append_data(run_policy._label(
                         frame, f"{name} -> {color}  scene {p.attempt}  t={step / HZ:4.1f}s  lift {lift:5.1f} mm"))
 
-            r = run_scene(policy, p, duration_s=duration_s, on_frame=on_frame)
+            r = run_scene(policy, p, duration_s=duration_s, on_frame=on_frame, target_noise_mm=target_noise_mm)
             summary.episodes += 1
             summary.successes += r.success
             summary.held += r.in_jaws
@@ -187,6 +194,9 @@ def parse_args(argv=None) -> argparse.Namespace:
                     help="actions played per inference (default: the trained chunk, played open loop)")
     ap.add_argument("--temporal-ensemble", type=float, default=None, metavar="COEFF",
                     help="re-plan every step and blend the overlapping chunks (ACT paper: 0.01)")
+    ap.add_argument("--target-noise-mm", type=float, default=0.0,
+                    help="goal-conditioned policies (T5g): Gaussian error on the target seed position they are given, mm per "
+                         "axis, drawn once per scene (default 0 = the true position; 4 matches the training noise)")
     ap.add_argument("--duration", type=float, default=run_policy.DURATION_S, help="seconds per episode (sim time)")
     ap.add_argument("--device", default=None, help="torch device (default: mps if available, else cpu)")
     ap.add_argument("--out-dir", default=str(OUT_DIR))
@@ -209,7 +219,8 @@ def main(argv=None) -> None:
     device = pick_device(args.device)
     name = (run_policy.policy_name(args.repo, args.checkpoint) + ("" if args.split == "heldout" else "-train")
             + ("" if args.layout == "wide" else f"-{args.layout}")
-            + run_policy.inference_tag(args.n_action_steps, args.temporal_ensemble))
+            + run_policy.inference_tag(args.n_action_steps, args.temporal_ensemble)
+            + (f"-tn{args.target_noise_mm:g}" if args.target_noise_mm else ""))
     print(f"{name}: loading {args.repo} (checkpoint {args.checkpoint or 'final'}) on {device}", flush=True)
     policy = run_policy.load_policy(args.repo, args.checkpoint, device, n_action_steps=args.n_action_steps,
                                     temporal_ensemble_coeff=args.temporal_ensemble)
@@ -217,7 +228,7 @@ def main(argv=None) -> None:
               if args.split == "heldout" else train_scenes(args.color, args.episodes, args.layout))
     video = Path(args.out_dir) / f"eval_{name}.mp4"
     summary = evaluate(policy, args.color, scenes, duration_s=args.duration, video=video, name=name,
-                       log=lambda msg: print(msg, flush=True))
+                       log=lambda msg: print(msg, flush=True), target_noise_mm=args.target_noise_mm)
     print(summary.line(name), f"\nvideo {video} (first {VIDEO_EPISODES} episodes)")
 
 
