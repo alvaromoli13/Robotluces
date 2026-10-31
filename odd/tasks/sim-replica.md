@@ -153,6 +153,27 @@ Strict TDD (session config). Runner: `cd backend && uv run pytest` (via `~/.clau
       Brev training still needs a user OK.
       2026-10-30 ACT on v5 (user OK; L40S, auto_train.sh): best 20k, black 9/30, white 6/30 (v3-narrow 7/7); stopped on
       patience at 40k, box deleted, about 9 $. v5 uploaded, v4 deleted from the Hub (user OK), collection swapped (5c24cfe).
+- [ ] T5g Goal-conditioned ACT (route: delegated, one writer; trigger: 2+ non-trivial files plus reading to prepare it).
+      Why: ACT on v5-dart plateaued at 9/30 black, 6/30 white. Diagnostic 2026-10-31 (same 30 held-out narrow scenes, only
+      the target seed left in the box, `act-sim-*-dart-c100@020000`): black 9/30, white 9/30, closest tool-seed approach
+      mean 21-23 mm. The bottleneck is locating the seed from the image (about 2 cm off), not which seed to pick.
+      Fix: give the policy the target seed position as `observation.environment_state` (xy, robot base frame, metres).
+      Training uses sim truth (from `sim_generation.jsonl`) with per-episode noise; on the real arm a top-camera detector
+      supplies it. The backend picks which seed and repeats until the box is empty. Scope, local only: a converter that
+      writes `-v5-target` datasets from the local v5-dart (videos reused, new column, features and stats updated);
+      `run_policy.py`/`eval.py` feed the target (with an optional `--target-noise-mm`); tests, docs. Out of scope until the
+      user OKs it: the Hub upload and Brev training (about 4 h, about 5 $); the real-arm detector and loop (later task).
+      TDD on (pytest in backend/.venv through testsem, RED first).
+      2026-10-31 code and local data done, task stays open (training pending the user's OK). Route: delegated, one writer.
+      RED: `tests/test_sim_target.py` failed at collection (`ImportError: cannot import name 'add_target'`); GREEN after
+      `sim/add_target.py`, env-state feed in `run_policy.run_episode` / `eval.run_scene`, `ENV_STATE_KEY` and
+      `wants_environment_state` in `smartseed_robot/act.py`: 23 passed (one assertion, per-episode std of a constant, needed a
+      1e-4 tolerance for lerobot's float32 std). Converter: lerobot `dataset_tools.add_features` (it leaves the new feature out
+      of stats, so `compute_episode_stats` / `aggregate_stats` fill `stats.json` and the per-episode stats); log -> episode
+      mapping asserted (counts, indices 0..N-1, colour, target, seeds present). Local `-v5-target` (4 mm noise): black 600
+      episodes / 176,974 frames, white 600 / 176,729, equal to the sources; x 0.065-0.296 m, y -0.254 to 0.211 m.
+      A tiny ACT saved with an env-state input loads through `LeRobotActPolicy` and steps (a test). Not done: Hub upload,
+      Brev training (`launch_two.sh ... v5-target ... sim-{black,white}-target-c100`), the eval of the trained models.
 
 ## Acceptance
 - `SMARTSEED_ROBOT=sim ./scripts/stack.sh` runs the web + executor against the simulated arm.

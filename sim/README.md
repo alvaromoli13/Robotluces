@@ -575,3 +575,51 @@ PYTHON=backend/.venv/bin/python scripts/brev/auto_train.sh my-box RafaelJaime/ac
   so the script can be restarted. Tests: `backend/tests/test_auto_stop.py` (decision logic), `backend/tests/test_auto_train_sh.py`
   (fake ssh, brev and python: patience, resume +40k, cap, target, setup failure, failed runs, stall, no step, unreachable,
   logged out, eval failures).
+
+## Goal-conditioned ACT (T5g)
+
+**What.** The policy gets the target seed position as one more input, `observation.environment_state` (float32 [2]: x, y of the
+seed to grasp, robot base frame, metres). lerobot's ACT consumes it as `env_state_feature` (a linear token in the encoder,
+`modeling_act.py`; no config change). **Why.** ACT on `-v5-dart` plateaued at 9/30 black and 6/30 white. Diagnostic
+(2026-10-31, the same 30 held-out narrow scenes, only the target seed left in the box, `act-sim-*-dart-c100@020000`):
+**9/30 black and 9/30 white with one seed**, against 9/30 and 6/30 with the full box, and a closest tool-seed approach of
+21-23 mm on average. Removing the distractors barely helps, so the policy does not fail at choosing a seed; it cannot localise
+one from the images (about 2 cm off). The scripted planner, which is given the position, succeeds 99 %.
+
+**Convert** (local only, nothing is uploaded; about 2 GB per colour because the videos are copied):
+
+```bash
+backend/.venv/bin/python sim/add_target.py --color black     # -> sim/out/datasets/smartseed-sim-grasp-black-v5-target
+backend/.venv/bin/python sim/add_target.py --color white     # --target-noise-mm 0 writes the exact position
+```
+
+- The copy is the source dataset plus the feature: same frames, actions, states and videos, re-written with lerobot's
+  `dataset_tools.add_features` (valid v3.0; `LeRobotDataset` loads it and a frame has the key). That tool does not touch the stats of
+  a new feature, so `stats.json` and the per-episode stats get it from `compute_episode_stats` / `aggregate_stats`.
+- The position is read from the generation log: each kept episode's scene is redrawn (`sample_params`, narrow layout) and
+  `EpisodeParams.seed_xy` of its target seed is used, the function the planner aims with. The log must describe exactly the
+  dataset's episodes (counts, indices 0..N-1 in order, colour, target and seeds present all match) or the converter stops.
+- Noise: each episode gets one Gaussian draw, `--target-noise-mm` (default 4) per axis, from a generator seeded by
+  (episode index, colour), so the policy tolerates a detector error and the dataset is reproducible. `target_noise.json` records the
+  sigma, `sim_targets.jsonl` the true and the noisy position per episode; the generated card (`README.md`) names the feature,
+  frame, units, noise and source.
+- v5-target, 4 mm: black 600 episodes / 176,974 frames, x 0.065 to 0.250 m, y -0.254 to -0.116 m; white 600 / 176,729,
+  x 0.115 to 0.296 m, y 0.067 to 0.211 m.
+
+**Train** (not run yet; Hub upload and about 4 h / 5 $ of Brev wait for an OK):
+
+```bash
+scripts/brev/launch_two.sh <host> RafaelJaime/smartseed-sim-grasp-black-v5-target sim-black-target-c100 RafaelJaime/smartseed-sim-grasp-white-v5-target sim-white-target-c100
+```
+
+**Evaluate.** `eval.py` and `run_policy.py` give the target to a policy whose config has the env-state input
+(`LeRobotActPolicy.wants_environment_state`); other policies see the observation exactly as before.
+
+```bash
+backend/.venv/bin/python sim/eval.py --repo RafaelJaime/sim-black-target-c100 --color black --layout narrow --episodes 30 --target-noise-mm 4
+backend/.venv/bin/python sim/eval.py --repo RafaelJaime/sim-black-target-c100 --color black --layout narrow --episodes 30   # exact position
+```
+
+The value is the scene's true target seed (x, y, base frame) plus one `--target-noise-mm` Gaussian draw per scene (default 0, seeded by
+the scene, so every run and every checkpoint sees the same errors). `run_policy.py` takes `--target-seed INDEX` (the nominal
+scene has no designated target) and the same noise option. The success metric is unchanged. Tests: `backend/tests/test_sim_target.py`.
