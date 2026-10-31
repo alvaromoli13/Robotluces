@@ -173,7 +173,7 @@ Strict TDD (session config). Runner: `cd backend && uv run pytest` (via `~/.clau
       mapping asserted (counts, indices 0..N-1, colour, target, seeds present). Local `-v5-target` (4 mm noise): black 600
       episodes / 176,974 frames, white 600 / 176,729, equal to the sources; x 0.065-0.296 m, y -0.254 to 0.211 m.
       A tiny ACT saved with an env-state input loads through `LeRobotActPolicy` and steps (a test). Not done: Hub upload,
-      Brev training (`launch_two.sh ... v5-target ... sim-{black,white}-target-c100`), the eval of the trained models.
+      Brev training (`launch_two.sh ... v5-dart ... sim-{black,white}-target-c100`; the Hub v5-dart repos now carry the feature, uploaded 2026-10-31 at the user's request), the eval of the trained models.
 
 ## Acceptance
 - `SMARTSEED_ROBOT=sim ./scripts/stack.sh` runs the web + executor against the simulated arm.

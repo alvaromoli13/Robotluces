@@ -605,11 +605,14 @@ backend/.venv/bin/python sim/add_target.py --color white     # --target-noise-mm
   frame, units, noise and source.
 - v5-target, 4 mm: black 600 episodes / 176,974 frames, x 0.065 to 0.250 m, y -0.254 to -0.116 m; white 600 / 176,729,
   x 0.115 to 0.296 m, y 0.067 to 0.211 m.
+- On the Hub (2026-10-31, user's choice) the local `-v5-target` folders replaced the contents of the existing
+  `smartseed-sim-grasp-{black,white}-v5-dart` repos (same episodes and videos, plus the feature and a card section; tag
+  `v3.0` moved), so there is no `-v5-target` repo.
 
-**Train** (not run yet; Hub upload and about 4 h / 5 $ of Brev wait for an OK):
+**Train:**
 
 ```bash
-scripts/brev/launch_two.sh <host> RafaelJaime/smartseed-sim-grasp-black-v5-target sim-black-target-c100 RafaelJaime/smartseed-sim-grasp-white-v5-target sim-white-target-c100
+scripts/brev/launch_two.sh <host> RafaelJaime/smartseed-sim-grasp-black-v5-dart sim-black-target-c100 RafaelJaime/smartseed-sim-grasp-white-v5-dart sim-white-target-c100
 ```
 
 **Evaluate.** `eval.py` and `run_policy.py` give the target to a policy whose config has the env-state input
