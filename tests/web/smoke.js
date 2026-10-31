@@ -682,6 +682,29 @@ vc.on('error', m => errs.push('console.error: ' + m));
     await sleep(100);
     $('stopRunBtn').click();
 
+    // "Sembrar solo" (Ajustes): the same Sembrar button, plan mode auto; the backend looks for the seeds itself.
+    ok('the auto-sow option is off by default', $('autoSow').checked === false);
+    $('autoSow').checked = true;
+    $('autoSow').dispatchEvent(new window.Event('change'));
+    ok('the auto-sow choice is persisted', window.localStorage.getItem('smartseed.autoSow') === '1');
+    $('mapPlantBtn').click();
+    await sleep(200);
+    const auto = window.__planned[3];
+    ok('with auto-sow on, Sembrar posts mode auto with the cells', auto && auto.mode === 'auto' && auto.cells.length > 0, JSON.stringify(auto && [auto.mode, auto.cells.length]));
+    window.__ws.push({ type: 'auto_stopped', cell_index: 0, color: 'black', reason: 'no_seeds', message: 'no_seeds: no more black seeds to sow' });
+    ok('a stop for lack of seeds is said in Spanish', $('toast').textContent.includes('No quedan semillas'), $('toast').textContent);
+    $('stopRunBtn').click();
+    await sleep(100);
+    $('stopRunBtn').click();
+    $('testPlaceBtn').click();
+    await sleep(100);
+    ok('the half tests ignore the auto-sow option', window.__planned[4] && window.__planned[4].mode === 'place', JSON.stringify(window.__planned[4] && window.__planned[4].mode));
+    $('stopRunBtn').click();
+    await sleep(100);
+    $('stopRunBtn').click();
+    $('autoSow').checked = false;
+    $('autoSow').dispatchEvent(new window.Event('change'));
+
     $('dropHeight').value = '50';
     window.__planned.length = 0;
     $('testPlaceBtn').click();

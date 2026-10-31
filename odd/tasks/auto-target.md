@@ -53,10 +53,23 @@ wants an end-to-end Multi-Task DiT attempt (lerobot `multi_task_dit`) that finds
       "Soltar / Coger" in the calibration panel (`?kind=grasp` only for grasp, place paths byte-identical); sim config ships
       `sim/config/grasp_calibration.json` (12 points at seed-centre height, in sync test). Full suite 513 passed, web smoke
       135 + 202 passed.
-- [ ] A3b Auto-sow loop in the backend executor. Mode "auto": top frame -> `seed_detector` (colour of the run) ->
+- [x] A3b Auto-sow loop in the backend executor. Mode "auto": top frame -> `seed_detector` (colour of the run) ->
       grasp calibration -> scripted IK grasp of the nearest seed -> place in the next free cell (place calibration) ->
       repeat until no seed of that colour is detected or no cell is left; bounded retries per seed; existing ACT path
       unchanged. Acceptance: unit tests with a fake robot/frames; refuses with a clear error without grasp calibration.
+      Evidence (2026-10-31): route delegated writer. RED first: `test_scripted_grasp` / `test_auto_sow` failed at collection
+      (`auto_attempts`, `scripted_grasp` missing), the tray-exclusion test failed before `_on_tray`, the API tests before
+      `mode: auto`; GREEN after. `Executor` plan mode `auto` (`MODES`, `PlanBody`): per cell home -> top frame ->
+      `seed_detector` (injectable `seed_finder`) -> grasp calibration (`seeds_to_robot`, z from the calibration points) ->
+      nearest seed -> scripted IK grasp (`scripted_grasp.py`: radial jaw axis, 12 axes 30 deg apart, skips axes with a
+      neighbour in the open-jaw footprint; hover, smoothstep Cartesian descent at 0.08 m/s, close until the reading stalls,
+      `held_above` 6.5 = between the real empty 6.1 and holding 6.9, lift) -> existing `_release` over the cell; empty or
+      dropped grasp re-detects and retries (`auto_attempts` 3 per seed, another jaw axis each; cell cap 2x); events
+      `seeds_detected`, `grasp_attempt`, `grasp_failed`, `auto_stopped` (`no_seeds` | `gave_up`). Refusals 409
+      `no_grasp_calibration` / `no_calibration` / `missing_pose`. Seeds the detector sees on the tray (cardboard too) are
+      ignored (`_on_tray`: hull of the plan cells plus 3/4 pitch). Real hardware: `SMARTSEED_AUTO_SOW=1` opens the cameras
+      without ACT. Web: "Sembrar solo" checkbox in Ajustes (plan mode auto, never for the half tests). Full suite 532
+      passed; web smoke 135 + 207.
 - [ ] A3c End-to-end in the sim (`SMARTSEED_ROBOT=sim`): auto mode empties a box into the tray; per-colour count of
       seeds sown vs present over held-out scenes; one recorded video in `sim/out/`. Acceptance: numbers in
       `sim/README.md`.
@@ -70,3 +83,4 @@ wants an end-to-end Multi-Task DiT attempt (lerobot `multi_task_dit`) that finds
 - 2026-10-31: A1 done. The detector is about 1 mm; the 7-8 mm median under camera noise is calibration/pose error, not
   detection. The calibration plane must be the seed-centre height (tray-top costs 15 mm). Commit: see git log (feat(sim): seed detector).
 - 2026-10-31: A3a done (grasp calibration slot, route: delegated writer). Full suite 513 passed.
+- 2026-10-31: A3b done (auto-sow loop, route: delegated writer). Full suite 532 passed. Found while measuring: the sim clock only advances on commands, so the grasp must command the close until the reading stalls (a sleeping settle read an open gripper), and the descent must be slow (0.3 m/s knocked seeds away).

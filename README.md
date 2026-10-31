@@ -120,6 +120,7 @@ placeholders or auto-detected (`HF_USER` comes from `hf auth whoami` when empty)
 | `SMARTSEED_ACT_DURATION_S` | `10` | seconds of policy per cell (match the episode length used for training) |
 | `SMARTSEED_ACT_DEBUG_DIR` | none | if set, the ACT loop logs timing and first frames there |
 | `SMARTSEED_CAM_TOP` / `SMARTSEED_CAM_WRIST` | `0` / `1` | OpenCV index or path of each camera |
+| `SMARTSEED_AUTO_SOW` | none | `1` also opens the top/wrist cameras of the real follower without ACT policies, for the auto mode (`POST /plan` `mode: "auto"`) |
 | `SMARTSEED_POLICY_DEVICE` | `mps` if available, else `cpu` | inference device |
 | `SMARTSEED_DATA_DIR` | `backend/data/` (`sim/config/` when `sim`) | where `poses.json`, `calibration.json` and `grasp_calibration.json` live (git-ignored) |
 | `SMARTSEED_SIM_VIEWER` | none | `1` opens the live MuJoCo window in `sim` mode (macOS: `backend/run.sh` then uses `mjpython`) |
@@ -215,6 +216,23 @@ mode** and never sends robot commands; only a local backend controls the arm.
    answer `409 torque_off`.
 5. **Sanity-check forward kinematics**: `GET /robot/joints` returns angles and `tool` (x, y, z in
    metres from the base); measure the tip with a ruler.
+
+### Auto mode: the robot finds the seeds
+
+`POST /plan` with `"mode": "auto"` (web: *Ajustes → Sembrar solo*) does not need the ACT policy or a taught box. The
+cells are the targets and the colour of each cell is the seed colour for it. Per cell the arm goes to `home`
+(out of the camera's view), the top frame goes through the seed detector (`seed_detector.py`), the seeds map to the
+robot frame with the **grasp** calibration (3b) and the nearest reachable one is picked with a scripted IK grasp
+(hover, straight descent at the seed height, close, straight lift; jaw axis chosen to clear neighbouring seeds,
+`scripted_grasp.py`). If the gripper looks loaded it is released over the cell with the **place** calibration (3a),
+as in the other modes (seeds the detector sees on the tray, near the plan's cells, are ignored: the tray is cardboard too);
+an empty grasp is retried (`auto_attempts` per seed, another jaw axis each time, the seed is
+detected again first). It repeats until no seed of that colour is detected or none is left to try (event
+`auto_stopped` with `reason` `no_seeds` or `gave_up`; the remaining cells of that colour are skipped).
+Refusals: `409 no_grasp_calibration`, `409 no_calibration`, `409 missing_pose` (`home`). Real hardware needs the top
+camera: set `SMARTSEED_CAM_TOP` and `SMARTSEED_AUTO_SOW=1` (without ACT policies the cameras stay closed). It knows nothing
+about the box walls: a seed pressed against one may need the wrist roll to be tried more than once. Tests:
+`backend/tests/test_auto_sow.py`; sim measurement in [`sim/README.md`](sim/README.md#auto-sow-in-the-sim-a3c).
 
 ## Record datasets
 
@@ -393,7 +411,7 @@ corrections), then tilts the wrist +5° and opens. The final error travels in th
 | `POST /robot/calibration/points` · `/fit` · `DELETE …/points` (`?kind=place` default, `grasp`) | camera-robot calibration and its error in mm; `kind=grasp` is the seed-height one |
 | `POST /robot/torque-on` · `/robot/torque-off` | enable / release motors |
 | `GET /robot/act/models` · `POST /robot/act/select` | Hub ACT catalog with checkpoints; hot-swap a colour's policy (`409 busy`, `422` unknown, `502` download failed) |
-| `POST /plan` · `POST /stop` | sow a plan (optional `mode`, `drop_z`) / stop it |
+| `POST /plan` · `POST /stop` | sow a plan (optional `mode`, `drop_z`) / stop it. `mode: "auto"` (see below) finds the seeds itself |
 | `WS /robot/progress` | cell-by-cell progress (late clients get the history) |
 
 `POST /plan` is validated entirely before any motor moves and refused with a code

@@ -435,3 +435,27 @@ def test_act_select_reports_a_failed_download(tmp_path, kin):
     r = client.post("/robot/act/select", json={"color": "red", "repo": "RafaelJaime/act-smartseed-d1-c100",
                                                 "checkpoint": "010000"})
     assert r.status_code == 502 and r.json()["code"] == "download_failed" and "no space left" in r.json()["detail"]
+
+
+def test_auto_plan_without_a_grasp_calibration_is_a_409_with_its_code(client):
+    calibrate(client)
+    client.post("/robot/poses/home")
+    r = client.post("/plan", json={"image_size": SIZE, "cells": cells(1, "black"), "mode": "auto"})
+    assert r.status_code == 409 and r.json()["code"] == "no_grasp_calibration" and r.json()["detail"]
+
+
+def test_auto_plan_with_both_calibrations_is_accepted_and_sows_nothing_from_a_blank_frame(tmp_path, kin):
+    client, _ = make_client(tmp_path, kin)
+    calibrate(client)
+    calibrate_grasp(client)
+    client.post("/robot/poses/home")
+    r = client.post("/plan", json={"image_size": SIZE, "cells": cells(2, "black"), "mode": "auto"})
+    assert r.status_code == 202
+    wait_idle(client)
+    status = client.get("/robot/status").json()
+    assert status["state"] == "idle" and status["done"] == []  # the fake robot's top frame is black: no seed seen
+
+
+def test_the_other_plan_modes_are_still_the_only_ones_besides_auto(client):
+    r = client.post("/plan", json={"image_size": SIZE, "cells": cells(1), "mode": "fly"})
+    assert r.status_code == 422

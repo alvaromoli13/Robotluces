@@ -309,6 +309,7 @@ select:focus-visible { outline: 3px solid var(--leaf); outline-offset: 2px; }
 
 .cal-panel { margin-top: 12px; padding: 12px; border: 1px solid var(--line); border-radius: 14px; background: var(--mint); }
 .cal-help, .cal-count { font-size: 13px; color: var(--muted); line-height: 1.5; margin: 0 0 8px; }
+.auto-sow { display: flex; align-items: center; gap: 8px; margin-top: 12px; font-size: 14px; }
 .cal-kind { display: flex; flex-direction: column; gap: 4px; margin: 0 0 8px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; font-size: 13px; }
 .cal-kind legend { padding: 0 4px; color: var(--muted); }
 .cal-row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }

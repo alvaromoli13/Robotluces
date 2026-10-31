@@ -85,6 +85,8 @@
         <div class="settings-tests">
           <label for="dropHeight">Altura al soltar (cm)</label>
           <input id="dropHeight" type="number" min="2" max="25" step="0.5" value="6" inputmode="decimal">
+          <label class="auto-sow"><input id="autoSow" type="checkbox"> Sembrar solo (el robot busca las semillas con la cámara)</label>
+          <p class="cal-help">Necesita la calibración «Coger» y que el backend abra la cámara cenital. Las pruebas de abajo no lo usan.</p>
           <p class="cal-help">Prueba cada mitad del ciclo por separado, con el brazo ya calibrado y la bandeja a la vista.</p>
           <div class="cal-row">
             <button id="testGraspBtn" class="secondary-btn" type="button" title="Mueve a la pose de inicio y ejecuta la política ACT del color de la semilla seleccionada; se queda con la semilla en la pinza">Probar coger (ACT)</button>
@@ -270,7 +272,7 @@
 
 <script src="./vendor/cv.js?v=20261025c"></script>
 <script src="./vendor/aruco.js?v=20261025c"></script>
-<script src="./app.js?v=20261025c"></script>
+<script src="./app.js?v=20261031a"></script>
 <script src="./scanner.js?v=20261025c"></script>
 <script src="./calibrate.js?v=20261031a"></script>
 </body>

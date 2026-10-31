@@ -6,12 +6,17 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Callable, Protocol
 
+import cv2
+import numpy as np
+
+from . import scripted_grasp
 from .act import ACT_START_FALLBACK, ActGrasp
 from .calibration import Calibration, CalibrationError
 from .kinematics import IKError, Kinematics
 from .motion import MotionConfig, move_to
 from .poses import COLOR_ID, PoseStore
 from .robot import ARM_JOINTS, CameraUnavailable, RobotPort
+from .seed_detector import detect_seeds, seeds_to_robot
 
 
 class PlanError(Exception):
@@ -25,7 +30,9 @@ class PlanBusy(PlanError):
         super().__init__(409, "busy", "a plan is already running")
 
 
-MODES = ("full", "grasp", "place")  # full = grasp + place; the others are the two halves, for debugging
+# full = grasp + place; grasp / place are the two halves, for debugging; auto = find the seeds with the top camera,
+# grasp each with a scripted IK pick and place it in the next cell (cells: the targets, their colour picks the seeds)
+MODES = ("full", "grasp", "place", "auto")
 DROP_Z_RANGE = (0.02, 0.25)  # m; accepted per-run override of ExecutorConfig.drop_z
 
 
@@ -48,6 +55,15 @@ class ExecutorConfig:
     place_corrections: int = 2  # extra moves, aiming past the cell by the measured shortfall (servo sag)
     grasp_deltas: dict[str, float] = field(default_factory=dict)  # used when no grasp_<color> pose is taught
     release_wrist_tilt_deg: float = 5.0  # wrist_flex added over the cell just before opening (+ = tip further down)
+    # auto mode (scripted grasp from the seed detector); the geometry is `scripted_grasp`
+    held_above: float = 6.5  # gripper reading above this after closing = a seed in the jaws (real follower: empty 6.1, black 6.9, white 7.4)
+    auto_attempts: int = 3  # grasp attempts per seed (a cell gets twice that, a pushed seed counts as a new one)
+    scripted_open: float = 16.0  # gripper opening before the scripted grasp (the sim planner's)
+    approach_height: float = 0.07  # m above the seed where the scripted grasp hovers before descending
+    cartesian_speed: float = 0.08  # m/s mean of the straight descents and lifts (one IK waypoint per control period)
+    settle_mm: float = 1.0  # a straight move ends when the tool is this close to its goal
+    seed_z: float = 0.007  # m, tool height at the seed centres when the grasp calibration points carry no z
+    seed_radius: dict[str, float] = field(default_factory=lambda: {"black": 0.0068, "white": 0.0074})
 
 
 class Grasper(Protocol):
@@ -74,9 +90,11 @@ class TaughtGrasp:
 class Executor:
     def __init__(self, robot: RobotPort, poses: PoseStore, calibration: Calibration, kin: Kinematics,
                  grasper: Grasper | None = None, config: ExecutorConfig | None = None, mode: str = "fake",
-                 act: ActGrasp | None = None, grasp_calibration: Calibration | None = None):
+                 act: ActGrasp | None = None, grasp_calibration: Calibration | None = None,
+                 seed_finder: Callable[[np.ndarray, str], list[tuple[float, float]]] = detect_seeds):
         self.robot, self.poses, self.calibration, self.kin = robot, poses, calibration, kin
         self.grasp_calibration = grasp_calibration or Calibration()
+        self.seed_finder = seed_finder
         self.cfg = config or ExecutorConfig()
         self.grasper = grasper or TaughtGrasp(poses, self.cfg)
         self.mode, self.act = mode, act
@@ -91,6 +109,9 @@ class Executor:
         self._mode, self._drop_z = "full", self.cfg.drop_z
         self._done: list[int] = []
         self._failed: list[int] = []
+        self._tray_px: tuple[list[tuple[float, float]], tuple[int, int]] = ([], (1, 1))
+        self._exhausted: set[str] = set()  # auto mode: colours with no seed left to try
+        self._tries: list[tuple[tuple[float, float], int]] = []  # auto mode: grasp attempts per seed position
 
     @property
     def running(self) -> bool:
@@ -141,6 +162,7 @@ class Executor:
             self._stop.clear()
             self._state, self._plan_id, self._current = "running", uuid.uuid4().hex[:8], None
             self._done, self._failed, self.retries = [], [], []
+            self._exhausted, self._tries = set(), []
             return self._plan_id
 
     def _validate(self, plan, image_size) -> None:
@@ -152,7 +174,13 @@ class Executor:
             raise PlanError(422, "invalid", f"invalid colour id {bad}; expected lowercase letters, _ or -, up to 20")
         if self._mode != "grasp" and not self.calibration.fitted:  # grasping never goes to a cell
             raise PlanError(409, "no_calibration", "no calibration fitted: add >= 4 points and fit first")
-        if self._mode != "place":  # releasing needs neither a policy nor a taught box
+        if self._mode == "auto":  # seeds are found, not taught: needs the seed-height calibration and a pose to look from
+            if not self.grasp_calibration.fitted:
+                raise PlanError(409, "no_grasp_calibration",
+                                "no grasp calibration fitted: calibrate at seed height (kind=grasp), >= 4 points, and fit")
+            if self.poses.get("home") is None:
+                raise PlanError(409, "missing_pose", "missing taught poses: home")
+        elif self._mode != "place":  # releasing needs neither a policy nor a taught box
             missing = self.poses.missing(sorted({c["color"] for c in plan if not self._acts(c["color"])}))
             if missing:
                 raise PlanError(409, "missing_pose", f"missing taught poses: {', '.join(missing)}")
@@ -192,12 +220,18 @@ class Executor:
 
     def _run_plan(self, plan, image_size, plan_id) -> None:
         self.plan_start_index = len(self.events)
+        self._tray_px = ([(c["u"], c["v"]) for c in plan], tuple(image_size))  # auto mode: where the tray is
         self._emit("plan_started", message=f"{len(plan)} cells", total=len(plan), mode=self._mode)
         try:
             for c in plan:
+                if self._mode == "auto" and c["color"] in self._exhausted:
+                    continue
                 self._current = c["cell_index"]
                 self._emit("cell_started", c["cell_index"], row=c["row"], col=c["col"], color=c["color"],
                            total=len(plan))
+                if self._mode == "auto":
+                    self._sow_auto(c, image_size)
+                    continue
                 empty = not self._plant(c, image_size)
                 self._done.append(c["cell_index"])  # the arm always releases over the cell, seed or not
                 if empty:
@@ -232,7 +266,7 @@ class Executor:
     def _holding(self) -> bool:
         if self._stop.wait(self.cfg.settle_s):
             raise Stopped
-        return self.robot.read_joints()["gripper"] > self.cfg.empty_below
+        return self.robot.read_joints()["gripper"] > self.cfg.held_above
 
     def _release(self, c, image_size, back: dict[str, float]) -> None:
         """Hover over the cell, descend with the gripper as it is (closed-loop on the real tool position), open,
@@ -310,3 +344,147 @@ class Executor:
         if self._mode == "full":
             self._release(c, image_size, back)
         return holding
+
+    # -- auto mode: detect -> scripted grasp -> place ---------------------------------------------------------
+    SEED_MATCH_M = 0.012  # a detection this close to an earlier grasp attempt is the same seed
+
+    def _sow_auto(self, c, image_size) -> None:
+        """Fills the cell `c` with a seed of its colour: look, pick the nearest reachable seed, grasp it, release it
+        over the cell; a failed grasp looks again. Ends the colour when no seed is left to try."""
+        color, cell_attempts = c["color"], 0
+        while cell_attempts < 2 * self.cfg.auto_attempts:
+            seeds = self._detect(color)
+            self._emit("seeds_detected", c["cell_index"], count=len(seeds), color=color)
+            if not seeds:
+                return self._give_up(c, "no_seeds")
+            tool = np.array(self.kin.tool_xyz(self.robot.read_joints())[:2])
+            todo = [s for s in seeds if self._tried(s) < self.cfg.auto_attempts]
+            if not todo:
+                return self._give_up(c, "gave_up")
+            target = min(todo, key=lambda s: float(np.hypot(*(np.array(s) - tool))))
+            attempt = self._bump(target)
+            cell_attempts += 1
+            others = [s for s in seeds if s is not target]
+            cause = self._grasp_scripted(target, others, attempt, color)
+            self._emit("grasp_attempt", c["cell_index"], x=target[0], y=target[1], attempt=attempt, result=cause or "held")
+            if cause is None:
+                self._release(c, image_size, {**self.poses.get("home"), "gripper": self.cfg.gripper_open})
+                self._done.append(c["cell_index"])
+                self._emit("cell_done", c["cell_index"])
+                return
+            self._emit("grasp_failed", c["cell_index"], cause=cause, x=target[0], y=target[1], attempt=attempt)
+            if cause == "unreachable":
+                self._tries.append((target, self.cfg.auto_attempts))  # no use trying that seed again
+            else:
+                self.retries.append(c["cell_index"])
+        self._give_up(c, "gave_up")
+
+    def _give_up(self, c, reason: str) -> None:
+        """No seed of the cell's colour can be sown: the colour is finished for this plan."""
+        if reason != "no_seeds":
+            self._failed.append(c["cell_index"])
+        self._exhausted.add(c["color"])
+        self._emit("auto_stopped", c["cell_index"], f"{reason}: no more {c['color']} seeds to sow", color=c["color"],
+                   reason=reason)
+
+    def _tried(self, xy) -> int:
+        return max((n for p, n in self._tries if np.hypot(xy[0] - p[0], xy[1] - p[1]) < self.SEED_MATCH_M), default=0)
+
+    def _bump(self, xy) -> int:
+        """Counts a grasp attempt on the seed at `xy`; returns its number, from 1."""
+        n = self._tried(xy) + 1
+        self._tries.append((tuple(xy), n))
+        return n
+
+    def _detect(self, color: str) -> list[tuple[float, float]]:
+        """Back to the taught home (the arm out of the view), then the top frame -> base-frame (x, y) of each seed."""
+        self._move({**self.poses.get("home"), "gripper": self.cfg.gripper_open})
+        if self._stop.wait(self.cfg.settle_s):
+            raise Stopped
+        frame = self.robot.read_observation().get("observation.images.top")
+        if frame is None:
+            raise CameraUnavailable("the robot gives no top camera frame")
+        size = (frame.shape[1], frame.shape[0])
+        centres = [c for c in self.seed_finder(frame, color) if not self._on_tray(c, size)]
+        return [(float(x), float(y)) for x, y in seeds_to_robot(self.grasp_calibration, centres, size)]
+
+    def _on_tray(self, centre, frame_size) -> bool:
+        """The tray is cardboard like the box floor, so the detector also sees seeds already sown. A detection is on
+        the tray when it lies in the hull of the plan's cells or within 3/4 of the cell pitch (the median distance to
+        the nearest other cell, 40 px for a single cell) of one of them."""
+        cells, size = self._tray_px
+        pts = (np.array(cells) * (frame_size[0] / size[0], frame_size[1] / size[1])).astype(np.float32)
+        pitch = float(np.median([np.sort(np.hypot(*(pts - p).T))[1] for p in pts])) if len(pts) > 1 else 40.0
+        if float(np.min(np.hypot(*(pts - np.array(centre, dtype=np.float32)).T))) < 0.75 * pitch:
+            return True
+        hull = cv2.convexHull(pts)
+        return len(hull) >= 3 and cv2.pointPolygonTest(hull, (float(centre[0]), float(centre[1])), False) >= 0
+
+    def _line(self, goal, spin: float, gripper: float) -> dict[str, float]:
+        """Straight Cartesian move of the tool to `goal` (IK per waypoint at the wrist roll `spin`), then let the
+        servos arrive; returns the last joint solution. Raises IKError."""
+        cfg = self.cfg
+        start, goal = np.array(self.kin.tool_xyz(self.robot.read_joints())), np.asarray(goal, dtype=float)
+        n = max(1, math.ceil(float(np.linalg.norm(goal - start)) / (cfg.cartesian_speed / cfg.hz)))
+        sol = {}
+        for k in range(1, n + 1):
+            u, now = k / n, self.robot.read_joints()  # smoothstep: no jerk at either end, so the jaws do not shove the seed
+            sol = self.kin.solve(*(start + (goal - start) * u * u * (3 - 2 * u)), seed={j: now[j] for j in ARM_JOINTS},
+                                 spin_deg=spin)
+            self._move({**sol, "gripper": gripper})
+        for _ in range(int(2 * cfg.hz)):  # the arm lags its goals, most of all after a wrist roll
+            if np.linalg.norm(np.array(self.kin.tool_xyz(self.robot.read_joints())) - goal) < cfg.settle_mm / 1000:
+                break
+            self._move({**sol, "gripper": gripper})
+        return sol
+
+    def _grasp_z(self) -> float:
+        z = self.grasp_calibration.mean_z
+        return (self.cfg.seed_z if z is None else z) + scripted_grasp.TOOL_Z_OFFSET
+
+    def _grasp_scripted(self, seed, others, attempt: int, color: str) -> str | None:
+        """Hover over the seed, descend, close, lift to the release height; None when the gripper holds a seed after
+        the lift, else the cause: `unreachable` (no jaw axis the arm reaches), `empty` (nothing in the jaws after
+        closing), `dropped` (it let go during the lift). Each attempt starts from another jaw axis."""
+        cfg, z = self.cfg, self._grasp_z()
+        axes = scripted_grasp.jaw_axes(seed, others, cfg.seed_radius.get(color, 0.007))
+        axes = axes[(attempt - 1) % len(axes):] + axes[:(attempt - 1) % len(axes)]
+        opened, now = cfg.scripted_open, self.robot.read_joints()
+        for spin, (x, y) in axes:
+            try:
+                hover = self.kin.solve(x, y, z + cfg.approach_height, seed={j: now[j] for j in ARM_JOINTS},
+                                       spin_deg=spin)
+                self._move({**hover, "gripper": opened})
+                self._line((x, y, z), spin, opened)
+            except IKError:
+                continue
+            if not self._close_on_seed():
+                self._lift(x, y, spin)
+                return "empty"
+            held = self._lift(x, y, spin)
+            return None if held else "dropped"
+        return "unreachable"
+
+    def _close_on_seed(self, max_s: float = 3.0, still_steps: int = 6) -> bool:
+        """Keeps commanding the closed gripper until its reading stops changing (the jaws stalled on a seed or on the
+        stop), then judges it: loaded when the reading is above `held_above`. Commanding, not sleeping, is what lets
+        the sim's clock (and a servo's travel) advance."""
+        cfg = self.cfg
+        last, still = self.robot.read_joints()["gripper"], 0
+        for _ in range(max(1, int(max_s * cfg.hz))):
+            self._move({"gripper": cfg.gripper_closed})
+            now = self.robot.read_joints()["gripper"]
+            still = still + 1 if abs(now - last) < 0.05 else 0
+            last = now
+            if still >= still_steps:
+                break
+        return last > cfg.held_above
+
+    def _lift(self, x: float, y: float, spin: float) -> bool:
+        """Straight up to the height the release hovers at (the box walls and the tray clear); whether it still holds."""
+        gripper = self.robot.read_joints()["gripper"]
+        try:
+            self._line((x, y, self._drop_z + self.cfg.approach_clearance), spin, gripper)
+        except IKError:  # out of reach up there: just back to the hover height of the grasp
+            self._line((x, y, self._grasp_z() + self.cfg.approach_height), spin, gripper)
+        return self.robot.read_joints()["gripper"] > self.cfg.held_above

@@ -45,7 +45,8 @@ def build_runtime(mode: str | None = None, port: str | None = None, data_dir=Non
                   catalog: ModelCatalog | None = None,
                   spec_resolver: Callable[[str, str | None], str] | None = None) -> Runtime:
     """`fake` (default) never opens a serial port; `real` needs SMARTSEED_ROBOT_PORT. With ACT policies configured
-    the real follower also opens the top/wrist cameras (fake mode never does). `sim` drives the MuJoCo twin
+    (or SMARTSEED_AUTO_SOW=1, the auto sowing mode) the real follower also opens the top/wrist cameras (fake mode never
+    does). `sim` drives the MuJoCo twin
     (`pip`/uv group `sim`; SMARTSEED_SIM_VIEWER=1, SMARTSEED_SIM_RECORD_DIR, SMARTSEED_SIM_SCENE)."""
     mode = mode or os.environ.get("SMARTSEED_ROBOT", "fake")
     act = act or ActConfig.from_env()
@@ -57,7 +58,9 @@ def build_runtime(mode: str | None = None, port: str | None = None, data_dir=Non
                 raise ValueError("SMARTSEED_ROBOT=real needs SMARTSEED_ROBOT_PORT (e.g. /dev/tty.usbmodem...)")
             from .robot import LeRobotFollower
 
-            robot = LeRobotFollower(port, {"top": act.cam_top, "wrist": act.cam_wrist} if act.enabled else None)
+            # the cameras are only opened for ACT or for the auto mode (SMARTSEED_AUTO_SOW=1): the hackathon flow never needs them
+            cameras = act.enabled or os.environ.get("SMARTSEED_AUTO_SOW") == "1"
+            robot = LeRobotFollower(port, {"top": act.cam_top, "wrist": act.cam_wrist} if cameras else None)
         elif mode == "fake":
             robot = FakeRobot()
         elif mode == "sim":
@@ -92,7 +95,8 @@ class Cell(BaseModel):
 class PlanBody(BaseModel):
     image_size: tuple[int, int]
     cells: list[Cell] = Field(min_length=1)
-    mode: Literal["full", "grasp", "place"] = "full"  # grasp / place run one half of the cycle, for debugging
+    # grasp / place run one half of the cycle, for debugging; auto finds the seeds itself (cells = the targets)
+    mode: Literal["full", "grasp", "place", "auto"] = "full"
     drop_z: float | None = Field(default=None, ge=0.02, le=0.25)  # tool height (m) over the cell when releasing
 
 

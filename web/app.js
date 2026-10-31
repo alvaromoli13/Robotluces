@@ -412,7 +412,8 @@
   // ── Planting run ───────────────────────────────────────────────────────────
   // Wire protocol of backend/smartseed_robot (see guide.md):
   //   POST /plan {image_size:[w,h], cells:[{cell_index,row,col,color,u,v}], mode?, drop_z?} -> 202 {plan_id}
-  //     mode: "full" (default) | "grasp" (ACT/taught pick only) | "place" (IK over the cell + open only);
+  //     mode: "full" (default) | "grasp" (ACT/taught pick only) | "place" (IK over the cell + open only) |
+  //           "auto" (the backend finds the seeds with the top camera; the "Sembrar solo" setting);
   //     drop_z: tool height in metres when releasing (the "Altura al soltar" setting).
   //   WS   /robot/progress  -> plan_started | cell_started | cell_done | cell_failed
   //                            | finished | stopped | error
@@ -602,6 +603,9 @@
           markCell(msg.cell_index, 'done');
           if (msg.empty) toast('En ' + cellName(msg.cell_index) + ' la pinza parecía vacía; se ha abierto sobre la casilla igualmente.');
           break;
+        case 'auto_stopped':
+          toast(msg.reason === 'no_seeds' ? 'No quedan semillas de ese color en la caja.' : 'El robot ha dejado de intentar coger semillas de ese color.');
+          break;
         case 'cell_failed':
           markCell(msg.cell_index, 'failed', 'Falló ' + cellName(msg.cell_index) + ': la pinza salió vacía');
           break;
@@ -635,6 +639,7 @@
     torque_off: 'el par de los motores está desactivado. Pulsa «Bloquear brazo» en Escanear → Calibrar robot antes de sembrar.',
     no_calibration: 'la cámara no está calibrada con el robot: pulsa Escanear → Calibrar robot, marca al menos 4 puntos y pulsa Ajustar.',
     busy: 'ya hay una siembra en curso. Párala antes de empezar otra.',
+    no_grasp_calibration: 'falta la calibración «Coger» (altura de las semillas): pulsa Escanear → Calibrar robot, elige «Coger», marca al menos 4 puntos y pulsa Ajustar. O desactiva «Sembrar solo» en Ajustes.',
   };
 
   function refusalText(body, status) {
@@ -729,6 +734,10 @@
     return Math.round(cm * 10) / 1000;
   }
 
+  // "Sembrar solo" setting, persisted: Sembrar sends plan mode auto (never for the half tests).
+  const AUTO_KEY = 'smartseed.autoSow';
+  const autoSowOn = () => $('autoSow').checked;
+
   function startDemo(message) {
     run.mode = 'demo';
     run.detail = 'Sin robot: simulación en el navegador';
@@ -771,7 +780,7 @@
 
     freezeScan();  // the holes stay where they are until the run ends (finishRun / closeRun)
     let plan = test === 'grasp' ? buildGraspPlan() : buildPlan(queue);
-    if (plan) plan = { ...plan, mode: test || 'full', drop_z: dropZ };
+    if (plan) plan = { ...plan, mode: test || (autoSowOn() ? 'auto' : 'full'), drop_z: dropZ };
     if (!plan) {
       // No pixel centres: a real robot could not place anything. Only simulate when
       // there is no backend to talk to in the first place.
@@ -1177,6 +1186,11 @@
   $('actApplyBtn').addEventListener('click', () => actCatalog && applyAct());
   try { const saved = localStorage.getItem(DROP_KEY); if (saved !== null && Number(saved) > 0) $('dropHeight').value = saved; }
   catch (e) { /* storage blocked: keep the default */ }
+  try { $('autoSow').checked = localStorage.getItem(AUTO_KEY) === '1'; }
+  catch (e) { /* storage blocked: off */ }
+  $('autoSow').addEventListener('change', () => {
+    try { localStorage.setItem(AUTO_KEY, $('autoSow').checked ? '1' : '0'); } catch (e) { /* storage full or blocked */ }
+  });
   $('dropHeight').addEventListener('input', () => {
     try { localStorage.setItem(DROP_KEY, $('dropHeight').value); } catch (e) { /* storage full or blocked */ }
   });
